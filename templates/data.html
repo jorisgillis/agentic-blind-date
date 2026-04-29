@@ -1,0 +1,102 @@
+{{define "data.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Data — Agentic Blind Date</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    pre { white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen px-6 py-8 font-mono text-sm">
+
+  <div class="max-w-5xl mx-auto space-y-8">
+
+    <div>
+      <h1 class="text-xl font-bold mb-1">Debug Data</h1>
+      <p class="text-gray-500 text-xs">
+        JSON endpoints:
+        <a href="/data/participants" class="text-indigo-400 hover:underline">/data/participants</a> ·
+        <a href="/data/state" class="text-indigo-400 hover:underline">/data/state</a> ·
+        <a href="/data/activity" class="text-indigo-400 hover:underline">/data/activity</a>
+      </p>
+    </div>
+
+    {{/* Event state */}}
+    <section>
+      <h2 class="text-gray-400 uppercase text-xs tracking-widest mb-3">Event State</h2>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex gap-8">
+        <div><span class="text-gray-500">phase</span> <span class="text-yellow-300 font-bold ml-2">{{.Phase}}</span></div>
+        <div><span class="text-gray-500">participants</span> <span class="font-bold ml-2">{{.Count}}</span></div>
+        <div><span class="text-gray-500">ready</span> <span class="font-bold ml-2">{{.ReadyCount}}</span></div>
+      </div>
+    </section>
+
+    {{/* Participants table */}}
+    <section>
+      <h2 class="text-gray-400 uppercase text-xs tracking-widest mb-3">Participants ({{.Count}})</h2>
+      {{if .Participants}}
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-xs">
+          <thead>
+            <tr class="text-gray-500 border-b border-gray-800">
+              <th class="text-left py-2 pr-4">handle</th>
+              <th class="text-left py-2 pr-4">name</th>
+              <th class="text-left py-2 pr-2">sym</th>
+              <th class="text-left py-2 pr-4">persona</th>
+              <th class="text-left py-2 pr-4">color</th>
+              <th class="text-left py-2 pr-4">step</th>
+              <th class="text-left py-2 pr-4">score</th>
+              <th class="text-left py-2 pr-4">matched_with</th>
+              <th class="text-left py-2 pr-4">answers</th>
+              <th class="text-left py-2">detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Participants}}
+            <tr class="border-b border-gray-900 hover:bg-gray-900/50">
+              <td class="py-2 pr-4 text-indigo-300">@{{.GitHubHandle}}</td>
+              <td class="py-2 pr-4 text-gray-300">{{.Name}}</td>
+              <td class="py-2 pr-2 text-lg">{{.PersonaSymbol}}</td>
+              <td class="py-2 pr-4">{{.PersonaName}}</td>
+              <td class="py-2 pr-4"><span class="px-2 py-0.5 rounded text-xs {{.PersonaColor}} text-gray-900">{{.PersonaColor}}</span></td>
+              <td class="py-2 pr-4
+                {{if eq .PipelineStep "matched"}}text-green-400
+                {{else if eq .PipelineStep "ready"}}text-yellow-400
+                {{else if eq .PipelineStep "interviewing"}}text-blue-400
+                {{else}}text-gray-500
+                {{end}}">{{.PipelineStep}}</td>
+              <td class="py-2 pr-4">{{if .CompatScore}}{{.CompatScore}}%{{else}}-{{end}}</td>
+              <td class="py-2 pr-4 text-gray-500 truncate max-w-xs">{{if .MatchedWith}}{{.MatchedWith}}{{else}}-{{end}}</td>
+              <td class="py-2 pr-4 text-gray-500 truncate max-w-xs">{{.AnswersJSON}}</td>
+              <td class="py-2"><a href="/data/participant/{{.ID}}" class="text-indigo-400 hover:underline">json</a></td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      <p class="text-gray-600">No participants yet.</p>
+      {{end}}
+    </section>
+
+    {{/* Activity log */}}
+    <section>
+      <h2 class="text-gray-400 uppercase text-xs tracking-widest mb-3">Recent Activity</h2>
+      {{if .Activity}}
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-1">
+        {{range .Activity}}
+        <p class="text-gray-300">{{.}}</p>
+        {{end}}
+      </div>
+      {{else}}
+      <p class="text-gray-600">No activity yet.</p>
+      {{end}}
+    </section>
+
+  </div>
+</body>
+</html>
+{{end}}

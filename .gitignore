@@ -1,0 +1,6 @@
+agentic-blind-date
+.claude/settings.local.json
+.env
+blind_date.db
+blind_date.db-shm
+blind_date.db-wal

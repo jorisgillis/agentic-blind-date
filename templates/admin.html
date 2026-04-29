@@ -1,0 +1,79 @@
+{{define "admin.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="5">
+  <title>Admin — Agentic Blind Date</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen px-6 py-10">
+  <div class="max-w-sm mx-auto space-y-6">
+
+    <div class="text-center">
+      <h1 class="text-2xl font-black">Host panel</h1>
+      <p class="text-gray-500 text-sm mt-1">Agentic Blind Date</p>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+      <div class="flex justify-between text-sm">
+        <span class="text-gray-400">Phase</span>
+        <span class="font-mono font-bold
+          {{if eq .Phase "onboarding"}}text-yellow-400
+          {{else if eq .Phase "matching"}}text-blue-400
+          {{else if eq .Phase "revealed"}}text-green-400
+          {{end}}">{{.Phase}}</span>
+      </div>
+      <div class="flex justify-between text-sm">
+        <span class="text-gray-400">Participants</span>
+        <span class="font-bold">{{.Count}}</span>
+      </div>
+      <div class="flex justify-between text-sm">
+        <span class="text-gray-400">Ready to match</span>
+        <span class="font-bold">{{.Ready}}</span>
+      </div>
+    </div>
+
+    {{if eq .Phase "onboarding"}}
+    <form action="/admin/reveal" method="POST">
+      <button
+        type="submit"
+        {{if lt .Ready 2}}disabled{{end}}
+        class="w-full bg-pink-600 hover:bg-pink-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-bold rounded-xl py-4 text-lg transition-colors"
+        onclick="return confirm('Trigger the reveal? This will match all {{.Ready}} ready participants.')"
+      >
+        💘 Trigger the Reveal!
+        {{if lt .Ready 2}}<br><span class="text-sm font-normal">(need at least 2 ready)</span>{{end}}
+      </button>
+    </form>
+    {{else if eq .Phase "matching"}}
+    <div class="text-center py-4 text-blue-400 font-bold animate-pulse">
+      🔮 Matching in progress...
+    </div>
+    {{else if eq .Phase "revealed"}}
+    <div class="text-center py-4 text-green-400 font-bold">
+      🎉 Matches revealed!
+    </div>
+    {{end}}
+
+    <form action="/admin/reset" method="POST">
+      <button
+        type="submit"
+        class="w-full bg-gray-800 hover:bg-gray-700 text-gray-400 font-bold rounded-xl py-3 transition-colors text-sm"
+        onclick="return confirm('Reset everything? This will delete all participants.')"
+      >
+        Reset event
+      </button>
+    </form>
+
+    <div class="text-center space-y-1">
+      <a href="/bigscreen" target="_blank" class="block text-indigo-400 hover:text-indigo-300 text-sm">Open big screen →</a>
+      <a href="/user" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open participant landing →</a>
+      <a href="/data" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open debug data →</a>
+    </div>
+
+  </div>
+</body>
+</html>
+{{end}}

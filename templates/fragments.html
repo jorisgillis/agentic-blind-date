@@ -1,0 +1,222 @@
+{{/* Pipeline step indicator — shown while GitHub fetch / persona creation is in progress */}}
+{{define "fragment-pipeline-step.html"}}
+<div
+  id="pipeline-area"
+  hx-get="/user/pipeline/{{.ID}}"
+  hx-trigger="every 2s"
+  hx-swap="outerHTML"
+  class="space-y-4"
+>
+  <div class="space-y-3">
+    {{$step := .PipelineStep}}
+
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if eq $step "fetching_github"}}bg-indigo-900/40 border border-indigo-700{{else}}bg-gray-900 border border-gray-800{{end}}">
+      <span class="text-xl">{{if eq $step "fetching_github"}}⏳{{else}}✅{{end}}</span>
+      <div>
+        <p class="font-semibold text-sm">Fetching GitHub profile</p>
+        {{if eq $step "fetching_github"}}<p class="text-indigo-400 text-xs">In progress...</p>{{end}}
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if eq $step "creating_persona"}}bg-indigo-900/40 border border-indigo-700{{else if eq $step "fetching_github"}}bg-gray-900/50 border border-gray-800 opacity-40{{else}}bg-gray-900 border border-gray-800{{end}}">
+      <span class="text-xl">{{if eq $step "creating_persona"}}⏳{{else if eq $step "fetching_github"}}⬜{{else}}✅{{end}}</span>
+      <div>
+        <p class="font-semibold text-sm">Crafting your persona</p>
+        {{if eq $step "creating_persona"}}<p class="text-indigo-400 text-xs">Mistral agent at work...</p>{{end}}
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 p-4 rounded-xl bg-gray-900/50 border border-gray-800 opacity-40">
+      <span class="text-xl">⬜</span>
+      <div>
+        <p class="font-semibold text-sm">Interview</p>
+        <p class="text-gray-600 text-xs">Coming up next</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="text-center text-gray-600 text-xs animate-pulse">Agent pipeline running...</p>
+</div>
+{{end}}
+
+
+{{/* A single interview question */}}
+{{define "fragment-question.html"}}
+{{if .}}
+<div
+  id="pipeline-area"
+  class="space-y-4"
+>
+  <div class="text-center mb-4">
+    <p class="text-gray-500 text-xs mb-1">Question {{add .Index 1}} of {{.Total}}</p>
+    <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+      <div class="h-full bg-indigo-500 rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
+    </div>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+    <p class="font-semibold text-lg mb-5">{{.Question.Text}}</p>
+
+    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3">
+      {{if .Question.Options}}
+        {{range .Question.Options}}
+        <button
+          type="submit"
+          name="answer"
+          value="{{.}}"
+          class="w-full text-left bg-gray-800 hover:bg-indigo-800 border border-gray-700 hover:border-indigo-500 rounded-xl px-4 py-3 text-sm transition-colors"
+        >{{.}}</button>
+        {{end}}
+      {{else}}
+        <div class="flex gap-2">
+          <input
+            type="text"
+            name="answer"
+            required
+            placeholder="Type your answer..."
+            class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+          />
+          <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-4 py-3 text-sm font-bold transition-colors">→</button>
+        </div>
+      {{end}}
+    </form>
+  </div>
+</div>
+{{end}}
+{{end}}
+
+
+{{/* Wait page status — polled every 3s */}}
+{{define "fragment-wait-status.html"}}
+{{$p := .Participant}}
+{{if eq .Phase "revealed"}}
+<div id="wait-status" class="text-center space-y-4 py-4">
+  <p class="text-4xl">😔</p>
+  <p class="text-white font-bold">You just missed it!</p>
+  <p class="text-gray-500 text-sm">The reveal already happened. Check the big screen to see the matches!</p>
+</div>
+{{else}}
+<div
+  id="wait-status"
+  hx-get="/user/wait-status/{{$p.ID}}"
+  hx-trigger="every 3s"
+  hx-swap="outerHTML"
+  class="text-center space-y-4"
+>
+  <div class="text-gray-300">
+    <p class="text-5xl font-black text-white">{{.Count}}</p>
+    <p class="text-gray-400 mt-1">{{if eq .Count 1}}person{{else}}people{{end}} ready in the room</p>
+  </div>
+
+  <div class="flex items-center justify-center gap-2 text-gray-600 text-sm">
+    <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+    Waiting for the host to trigger the reveal...
+  </div>
+
+  <p class="text-gray-700 text-xs">Keep an eye on the big screen!</p>
+</div>
+{{end}}
+{{end}}
+
+
+{{/* Screen state — the main content of the big screen view, polled every 3s */}}
+{{define "fragment-screen-state.html"}}
+{{$phase := .Phase}}
+
+{{if eq $phase "onboarding"}}
+{{/* Pre-reveal: persona card grid + ticker */}}
+<div class="flex flex-col h-full">
+
+  <div class="flex-1 overflow-auto px-8 py-4">
+    {{if eq .Count 0}}
+    <div class="flex items-center justify-center h-full">
+      <div class="text-center">
+        <p class="text-5xl mb-4">📱</p>
+        <p class="text-gray-500 text-xl">Waiting for participants to join...</p>
+        <p class="text-gray-700 text-sm mt-2">Open the app on your phone</p>
+      </div>
+    </div>
+    {{else}}
+    <div class="flex items-center justify-between mb-4">
+      <p class="text-gray-400 text-sm">{{.Count}} participant{{if ne .Count 1}}s{{end}} — {{.ReadyCount}} ready</p>
+      <p class="text-gray-600 text-sm">🔒 waiting for reveal</p>
+    </div>
+
+    <div class="grid grid-cols-4 gap-4 auto-rows-fr">
+      {{range .Participants}}
+      <div class="flex flex-col items-center text-center">
+        <div class="w-full aspect-square rounded-2xl {{.PersonaColor}} flex items-center justify-center text-4xl shadow-lg mb-2
+          {{if eq .PipelineStep "ready"}}ring-2 ring-white/40{{else}}opacity-70{{end}}">
+          {{.PersonaSymbol}}
+        </div>
+        <p class="text-sm font-bold leading-tight">{{if .PersonaName}}{{.PersonaName}}{{else}}@{{.GitHubHandle}}{{end}}</p>
+        <p class="text-xs text-gray-500">
+          {{if eq .PipelineStep "ready"}}✅ ready{{else if eq .PipelineStep "interviewing"}}💬 interviewing{{else if eq .PipelineStep "creating_persona"}}{{.PersonaSymbol}} profiling{{else}}🔍 fetching{{end}}
+        </p>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+
+  {{/* Activity ticker */}}
+  <div class="flex-shrink-0 px-8 py-3 border-t border-gray-800 font-mono text-sm text-gray-500 overflow-hidden">
+    {{if .Activity}}{{index .Activity 0}}{{end}}
+  </div>
+</div>
+
+{{else if eq $phase "matching"}}
+{{/* Matching in progress */}}
+<div class="flex items-center justify-center h-full">
+  <div class="text-center">
+    <p class="text-6xl mb-6 animate-pulse">🔮</p>
+    <h2 class="text-4xl font-black mb-3">Matchmaking in progress</h2>
+    <p class="text-gray-400 text-xl">The agents are finding your perfect tech match...</p>
+    <div class="flex justify-center gap-1 mt-8">
+      {{range .Activity}}
+      <div></div>
+      {{end}}
+    </div>
+    <div class="mt-6 space-y-1">
+      {{range .Activity}}
+      <p class="text-gray-600 text-sm font-mono">{{.}}</p>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+{{else if eq $phase "revealed"}}
+{{/* Reveal! Show matched pairs */}}
+<div class="flex flex-col h-full">
+  <div class="text-center py-4 flex-shrink-0">
+    <h2 class="text-3xl font-black">💘 The matches are in!</h2>
+  </div>
+
+  <div class="flex-1 overflow-auto px-8 pb-6">
+    <div class="grid grid-cols-3 gap-5">
+      {{range .Participants}}
+      {{if .MatchedWith}}
+      {{if gt .CompatScore 0}}
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
+        <div class="flex justify-center gap-3 mb-3">
+          <div class="w-14 h-14 rounded-xl {{.PersonaColor}} flex items-center justify-center text-2xl">{{.PersonaSymbol}}</div>
+          <div class="flex items-center text-gray-600">❤️</div>
+          <div class="w-14 h-14 rounded-xl bg-gray-700 flex items-center justify-center text-2xl">{{.PersonaSymbol}}</div>
+        </div>
+        <p class="font-bold text-sm">@{{.GitHubHandle}}</p>
+        <p class="text-gray-500 text-xs mb-2">{{.PersonaName}}</p>
+        <div class="bg-gray-800 rounded-full px-3 py-1 text-xs font-bold text-indigo-400 inline-block">
+          {{.CompatScore}}% match
+        </div>
+        {{if .CompatReason}}
+        <p class="text-gray-600 text-xs mt-2 italic">{{.CompatReason}}</p>
+        {{end}}
+      </div>
+      {{end}}
+      {{end}}
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+{{end}}

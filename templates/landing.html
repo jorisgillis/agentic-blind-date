@@ -1,0 +1,53 @@
+{{define "landing.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Blind Date</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center px-4">
+  <div class="w-full max-w-md text-center">
+
+    <div class="text-7xl mb-4">💘</div>
+    <h1 class="text-4xl font-black tracking-tight mb-2">Agentic Blind Date</h1>
+    <p class="text-gray-400 mb-2">Find your technical soulmate.</p>
+    <p class="text-gray-500 text-sm mb-10">Powered by AI agents analyzing your GitHub profile.</p>
+
+    <form action="/user/join" method="POST" class="space-y-4">
+      <div>
+        <input
+          type="text"
+          name="name"
+          placeholder="your name"
+          autocomplete="given-name"
+          required
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-5 py-4 text-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-center"
+        />
+      </div>
+      <div>
+        <input
+          type="text"
+          name="github"
+          placeholder="your GitHub handle"
+          autocomplete="off"
+          autocapitalize="none"
+          required
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-5 py-4 text-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-center"
+        />
+      </div>
+      <button
+        type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-4 text-lg transition-colors"
+      >
+        Find my match →
+      </button>
+    </form>
+
+    <p class="text-gray-600 text-xs mt-8">Only your public GitHub data is used.</p>
+  </div>
+</body>
+</html>
+{{end}}

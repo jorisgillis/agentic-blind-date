@@ -1,0 +1,240 @@
+{{define "screen.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Blind Date — Big Screen</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+    .node { cursor: grab; }
+    .node:active { cursor: grabbing; }
+    @keyframes pulse-match {
+      0%, 100% { stroke-opacity: 0.9; }
+      50%       { stroke-opacity: 0.3; }
+    }
+    .edge-matched { animation: pulse-match 2s ease-in-out infinite; }
+  </style>
+</head>
+<body class="bg-gray-950 text-white flex flex-col h-full">
+
+  <header class="flex items-center justify-between px-8 pt-5 pb-3 flex-shrink-0">
+    <div class="flex items-center gap-3">
+      <span class="text-3xl">💘</span>
+      <h1 class="text-2xl font-black tracking-tight">Agentic Blind Date</h1>
+    </div>
+    <div class="flex items-center gap-6">
+      <div id="status-info" class="text-right">
+        <p id="phase-label" class="text-sm text-gray-400">Loading...</p>
+        <p id="count-label" class="text-xs text-gray-600"></p>
+      </div>
+      <div id="qr" class="rounded-lg overflow-hidden flex-shrink-0"></div>
+    </div>
+  </header>
+
+  <div class="flex-1 relative" id="graph-container">
+    <svg id="graph" width="100%" height="100%">
+      <g id="edges-layer"></g>
+      <g id="nodes-layer"></g>
+    </svg>
+    <div id="empty-state" class="absolute inset-0 flex items-center justify-center">
+      <div class="text-center">
+        <p class="text-6xl mb-4">📱</p>
+        <p class="text-gray-400 text-2xl font-semibold">Scan the QR code to join!</p>
+        <p class="text-gray-700 text-sm mt-2">Participants appear here as they register</p>
+      </div>
+    </div>
+  </div>
+
+  <footer class="flex-shrink-0 px-8 py-3 border-t border-gray-800 font-mono text-sm text-gray-500 overflow-hidden" style="height:44px">
+    <p id="ticker">&nbsp;</p>
+  </footer>
+
+<script>
+const colorMap = {
+  'bg-red-400':    '#f87171',
+  'bg-blue-400':   '#60a5fa',
+  'bg-amber-400':  '#fbbf24',
+  'bg-green-400':  '#4ade80',
+  'bg-purple-400': '#c084fc',
+  'bg-pink-400':   '#f472b6',
+  'bg-teal-400':   '#2dd4bf',
+  'bg-orange-400': '#fb923c',
+  'bg-indigo-400': '#818cf8',
+  'bg-rose-400':   '#fb7185',
+  'bg-cyan-400':   '#22d3ee',
+  'bg-lime-400':   '#a3e635',
+};
+
+// QR code pointing to /user
+new QRCode(document.getElementById('qr'), {
+  text: window.location.origin + '/user',
+  width: 110,
+  height: 110,
+  colorDark: '#ffffff',
+  colorLight: '#030712',
+  correctLevel: QRCode.CorrectLevel.M,
+});
+
+// D3 force simulation
+const container = document.getElementById('graph-container');
+const svg = d3.select('#graph');
+const edgesLayer = svg.select('#edges-layer');
+const nodesLayer = svg.select('#nodes-layer');
+
+function w() { return container.clientWidth; }
+function h() { return container.clientHeight; }
+
+const simulation = d3.forceSimulation()
+  .force('link', d3.forceLink().id(d => d.id).distance(170).strength(0.35))
+  .force('charge', d3.forceManyBody().strength(-500))
+  .force('collide', d3.forceCollide(58))
+  .force('center', d3.forceCenter(w() / 2, h() / 2))
+  .alphaDecay(0.03);
+
+simulation.on('tick', () => {
+  edgesLayer.selectAll('line')
+    .attr('x1', d => d.source.x)
+    .attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x)
+    .attr('y2', d => d.target.y);
+  nodesLayer.selectAll('g.node')
+    .attr('transform', d => `translate(${d.x},${d.y})`);
+});
+
+function drag() {
+  return d3.drag()
+    .on('start', (ev, d) => {
+      if (!ev.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x; d.fy = d.y;
+    })
+    .on('drag', (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+    .on('end', (ev, d) => {
+      if (!ev.active) simulation.alphaTarget(0);
+      d.fx = null; d.fy = null;
+    });
+}
+
+let currentNodes = [];
+let currentPhase = 'onboarding';
+
+function updateGraph(data) {
+  const phase = data.phase;
+  currentPhase = phase;
+
+  const byId = Object.fromEntries(currentNodes.map(n => [n.id, n]));
+  const hasNew = data.nodes.some(n => !byId[n.id]);
+
+  // Merge: preserve simulation positions for existing nodes
+  currentNodes = data.nodes.map(n => {
+    if (byId[n.id]) {
+      byId[n.id].step = n.step;
+      byId[n.id].persona_name = n.persona_name;
+      return byId[n.id];
+    }
+    return n;
+  });
+
+  simulation.nodes(currentNodes);
+
+  // Fresh edge objects (D3 will mutate source/target to node refs)
+  const edges = data.edges.map(e => ({
+    source: e.source, target: e.target,
+    score: e.score, matched: e.matched,
+    _key: e.source + '-' + e.target,
+  }));
+  simulation.force('link').links(edges);
+
+  // Render edges
+  const edgeSel = edgesLayer.selectAll('line').data(edges, d => d._key);
+  edgeSel.exit().remove();
+  edgeSel.enter().append('line')
+    .merge(edgeSel)
+    .attr('class', d => d.matched ? 'edge-matched' : '')
+    .attr('stroke', d => d.matched ? '#ec4899' : '#374151')
+    .attr('stroke-width', d => d.matched ? 2.5 : 1)
+    .attr('stroke-opacity', d => d.matched ? 0.9 : Math.min(0.2 + d.score * 0.05, 0.6));
+
+  // Render nodes
+  const nodeSel = nodesLayer.selectAll('g.node').data(currentNodes, d => d.id);
+  nodeSel.exit().remove();
+
+  const nodeEnter = nodeSel.enter().append('g').attr('class', 'node')
+    .call(drag());
+  nodeEnter.append('circle')
+    .attr('r', 42)
+    .attr('stroke', '#111827')
+    .attr('stroke-width', 3);
+  nodeEnter.append('text')
+    .attr('class', 'sym')
+    .attr('text-anchor', 'middle')
+    .attr('dominant-baseline', 'central')
+    .attr('font-size', '26px')
+    .style('pointer-events', 'none');
+  nodeEnter.append('text')
+    .attr('class', 'lbl')
+    .attr('text-anchor', 'middle')
+    .attr('y', 58)
+    .attr('font-size', '11px')
+    .attr('fill', '#9ca3af')
+    .style('pointer-events', 'none');
+
+  const nodeAll = nodeEnter.merge(nodeSel);
+  nodeAll.select('circle')
+    .attr('fill', d => colorMap[d.color] || '#6b7280')
+    .attr('opacity', d => ['ready', 'matched'].includes(d.step) ? 1 : 0.5)
+    .style('filter', d =>
+      phase === 'revealed' && d.step === 'matched'
+        ? 'drop-shadow(0 0 10px #ec4899)'
+        : null
+    );
+  nodeAll.select('.sym').text(d => d.symbol || '🎭');
+  nodeAll.select('.lbl').text(d =>
+    phase === 'revealed' ? '@' + d.handle : (d.persona_name || '')
+  );
+
+  if (hasNew) simulation.alpha(0.4).restart();
+
+  // Empty state
+  document.getElementById('empty-state').style.display =
+    data.nodes.length === 0 ? 'flex' : 'none';
+
+  // Status labels
+  const labels = {
+    onboarding: 'Waiting for participants',
+    matching:   'Matchmaking in progress...',
+    revealed:   'Matches revealed! 🎉',
+  };
+  document.getElementById('phase-label').textContent = labels[phase] || phase;
+  document.getElementById('count-label').textContent =
+    data.nodes.length + ' participant' + (data.nodes.length !== 1 ? 's' : '');
+
+  // Activity ticker
+  if (data.activity && data.activity.length > 0) {
+    document.getElementById('ticker').textContent = data.activity[0];
+  }
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/bigscreen/graph-data');
+    if (res.ok) updateGraph(await res.json());
+  } catch (e) {
+    console.warn('graph poll error:', e);
+  }
+  setTimeout(poll, 5000);
+}
+
+window.addEventListener('resize', () => {
+  simulation.force('center', d3.forceCenter(w() / 2, h() / 2));
+  simulation.alpha(0.1).restart();
+});
+
+poll();
+</script>
+</body>
+</html>
+{{end}}
