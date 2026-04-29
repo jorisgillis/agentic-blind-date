@@ -171,27 +171,29 @@ curl -X POST http://localhost:8080/admin/reset
 
 ### How matching works
 
-Matching is a two-step process:
+Matching is a three-phase process (`agents.go`):
 
-**Step 1 — Greedy pairing** (`pairScore` + `greedyMatch` in `agents.go`)
+**Phase 1 — Candidate selection** (`pairScore` + `top5Candidates` + `collectCandidatePairs`)
 
-Before calling Mistral, the server scores every possible pair using a simple heuristic:
+For each participant, every other participant is scored with a heuristic:
 - +3 points per shared programming language
 - +1 point per identical answer to the same question
 
-All O(n²) pairs are scored, then sorted descending. A greedy sweep assigns each participant to their highest-scoring available partner. If the number of participants is odd, one person goes unmatched.
+Each participant keeps their top-5 candidates. All unique pairs across every top-5 list are collected — at most N×5 pairs, typically fewer after deduplication. This caps the number of Mistral calls at a manageable level regardless of event size.
 
-**Step 2 — Mistral scoring** (`generateMatch`)
+**Phase 2 — LLM scoring** (`generateMatch`)
 
-Each confirmed pair gets a Mistral API call that produces:
+Every unique candidate pair gets a Mistral API call, two running in parallel. Results are cached in memory so no pair is scored twice. Each call produces:
 - `score` — a 0–100 compatibility percentage
 - `reason` — a one-sentence humorous explanation
 - `red_flags` / `green_flags` — compatibility highlights
 - `icebreakers` — conversation starters tailored to both profiles
 
-**Why two steps?** `pairScore` runs in microseconds for 80 participants and ensures globally decent pairings. Mistral adds the personality, humor, and context that make the reveal moment fun — but is too slow (and expensive) to run for every possible combination.
+**Phase 3 — Greedy assignment from LLM scores**
 
-The same heuristic scores drive the big screen graph during onboarding: each node shows edges to its top-3 potential partners, so the audience can see affinity forming before the reveal.
+Candidate pairs are sorted by their Mistral score descending. A greedy sweep assigns each participant to their highest-scoring available partner. If a participant was not covered by any top-5 list (can happen with large odd-numbered groups), they fall back to a heuristic pair and get their own Mistral call.
+
+**Why three phases?** The heuristic narrows O(n²) possible pairs down to a manageable candidate set in microseconds. Mistral then makes the actual pairing decision based on full profile and interview context — not just language overlap. The big screen graph during onboarding uses the same heuristic scores to draw top-3 affinity edges per node, giving the audience a preview before the reveal.
 
 ### Database
 

@@ -113,6 +113,9 @@ Respond with ONLY valid JSON — no markdown:
 }
 
 // RunMatching pairs all ready participants and generates match results via Mistral.
+// Phase 1: heuristic top-5 per participant → candidate pairs.
+// Phase 2: LLM-score every unique candidate pair (concurrency=2, cached).
+// Phase 3: greedy assignment from LLM scores.
 func (a *AgentPipeline) RunMatching() error {
 	a.db.SetPhase("matching")
 	a.db.LogActivity("🔮 The matchmaker agents are at work...")
@@ -125,41 +128,101 @@ func (a *AgentPipeline) RunMatching() error {
 		return fmt.Errorf("need at least 2 ready participants, got %d", len(participants))
 	}
 
-	pairs := greedyMatch(participants)
+	// Phase 1: heuristic top-5 narrows the candidate pool
+	candidatePairs := collectCandidatePairs(participants)
+	a.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidate pairs...", len(candidatePairs)))
 
+	// Phase 2: LLM-score all candidate pairs, concurrency=2, in-memory cache
+	cache := map[string]*matchResult{}
+	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 5)
+	sem := make(chan struct{}, 2)
 
-	for _, pair := range pairs {
+	for _, pair := range candidatePairs {
 		wg.Add(1)
 		go func(p1, p2 *Participant) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			key := pairKey(p1, p2)
 
+			mu.Lock()
+			if _, exists := cache[key]; exists {
+				mu.Unlock()
+				return
+			}
+			mu.Unlock()
+
+			sem <- struct{}{}
 			result, err := a.generateMatch(p1, p2)
+			<-sem
+
 			if err != nil {
-				log.Printf("Match generation error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
-				result = &matchResult{
-					Score:       42,
-					Reason:      "The algorithm has spoken. We cannot explain.",
-					RedFlags:    []string{},
-					GreenFlags:  []string{"You're both here tonight"},
-					Icebreakers: []string{"What brings you to this meetup?", "What are you currently building?", "Best tech talk you've seen recently?"},
-				}
+				log.Printf("Match scoring error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
+				result = defaultMatchResult()
 			}
 
-			redJSON, _ := json.Marshal(result.RedFlags)
-			greenJSON, _ := json.Marshal(result.GreenFlags)
-			iceJSON, _ := json.Marshal(result.Icebreakers)
+			mu.Lock()
+			cache[key] = result
+			mu.Unlock()
 
-			a.db.SetMatched(p1.ID, p2.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
-			a.db.SetMatched(p2.ID, p1.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
-			a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", p1.PersonaName, p2.PersonaName, result.Score))
+			a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", p1.PersonaName, p2.PersonaName, result.Score))
 		}(pair[0], pair[1])
 	}
-
 	wg.Wait()
+
+	// Phase 3: greedy assignment using LLM scores
+	type llmPair struct {
+		pair  [2]*Participant
+		score int
+	}
+	var scored []llmPair
+	for _, pair := range candidatePairs {
+		if r := cache[pairKey(pair[0], pair[1])]; r != nil {
+			scored = append(scored, llmPair{pair, r.Score})
+		}
+	}
+	sort.Slice(scored, func(a, b int) bool { return scored[a].score > scored[b].score })
+
+	paired := map[string]bool{}
+	var finalPairs [][2]*Participant
+	for _, lp := range scored {
+		p1, p2 := lp.pair[0], lp.pair[1]
+		if !paired[p1.ID] && !paired[p2.ID] {
+			finalPairs = append(finalPairs, lp.pair)
+			paired[p1.ID] = true
+			paired[p2.ID] = true
+		}
+	}
+
+	// Fallback: any participant not covered by top-5 overlap gets heuristic-paired
+	var unmatched []*Participant
+	for _, p := range participants {
+		if !paired[p.ID] {
+			unmatched = append(unmatched, p)
+		}
+	}
+	for _, fp := range greedyMatch(unmatched) {
+		p1, p2 := fp[0], fp[1]
+		result, err := a.generateMatch(p1, p2)
+		if err != nil {
+			log.Printf("Fallback match error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
+			result = defaultMatchResult()
+		}
+		cache[pairKey(p1, p2)] = result
+		finalPairs = append(finalPairs, fp)
+	}
+
+	// Store results for all final pairs
+	for _, pair := range finalPairs {
+		p1, p2 := pair[0], pair[1]
+		result := cache[pairKey(p1, p2)]
+		redJSON, _ := json.Marshal(result.RedFlags)
+		greenJSON, _ := json.Marshal(result.GreenFlags)
+		iceJSON, _ := json.Marshal(result.Icebreakers)
+		a.db.SetMatched(p1.ID, p2.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
+		a.db.SetMatched(p2.ID, p1.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
+		a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", p1.PersonaName, p2.PersonaName, result.Score))
+	}
+
 	a.db.SetPhase("revealed")
 	a.db.LogActivity("🎉 All matches revealed!")
 	return nil
@@ -202,6 +265,62 @@ Interview answers: %v`,
 		return nil, fmt.Errorf("match parse error: %v (raw: %s)", err, response)
 	}
 	return &result, nil
+}
+
+func pairKey(a, b *Participant) string {
+	if a.ID < b.ID {
+		return a.ID + ":" + b.ID
+	}
+	return b.ID + ":" + a.ID
+}
+
+func top5Candidates(p *Participant, all []*Participant) []*Participant {
+	type scored struct {
+		participant *Participant
+		score       int
+	}
+	var candidates []scored
+	for _, other := range all {
+		if other.ID == p.ID {
+			continue
+		}
+		candidates = append(candidates, scored{other, pairScore(p, other)})
+	}
+	sort.Slice(candidates, func(a, b int) bool { return candidates[a].score > candidates[b].score })
+	k := 5
+	if len(candidates) < k {
+		k = len(candidates)
+	}
+	result := make([]*Participant, k)
+	for i := range k {
+		result[i] = candidates[i].participant
+	}
+	return result
+}
+
+func collectCandidatePairs(participants []*Participant) [][2]*Participant {
+	seen := map[string]bool{}
+	var pairs [][2]*Participant
+	for _, p := range participants {
+		for _, candidate := range top5Candidates(p, participants) {
+			key := pairKey(p, candidate)
+			if !seen[key] {
+				seen[key] = true
+				pairs = append(pairs, [2]*Participant{p, candidate})
+			}
+		}
+	}
+	return pairs
+}
+
+func defaultMatchResult() *matchResult {
+	return &matchResult{
+		Score:       42,
+		Reason:      "The algorithm has spoken. We cannot explain.",
+		RedFlags:    []string{},
+		GreenFlags:  []string{"You're both here tonight"},
+		Icebreakers: []string{"What brings you to this meetup?", "What are you currently building?", "Best tech talk you've seen recently?"},
+	}
 }
 
 // greedyMatch pairs participants by maximum language/answer overlap.
