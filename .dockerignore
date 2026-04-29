@@ -1,0 +1,27 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+agentic-blind-date
+agentic-blind-date.test
+test_scope
+
+# Database files
+blind_date.db
+blind_date.db-shm
+blind_date.db-wal
+
+# Local data (will be volume-mounted)
+data/
+
+# Environment files
+.env
+
+# Documentation
+AGENT_OVERVIEW.md
+
+# IDE
+.claude
+
+

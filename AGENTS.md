@@ -16,5 +16,16 @@ preferences and GitHub profiles.
 - SQLite3 storage
 - Mistral AI as LLM
 
+## Project Documentation
 
-
+For a comprehensive overview of the project architecture, components, workflow, and technical details, see:
+- **[AGENT_OVERVIEW.md](./AGENT_OVERVIEW.md)** - Complete project review including:
+  - Architecture diagrams
+  - Key components and their relationships
+  - AI pipeline workflow (RunSetup, RunMatching)
+  - Technical stack details
+  - Route mappings
+  - Data model and participant states
+  - Deployment instructions
+  - Strengths and improvement opportunities
+  - Full file structure

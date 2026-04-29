@@ -35,7 +35,11 @@ func loadDotEnv() {
 func main() {
 	loadDotEnv()
 
-	db, err := initDB("blind_date.db")
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "blind_date.db"
+	}
+	db, err := initDB(dbPath)
 	if err != nil {
 		log.Fatal("DB init:", err)
 	}
@@ -49,9 +53,14 @@ func main() {
 
 	h := newHandler(db, github, mistral)
 
+	addr := ":8080"
+	log.Println("Starting Agentic Blind Date on http://localhost" + addr)
+	log.Fatal(http.ListenAndServe(addr, buildMux(h)))
+}
+
+func buildMux(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 
-	// Root redirect to user landing
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -60,7 +69,6 @@ func main() {
 		http.Redirect(w, r, "/user", http.StatusFound)
 	})
 
-	// --- /user — participant flow ---
 	mux.HandleFunc("GET /user", h.Landing)
 	mux.HandleFunc("POST /user/join", h.Join)
 	mux.HandleFunc("GET /user/onboard/{id}", h.Onboard)
@@ -70,24 +78,19 @@ func main() {
 	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
 	mux.HandleFunc("GET /user/match/{id}", h.Match)
 
-	// --- /bigscreen — projector view ---
 	mux.HandleFunc("GET /bigscreen", h.Screen)
 	mux.HandleFunc("GET /bigscreen/state", h.ScreenState)
 	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
 
-	// --- /data — debug / testing (open for now) ---
 	mux.HandleFunc("GET /data", h.DataIndex)
 	mux.HandleFunc("GET /data/participants", h.DataParticipants)
 	mux.HandleFunc("GET /data/participant/{id}", h.DataParticipant)
 	mux.HandleFunc("GET /data/activity", h.DataActivity)
 	mux.HandleFunc("GET /data/state", h.DataState)
 
-	// --- /admin — host panel ---
 	mux.HandleFunc("GET /admin", h.Admin)
 	mux.HandleFunc("POST /admin/reveal", h.TriggerReveal)
 	mux.HandleFunc("POST /admin/reset", h.Reset)
 
-	addr := ":8080"
-	log.Println("Starting Agentic Blind Date on http://localhost" + addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	return mux
 }

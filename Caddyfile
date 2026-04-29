@@ -1,0 +1,11 @@
+{
+    email code@jorisgillis.name
+}
+
+meetup.jorisgillis.name {
+    reverse_proxy localhost:8080
+}
+
+localhost {
+    reverse_proxy localhost:8080
+}

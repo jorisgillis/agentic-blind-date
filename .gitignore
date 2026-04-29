@@ -4,3 +4,4 @@ agentic-blind-date
 blind_date.db
 blind_date.db-shm
 blind_date.db-wal
+e2e_test.go
