@@ -11,24 +11,37 @@ The app is inspired by the TV show [Blind Date](https://en.wikipedia.org/wiki/Bl
 Each participant runs through four AI agents in sequence, visible in real-time on their phone:
 
 1. **GitHub Fetch Agent** — pulls public profile data: languages, top repos, bio, contribution stats
-2. **Profile Agent** — uses Mistral to generate a funny anonymous persona ("The Grumpy Kernel King", "The YAML Wrangler") with a color-coded card
+2. **Profile Agent** — uses Mistral to generate a funny anonymous persona ("The Grumpy Kernel King", "The YAML Wrangler") with a unique color-coded card and animal emoji (first 10 participants each get a distinct animal)
 3. **Interviewer Agent** — asks 5 fixed opinionated questions (tabs vs spaces, deploy on Friday?, etc.) plus 3 questions tailored to the participant's GitHub profile
 4. **Matchmaker Agent** — after the host triggers the reveal, pairs all participants by compatibility and generates a score, explanation, red/green flags, and conversation starters for each pair
 
 ### The big screen
 
 `/bigscreen` is designed to run on a projector. It shows:
-- Anonymous persona cards populating in real-time as people join
+- A D3 force-directed graph of persona nodes that float and repel each other
+- During onboarding: affinity edges connect each node to its top-3 potential partners (heuristic scoring), giving the audience a live preview of who might match with whom
+- A QR code in the header so latecomers can scan and join directly
 - A live activity ticker at the bottom ("🎭 Crafting persona for @torvalds...")
-- A simultaneous flip of all cards at the reveal moment, showing names and compatibility scores
+- At the reveal: match edges replace affinity edges and pulse, showing confirmed pairs and compatibility scores
+
+### The match page
+
+After the reveal, each participant's phone shows:
+- Their matched partner's persona card with compatibility score and a one-sentence reason
+- Green flags and red flags for the pairing
+- Conversation starters tailored to both profiles
+- A "Find them in the room" panel showing the partner's emoji and color
+- An "Others at the event" grid with everyone else's persona — useful for broader networking beyond the direct match
+
+Late joiners who arrive after the reveal see a "You just missed it!" message rather than waiting indefinitely.
 
 ### Routes
 
 | Path | Who | What |
 |---|---|---|
 | `/user` | Participants | Register, complete Q&A, wait for reveal, see match |
-| `/bigscreen` | Projector | Live persona pool + simultaneous reveal |
-| `/admin` | Host | Trigger reveal, reset event |
+| `/bigscreen` | Projector | Live force graph + simultaneous reveal |
+| `/admin` | Host | Trigger reveal, reset event (auto-refreshes every 5 seconds) |
 | `/data` | Debug | Inspect all participants, activity log, event state |
 
 ## Running
@@ -55,10 +68,11 @@ go build -o agentic-blind-date .
 ### Start the server
 
 ```bash
-export $(cat .env | xargs)
 ./agentic-blind-date
 # → Starting Agentic Blind Date on http://localhost:8080
 ```
+
+The server loads `.env` automatically — no `export` step needed. Real environment variables set before launch take precedence over `.env` values.
 
 The database (`blind_date.db`) is created automatically on first run.
 
@@ -75,6 +89,7 @@ The database (`blind_date.db`) is created automatically on first run.
 
 - **Go** — standard library `net/http`, no web framework
 - **HTMX** — all interactivity via server-side HTML fragments, no JavaScript written by hand
+- **D3.js** — force-directed graph on the big screen
 - **Tailwind CSS** — via Play CDN, no build step
 - **SQLite3** — via `github.com/mattn/go-sqlite3` (requires CGO / a C compiler)
 - **Mistral AI** — plain HTTP calls to `api.mistral.ai/v1/chat/completions`
@@ -82,20 +97,20 @@ The database (`blind_date.db`) is created automatically on first run.
 ### Project layout
 
 ```
-main.go          server setup, route registration
+main.go          server setup, route registration, .env auto-loading
 db.go            SQLite schema, Participant type, all queries
 github.go        GitHub public API client
 mistral.go       Mistral chat completion client
 agents.go        agent pipeline (RunSetup, RunMatching, greedy matching)
-handlers.go      HTTP handlers + /data JSON endpoints
+handlers.go      HTTP handlers + /data JSON endpoints + /bigscreen/graph-data
 questions.go     fixed Q&A question definitions
 
 templates/
   landing.html           /user — GitHub handle entry
   onboard.html           /user/onboard/{id} — pipeline progress
   wait.html              /user/wait/{id} — waiting room
-  match.html             /user/match/{id} — match reveal
-  screen.html            /bigscreen — projector view
+  match.html             /user/match/{id} — match reveal + others grid
+  screen.html            /bigscreen — D3 force graph projector view
   admin.html             /admin — host panel
   data.html              /data — debug overview
   fragments.html         HTMX partials (pipeline step, question, wait status, screen state)
@@ -175,6 +190,8 @@ Each confirmed pair gets a Mistral API call that produces:
 - `icebreakers` — conversation starters tailored to both profiles
 
 **Why two steps?** `pairScore` runs in microseconds for 80 participants and ensures globally decent pairings. Mistral adds the personality, humor, and context that make the reveal moment fun — but is too slow (and expensive) to run for every possible combination.
+
+The same heuristic scores drive the big screen graph during onboarding: each node shows edges to its top-3 potential partners, so the audience can see affinity forming before the reveal.
 
 ### Database
 
