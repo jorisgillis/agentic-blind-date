@@ -48,7 +48,7 @@ func main() {
 	github := &GitHubClient{token: os.Getenv("GITHUB_TOKEN")}
 	mistral := &MistralClient{
 		apiKey: os.Getenv("MISTRAL_API_KEY"),
-		model:  "mistral-small-latest",
+		model:  "mistral-medium-latest",
 	}
 
 	h := newHandler(db, github, mistral)

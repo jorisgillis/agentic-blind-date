@@ -32,8 +32,13 @@ var FixedQuestions = []Question{
 		Text:    "Your git commit style?",
 		Options: []string{"fix stuff", "Complete descriptive sentences", "Conventional commits (feat: ...)"},
 	},
+	{
+		ID:      "5",
+		Text:    "Which AI coding assistant do you prefer?",
+		Options: []string{"Gemini", "Claude", "CoPilot", "None - I'm old school"},
+	},
 }
 
-const TotalFixedQuestions = 5
+const TotalFixedQuestions = 6
 const TotalCustomQuestions = 3
 const TotalQuestions = TotalFixedQuestions + TotalCustomQuestions

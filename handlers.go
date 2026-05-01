@@ -202,6 +202,15 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	if idx+1 >= TotalQuestions {
 		h.db.UpdatePipelineStep(p.ID, "ready")
 		h.db.LogActivity(fmt.Sprintf("✅ %s finished the interview!", p.PersonaName))
+		// Trigger continuous matching - match this participant against existing ready pool
+		go func() {
+			pFull, err := h.db.GetParticipant(p.ID)
+			if err == nil {
+				if err := h.agents.RunContinuousMatching(pFull); err != nil {
+					log.Printf("Continuous matching error for %s: %v", p.PersonaName, err)
+				}
+			}
+		}()
 		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
 		return
 	}
@@ -361,33 +370,52 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 	edges := make([]graphEdge, 0)
 	seen := map[string]bool{}
 
-	if phase == "revealed" {
-		for _, p := range participants {
-			if p.MatchedWith == "" {
-				continue
-			}
-			key := p.ID + ":" + p.MatchedWith
-			rev := p.MatchedWith + ":" + p.ID
-			if seen[key] || seen[rev] {
-				continue
-			}
-			seen[key] = true
-			edges = append(edges, graphEdge{
-				Source:  p.ID,
-				Target:  p.MatchedWith,
-				Score:   p.CompatScore,
-				Matched: true,
-			})
+	// Always show match edges when participants are matched (regardless of phase)
+	for _, p := range participants {
+		if p.MatchedWith == "" {
+			continue
 		}
-	} else {
+		key := p.ID + ":" + p.MatchedWith
+		rev := p.MatchedWith + ":" + p.ID
+		if seen[key] || seen[rev] {
+			continue
+		}
+		seen[key] = true
+		edges = append(edges, graphEdge{
+			Source:  p.ID,
+			Target:  p.MatchedWith,
+			Score:   p.CompatScore,
+			Matched: true,
+		})
+	}
+
+	// Also show heuristic affinity edges for ready participants who aren't matched yet
+	// Check if there are any ready but unmatched participants
+	hasReadyUnmatched := false
+	for _, p := range participants {
+		if p.PipelineStep == "ready" && p.MatchedWith == "" {
+			hasReadyUnmatched = true
+			break
+		}
+	}
+
+	if hasReadyUnmatched {
 		type scored struct {
 			id    string
 			score int
 		}
 		topEdges := map[string][]scored{}
 		for i, a := range participants {
+			// Only consider ready, unmatched participants for heuristic edges
+			if a.PipelineStep != "ready" || a.MatchedWith != "" {
+				continue
+			}
 			for j, b := range participants {
 				if i >= j {
+					continue
+				}
+				// Only consider ready, unmatched candidates
+				if b.PipelineStep != "ready" || b.MatchedWith != "" {
 					continue
 				}
 				s := pairScore(a, b)
@@ -396,6 +424,9 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		for _, p := range participants {
+			if p.PipelineStep != "ready" || p.MatchedWith != "" {
+				continue
+			}
 			candidates := topEdges[p.ID]
 			sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
 			if len(candidates) > 3 {
@@ -524,20 +555,11 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /admin/reveal
+// POST /admin/reveal - Deprecated with continuous matching, but kept for compatibility
 func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
-	phase, _ := h.db.GetPhase()
-	if phase != "onboarding" {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		return
-	}
-	go func() {
-		if err := h.agents.RunMatching(); err != nil {
-			log.Printf("Matching error: %v", err)
-			h.db.SetPhase("onboarding")
-			h.db.LogActivity("⚠️ Matching failed: " + err.Error())
-		}
-	}()
+	// With continuous matching, this endpoint is no longer needed
+	// But we keep it for backward compatibility - it just redirects back
+	h.db.LogActivity("ℹ️ Admin triggered reveal (continuous matching is active)")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 

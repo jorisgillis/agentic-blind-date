@@ -18,44 +18,18 @@
 
     <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
       <div class="flex justify-between text-sm">
-        <span class="text-gray-400">Phase</span>
-        <span class="font-mono font-bold
-          {{if eq .Phase "onboarding"}}text-yellow-400
-          {{else if eq .Phase "matching"}}text-blue-400
-          {{else if eq .Phase "revealed"}}text-green-400
-          {{end}}">{{.Phase}}</span>
-      </div>
-      <div class="flex justify-between text-sm">
         <span class="text-gray-400">Participants</span>
         <span class="font-bold">{{.Count}}</span>
       </div>
       <div class="flex justify-between text-sm">
-        <span class="text-gray-400">Ready to match</span>
+        <span class="text-gray-400">Ready</span>
         <span class="font-bold">{{.Ready}}</span>
       </div>
     </div>
 
-    {{if eq .Phase "onboarding"}}
-    <form action="/admin/reveal" method="POST">
-      <button
-        type="submit"
-        {{if lt .Ready 2}}disabled{{end}}
-        class="w-full bg-pink-600 hover:bg-pink-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-bold rounded-xl py-4 text-lg transition-colors"
-        onclick="return confirm('Trigger the reveal? This will match all {{.Ready}} ready participants.')"
-      >
-        💘 Trigger the Reveal!
-        {{if lt .Ready 2}}<br><span class="text-sm font-normal">(need at least 2 ready)</span>{{end}}
-      </button>
-    </form>
-    {{else if eq .Phase "matching"}}
-    <div class="text-center py-4 text-blue-400 font-bold animate-pulse">
-      🔮 Matching in progress...
+    <div class="text-center py-4 text-indigo-400 font-bold">
+      ✨ Continuous matching active
     </div>
-    {{else if eq .Phase "revealed"}}
-    <div class="text-center py-4 text-green-400 font-bold">
-      🎉 Matches revealed!
-    </div>
-    {{end}}
 
     <form action="/admin/reset" method="POST">
       <button

@@ -13,6 +13,7 @@ type AgentPipeline struct {
 	db      *DB
 	github  *GitHubClient
 	mistral *MistralClient
+	matchMu sync.Mutex // Serializes matching operations to prevent race conditions
 }
 
 type personaResult struct {
@@ -117,6 +118,9 @@ Respond with ONLY valid JSON — no markdown:
 // Phase 2: LLM-score every unique candidate pair (concurrency=2, cached).
 // Phase 3: greedy assignment from LLM scores.
 func (a *AgentPipeline) RunMatching() error {
+	a.matchMu.Lock()
+	defer a.matchMu.Unlock()
+
 	a.db.SetPhase("matching")
 	a.db.LogActivity("🔮 The matchmaker agents are at work...")
 
@@ -375,6 +379,148 @@ func pairScore(a, b *Participant) int {
 		}
 	}
 	return score
+}
+
+// RunContinuousMatching matches a single new ready participant against the existing pool of ready, unmatched participants.
+// Uses the same 3-phase algorithm: heuristic top-5, LLM scoring, greedy selection.
+func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error {
+	a.matchMu.Lock()
+	defer a.matchMu.Unlock()
+
+	a.db.LogActivity(fmt.Sprintf("🔮 Matching %s against existing pool...", newParticipant.PersonaName))
+
+	// Get all ready participants who haven't been matched yet (excluding the new one)
+	others, err := a.db.GetReadyUnmatched()
+	if err != nil {
+		return err
+	}
+
+	// Filter out the new participant if somehow included
+	var pool []*Participant
+	for _, p := range others {
+		if p.ID != newParticipant.ID {
+			pool = append(pool, p)
+		}
+	}
+
+	if len(pool) == 0 {
+		// No one to match with yet
+		a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but waiting for more participants...", newParticipant.PersonaName))
+		return nil
+	}
+
+	// Phase 1: Get top-5 candidates from the pool for the new participant
+	candidates := top5Candidates(newParticipant, pool)
+	if len(candidates) == 0 {
+		return fmt.Errorf("no candidates found for %s", newParticipant.PersonaName)
+	}
+
+	a.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidates for %s...", len(candidates), newParticipant.PersonaName))
+
+	// Phase 2: LLM-score all candidate pairs
+	cache := map[string]*matchResult{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 2)
+
+	for _, candidate := range candidates {
+		wg.Add(1)
+		go func(p1, p2 *Participant) {
+			defer wg.Done()
+			key := pairKey(p1, p2)
+
+			mu.Lock()
+			if _, exists := cache[key]; exists {
+				mu.Unlock()
+				return
+			}
+			mu.Unlock()
+
+			sem <- struct{}{}
+			result, err := a.generateMatch(p1, p2)
+			<-sem
+
+			if err != nil {
+				log.Printf("Match scoring error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
+				result = defaultMatchResult()
+			}
+
+			mu.Lock()
+			cache[key] = result
+			mu.Unlock()
+
+			a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", p1.PersonaName, p2.PersonaName, result.Score))
+		}(newParticipant, candidate)
+	}
+	wg.Wait()
+
+	// Phase 3: Pick the best scoring candidate that is still unmatched
+	type scoredCandidate struct {
+		participant *Participant
+		score       int
+	}
+	var scored []scoredCandidate
+	for _, candidate := range candidates {
+		if r := cache[pairKey(newParticipant, candidate)]; r != nil {
+			scored = append(scored, scoredCandidate{candidate, r.Score})
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(scored, func(a, b int) bool { return scored[a].score > scored[b].score })
+
+	// Find the first candidate that is still unmatched
+	var bestMatch *Participant
+	for _, sc := range scored {
+		// Check if this candidate is still unmatched
+		candidate, err := a.db.GetParticipant(sc.participant.ID)
+		if err != nil {
+			continue
+		}
+		if candidate.MatchedWith == "" && candidate.PipelineStep == "ready" {
+			bestMatch = candidate
+			break
+		}
+	}
+
+	if bestMatch == nil {
+		// All candidates were already matched, try heuristic fallback
+		a.db.LogActivity(fmt.Sprintf("⚠️ All candidates for %s were already matched, trying fallback...", newParticipant.PersonaName))
+		// Try to find any ready unmatched participant (even if not in top-5)
+		for _, p := range pool {
+			candidate, err := a.db.GetParticipant(p.ID)
+			if err != nil {
+				continue
+			}
+			if candidate.MatchedWith == "" && candidate.PipelineStep == "ready" {
+				bestMatch = candidate
+				break
+			}
+		}
+	}
+
+	if bestMatch != nil {
+		// Get the match result (from cache or generate)
+		result := cache[pairKey(newParticipant, bestMatch)]
+		if result == nil {
+			// Fallback: generate a default match result
+			result = defaultMatchResult()
+		}
+
+		// Store results for both participants
+		redJSON, _ := json.Marshal(result.RedFlags)
+		greenJSON, _ := json.Marshal(result.GreenFlags)
+		iceJSON, _ := json.Marshal(result.Icebreakers)
+
+		a.db.SetMatched(newParticipant.ID, bestMatch.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
+		a.db.SetMatched(bestMatch.ID, newParticipant.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
+
+		a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", newParticipant.PersonaName, bestMatch.PersonaName, result.Score))
+	} else {
+		a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newParticipant.PersonaName))
+	}
+
+	return nil
 }
 
 func extractJSON(s string) string {

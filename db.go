@@ -203,6 +203,25 @@ func (db *DB) GetAllByStep(step string) ([]*Participant, error) {
 	return out, rows.Err()
 }
 
+func (db *DB) GetReadyUnmatched() ([]*Participant, error) {
+	// Get participants who are ready and not yet matched
+	rows, err := db.Query(selectParticipant+` WHERE pipeline_step = 'ready' AND (matched_with = '' OR matched_with IS NULL) ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*Participant
+	for rows.Next() {
+		p, err := scanParticipant(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) GetPhase() (string, error) {
 	var phase string
 	err := db.QueryRow(`SELECT value FROM event_state WHERE key = 'phase'`).Scan(&phase)
