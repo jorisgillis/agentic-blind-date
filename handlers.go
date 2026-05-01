@@ -183,10 +183,6 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	answer := strings.TrimSpace(r.FormValue("answer"))
-	if answer == "" {
-		http.Error(w, "answer required", 400)
-		return
-	}
 
 	var answers map[string]string
 	json.Unmarshal([]byte(p.AnswersJSON), &answers)
@@ -389,63 +385,46 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Also show heuristic affinity edges for ready participants who aren't matched yet
-	// Check if there are any ready but unmatched participants
-	hasReadyUnmatched := false
-	for _, p := range participants {
-		if p.PipelineStep == "ready" && p.MatchedWith == "" {
-			hasReadyUnmatched = true
-			break
+	// Show heuristic runner-up edges for all participants (top-2 after their actual match)
+	type scored struct {
+		id    string
+		score int
+	}
+	topEdges := map[string][]scored{}
+	for i, a := range participants {
+		for j, b := range participants {
+			if i >= j {
+				continue
+			}
+			key := a.ID + ":" + b.ID
+			rev := b.ID + ":" + a.ID
+			if seen[key] || seen[rev] {
+				continue
+			}
+			s := pairScore(a, b)
+			topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, s})
+			topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, s})
 		}
 	}
-
-	if hasReadyUnmatched {
-		type scored struct {
-			id    string
-			score int
+	for _, p := range participants {
+		candidates := topEdges[p.ID]
+		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+		if len(candidates) > 2 {
+			candidates = candidates[:2]
 		}
-		topEdges := map[string][]scored{}
-		for i, a := range participants {
-			// Only consider ready, unmatched participants for heuristic edges
-			if a.PipelineStep != "ready" || a.MatchedWith != "" {
+		for _, c := range candidates {
+			key := p.ID + ":" + c.id
+			rev := c.id + ":" + p.ID
+			if seen[key] || seen[rev] {
 				continue
 			}
-			for j, b := range participants {
-				if i >= j {
-					continue
-				}
-				// Only consider ready, unmatched candidates
-				if b.PipelineStep != "ready" || b.MatchedWith != "" {
-					continue
-				}
-				s := pairScore(a, b)
-				topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, s})
-				topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, s})
-			}
-		}
-		for _, p := range participants {
-			if p.PipelineStep != "ready" || p.MatchedWith != "" {
-				continue
-			}
-			candidates := topEdges[p.ID]
-			sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
-			if len(candidates) > 3 {
-				candidates = candidates[:3]
-			}
-			for _, c := range candidates {
-				key := p.ID + ":" + c.id
-				rev := c.id + ":" + p.ID
-				if seen[key] || seen[rev] {
-					continue
-				}
-				seen[key] = true
-				edges = append(edges, graphEdge{
-					Source:  p.ID,
-					Target:  c.id,
-					Score:   c.score,
-					Matched: false,
-				})
-			}
+			seen[key] = true
+			edges = append(edges, graphEdge{
+				Source:  p.ID,
+				Target:  c.id,
+				Score:   c.score,
+				Matched: false,
+			})
 		}
 	}
 

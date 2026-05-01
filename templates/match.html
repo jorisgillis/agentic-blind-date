@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Blind Date — Your Match!</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     @keyframes pop-in {
       0% { transform: scale(0.8); opacity: 0; }
@@ -15,14 +16,15 @@
     .pop-in { animation: pop-in 0.5s ease-out forwards; }
   </style>
 </head>
-<body class="bg-gray-950 text-white min-h-screen px-4 py-10">
+<body class="{{.Me.PersonaColor}} text-gray-900 min-h-screen px-4 py-10">
   <div class="max-w-md mx-auto">
 
     <div class="text-center mb-8 pop-in">
-      <div class="text-5xl mb-2">💘</div>
-      <h1 class="text-3xl font-black">It's a match!</h1>
+      <div class="text-8xl mb-3">{{.Me.PersonaSymbol}}</div>
+      <div class="text-4xl mb-2">💘</div>
+      <h1 class="text-3xl font-black text-gray-900">It's a match!</h1>
       {{if .Match}}
-      <p class="text-gray-400 mt-1">{{.Me.CompatScore}}% compatibility</p>
+      <p class="text-gray-700 mt-1">{{.Me.CompatScore}}% compatibility</p>
       {{end}}
     </div>
 
@@ -31,7 +33,7 @@
 
     {{/* Compatibility meter */}}
     <div class="mb-6">
-      <div class="h-3 bg-gray-800 rounded-full overflow-hidden">
+      <div class="h-3 bg-black/20 rounded-full overflow-hidden">
         <div
           class="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full transition-all duration-1000"
           style="width: {{.Me.CompatScore}}%"
@@ -40,18 +42,18 @@
     </div>
 
     {{/* Match card */}}
-    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
+    <div class="bg-black/15 border border-black/10 rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
       <div class="flex items-center gap-4">
-        <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0">
+        <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
           {{$m.PersonaSymbol}}
         </div>
         <div>
-          <p class="font-bold text-lg">{{$m.PersonaName}}</p>
-          <p class="text-gray-400 text-sm">@{{$m.GitHubHandle}}</p>
+          <p class="font-bold text-lg text-gray-900">{{$m.PersonaName}}</p>
+          <p class="text-gray-700 text-sm">@{{$m.GitHubHandle}}</p>
         </div>
       </div>
       {{if .Me.CompatReason}}
-      <p class="mt-4 text-gray-300 italic text-sm">"{{.Me.CompatReason}}"</p>
+      <p class="mt-4 text-gray-800 italic text-sm" data-md>"{{.Me.CompatReason}}"</p>
       {{end}}
     </div>
 
@@ -59,18 +61,18 @@
     {{if or .GreenFlags .RedFlags}}
     <div class="grid grid-cols-2 gap-3 mb-4">
       {{if .GreenFlags}}
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
-        <p class="text-green-400 font-bold text-sm mb-2">✅ Green flags</p>
+      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+        <p class="text-green-800 font-bold text-sm mb-2">✅ Green flags</p>
         {{range .GreenFlags}}
-        <p class="text-gray-300 text-sm">• {{.}}</p>
+        <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
         {{end}}
       </div>
       {{end}}
       {{if .RedFlags}}
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
-        <p class="text-red-400 font-bold text-sm mb-2">🚩 Red flags</p>
+      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+        <p class="text-red-800 font-bold text-sm mb-2">🚩 Red flags</p>
         {{range .RedFlags}}
-        <p class="text-gray-300 text-sm">• {{.}}</p>
+        <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
         {{end}}
       </div>
       {{end}}
@@ -79,23 +81,23 @@
 
     {{/* Icebreakers */}}
     {{if .Icebreakers}}
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 pop-in" style="animation-delay:0.3s">
-      <p class="text-indigo-400 font-bold text-sm mb-3">💬 Conversation starters</p>
+    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in" style="animation-delay:0.3s">
+      <p class="text-indigo-800 font-bold text-sm mb-3">💬 Conversation starters</p>
       {{range .Icebreakers}}
-      <p class="text-gray-300 text-sm mb-2">→ {{.}}</p>
+      <p class="text-gray-800 text-sm mb-2" data-md>→ {{.}}</p>
       {{end}}
     </div>
     {{end}}
 
     {{/* Others at the event */}}
     {{if .Others}}
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 pop-in mt-4" style="animation-delay:0.6s">
-      <p class="text-gray-400 font-bold text-sm mb-3">👥 Others at the event</p>
+    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mt-4" style="animation-delay:0.6s">
+      <p class="text-gray-700 font-bold text-sm mb-3">👥 Others at the event</p>
       <div class="grid grid-cols-3 gap-3">
         {{range .Others}}
         <div class="flex flex-col items-center text-center">
-          <div class="w-12 h-12 rounded-xl {{.PersonaColor}} flex items-center justify-center text-xl mb-1">{{.PersonaSymbol}}</div>
-          <p class="text-xs font-bold leading-tight">{{if .PersonaName}}{{.PersonaName}}{{else}}@{{.GitHubHandle}}{{end}}</p>
+          <div class="w-12 h-12 rounded-xl {{.PersonaColor}} flex items-center justify-center text-xl mb-1 shadow-sm">{{.PersonaSymbol}}</div>
+          <p class="text-xs font-bold leading-tight text-gray-900">{{if .PersonaName}}{{.PersonaName}}{{else}}@{{.GitHubHandle}}{{end}}</p>
           <p class="text-gray-600 text-xs">@{{.GitHubHandle}}</p>
         </div>
         {{end}}
@@ -104,28 +106,36 @@
     {{end}}
 
     {{/* Find your partner in the room */}}
-    <div class="bg-gray-900 border border-pink-900/40 rounded-xl p-5 pop-in mt-4" style="animation-delay:0.45s">
-      <p class="text-pink-400 font-bold text-sm mb-3">📍 Find them in the room</p>
-      <p class="text-gray-400 text-sm mb-3">Look for the person with:</p>
+    <div class="bg-black/15 border border-pink-400/40 rounded-xl p-5 pop-in mt-4" style="animation-delay:0.45s">
+      <p class="text-pink-800 font-bold text-sm mb-3">📍 Find them in the room</p>
+      <p class="text-gray-700 text-sm mb-3">Look for the person with:</p>
       <div class="flex items-center gap-4">
         <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-3xl flex-shrink-0 shadow-lg">
           {{$m.PersonaSymbol}}
         </div>
         <div>
-          <p class="text-white text-lg font-bold">{{$m.PersonaSymbol}} on a {{colorName $m.PersonaColor}} background</p>
-          <p class="text-gray-500 text-xs mt-0.5">That's {{$m.PersonaName}}</p>
+          <p class="text-gray-900 text-lg font-bold">{{$m.PersonaSymbol}} on a {{colorName $m.PersonaColor}} background</p>
+          <p class="text-gray-600 text-xs mt-0.5">That's {{$m.PersonaName}}</p>
         </div>
       </div>
     </div>
 
     {{else}}
-    <div class="text-center text-gray-500 py-12">
+    <div class="text-center text-gray-700 py-12">
       <p>Hmm, we couldn't find your match yet.</p>
       <p class="text-sm mt-2">Refresh in a moment.</p>
     </div>
     {{end}}
 
   </div>
+  <script>
+    function renderMd() {
+      document.querySelectorAll('[data-md]').forEach(el => {
+        el.innerHTML = marked.parseInline(el.textContent);
+      });
+    }
+    document.addEventListener('DOMContentLoaded', renderMd);
+  </script>
 </body>
 </html>
 {{end}}

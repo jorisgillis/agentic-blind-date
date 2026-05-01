@@ -154,9 +154,10 @@ function updateGraph(data) {
   edgeSel.enter().append('line')
     .merge(edgeSel)
     .attr('class', d => d.matched ? 'edge-matched' : '')
-    .attr('stroke', d => d.matched ? '#ec4899' : '#374151')
-    .attr('stroke-width', d => d.matched ? 2.5 : 1)
-    .attr('stroke-opacity', d => d.matched ? 0.9 : Math.min(0.2 + d.score * 0.05, 0.6));
+    .attr('stroke', d => d.matched ? '#ec4899' : '#3b82f6')
+    .attr('stroke-width', d => d.matched ? 3.5 : 1)
+    .attr('stroke-dasharray', d => d.matched ? null : '6,4')
+    .attr('stroke-opacity', d => d.matched ? 0.9 : 0.45);
 
   // Render nodes
   const nodeSel = nodesLayer.selectAll('g.node').data(currentNodes, d => d.id);
@@ -186,11 +187,11 @@ function updateGraph(data) {
   nodeAll.select('circle')
     .attr('fill', d => colorMap[d.color] || '#6b7280')
     .attr('opacity', d => ['ready', 'matched'].includes(d.step) ? 1 : 0.5)
-    .style('filter', d =>
-      phase === 'revealed' && d.step === 'matched'
-        ? 'drop-shadow(0 0 10px #ec4899)'
-        : null
-    );
+    .style('filter', d => {
+      if (phase === 'revealed' && d.step === 'matched') return 'drop-shadow(0 0 10px #ec4899)';
+      if (phase === 'matching') return 'drop-shadow(0 0 8px #fde047)';
+      return null;
+    });
   nodeAll.select('.sym').text(d => d.symbol || '🎭');
   nodeAll.select('.lbl').text(d =>
     phase === 'revealed' ? '@' + d.handle : (d.persona_name || '')
@@ -203,12 +204,17 @@ function updateGraph(data) {
     data.nodes.length === 0 ? 'flex' : 'none';
 
   // Status labels
-  const labels = {
-    onboarding: 'Waiting for participants',
-    matching:   'Matchmaking in progress...',
-    revealed:   'Matches revealed! 🎉',
-  };
-  document.getElementById('phase-label').textContent = labels[phase] || phase;
+  const phaseEl = document.getElementById('phase-label');
+  if (phase === 'matching') {
+    phaseEl.textContent = '⚡ Matchmaking in progress...';
+    phaseEl.classList.add('animate-pulse', 'text-yellow-300', 'font-bold');
+    phaseEl.classList.remove('text-gray-400');
+  } else {
+    const labels = { onboarding: 'Waiting for participants', revealed: 'Matches revealed! 🎉' };
+    phaseEl.textContent = labels[phase] || phase;
+    phaseEl.classList.remove('animate-pulse', 'text-yellow-300', 'font-bold');
+    phaseEl.classList.add('text-gray-400');
+  }
   document.getElementById('count-label').textContent =
     data.nodes.length + ' participant' + (data.nodes.length !== 1 ? 's' : '');
 

@@ -403,10 +403,23 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 		}
 	}
 
+	breakingExistingMatch := false
 	if len(pool) == 0 {
-		// No one to match with yet
-		a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but waiting for more participants...", newParticipant.PersonaName))
-		return nil
+		// All existing participants are matched — consider breaking the weakest pair
+		allParticipants, _ := a.db.GetAllParticipants()
+		var matched []*Participant
+		for _, p := range allParticipants {
+			if p.PipelineStep == "matched" && p.MatchedWith != "" && p.ID != newParticipant.ID {
+				matched = append(matched, p)
+			}
+		}
+		if len(matched) == 0 {
+			a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newParticipant.PersonaName))
+			return nil
+		}
+		a.db.LogActivity(fmt.Sprintf("🔄 All slots filled — evaluating if %s fits better somewhere...", newParticipant.PersonaName))
+		pool = matched
+		breakingExistingMatch = true
 	}
 
 	// Phase 1: Get top-5 candidates from the pool for the new participant
@@ -469,24 +482,22 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 	// Sort by score descending
 	sort.Slice(scored, func(a, b int) bool { return scored[a].score > scored[b].score })
 
-	// Find the first candidate that is still unmatched
+	// Find the best candidate — if breaking an existing match, any matched candidate is valid
 	var bestMatch *Participant
 	for _, sc := range scored {
-		// Check if this candidate is still unmatched
 		candidate, err := a.db.GetParticipant(sc.participant.ID)
 		if err != nil {
 			continue
 		}
-		if candidate.MatchedWith == "" && candidate.PipelineStep == "ready" {
+		if breakingExistingMatch || (candidate.MatchedWith == "" && candidate.PipelineStep == "ready") {
 			bestMatch = candidate
 			break
 		}
 	}
 
-	if bestMatch == nil {
+	if bestMatch == nil && !breakingExistingMatch {
 		// All candidates were already matched, try heuristic fallback
 		a.db.LogActivity(fmt.Sprintf("⚠️ All candidates for %s were already matched, trying fallback...", newParticipant.PersonaName))
-		// Try to find any ready unmatched participant (even if not in top-5)
 		for _, p := range pool {
 			candidate, err := a.db.GetParticipant(p.ID)
 			if err != nil {
@@ -500,10 +511,17 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 	}
 
 	if bestMatch != nil {
+		// If the best match was already paired, break that pair first
+		if bestMatch.MatchedWith != "" {
+			formerPartnerID := bestMatch.MatchedWith
+			a.db.UnmatchParticipant(bestMatch.ID)
+			a.db.UnmatchParticipant(formerPartnerID)
+			a.db.LogActivity(fmt.Sprintf("🔄 Breaking %s's previous match to accommodate %s", bestMatch.PersonaName, newParticipant.PersonaName))
+		}
+
 		// Get the match result (from cache or generate)
 		result := cache[pairKey(newParticipant, bestMatch)]
 		if result == nil {
-			// Fallback: generate a default match result
 			result = defaultMatchResult()
 		}
 

@@ -222,6 +222,11 @@ func (db *DB) GetReadyUnmatched() ([]*Participant, error) {
 	return out, rows.Err()
 }
 
+func (db *DB) UnmatchParticipant(id string) error {
+	_, err := db.Exec(`UPDATE participants SET matched_with='', compat_score=0, compat_reason='', pipeline_step='ready' WHERE id=?`, id)
+	return err
+}
+
 func (db *DB) GetPhase() (string, error) {
 	var phase string
 	err := db.QueryRow(`SELECT value FROM event_state WHERE key = 'phase'`).Scan(&phase)

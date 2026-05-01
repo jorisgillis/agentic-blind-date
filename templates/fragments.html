@@ -55,31 +55,38 @@
   </div>
 
   <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-    <p class="font-semibold text-lg mb-5">{{.Question.Text}}</p>
+    <p class="font-semibold text-lg mb-5" data-md>{{.Question.Text}}</p>
 
+    {{if .Question.Options}}
     <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3">
-      {{if .Question.Options}}
-        {{range .Question.Options}}
-        <button
-          type="submit"
-          name="answer"
-          value="{{.}}"
-          class="w-full text-left bg-gray-800 hover:bg-indigo-800 border border-gray-700 hover:border-indigo-500 rounded-xl px-4 py-3 text-sm transition-colors"
-        >{{.}}</button>
-        {{end}}
-      {{else}}
-        <div class="flex gap-2">
-          <input
-            type="text"
-            name="answer"
-            required
-            placeholder="Type your answer..."
-            class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-          />
-          <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-4 py-3 text-sm font-bold transition-colors">→</button>
-        </div>
+      {{range .Question.Options}}
+      <button
+        type="submit"
+        name="answer"
+        value="{{.}}"
+        class="w-full text-left bg-gray-800 hover:bg-indigo-800 border border-gray-700 hover:border-indigo-500 rounded-xl px-4 py-3 text-sm transition-colors"
+      >{{.}}</button>
       {{end}}
     </form>
+    {{else}}
+    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3">
+      <div class="flex gap-2">
+        <input
+          type="text"
+          name="answer"
+          placeholder="Type your answer..."
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+        />
+        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-4 py-3 text-sm font-bold transition-colors">→</button>
+      </div>
+    </form>
+    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="mt-2">
+      <input type="hidden" name="answer" value="">
+      <button type="submit" class="text-gray-500 hover:text-gray-300 text-xs underline w-full text-center transition-colors">
+        Skip this question
+      </button>
+    </form>
+    {{end}}
   </div>
 </div>
 {{end}}
@@ -92,14 +99,14 @@
 {{if and (eq .Phase "revealed") (eq $p.PipelineStep "ready")}}
 <div id="wait-status" class="text-center space-y-4 py-4">
   <p class="text-4xl">😔</p>
-  <p class="text-white font-bold">You just missed it!</p>
-  <p class="text-gray-500 text-sm">The matching already happened. Check the big screen!</p>
+  <p class="text-gray-900 font-bold">You just missed it!</p>
+  <p class="text-gray-700 text-sm">The matching already happened. Check the big screen!</p>
 </div>
 {{else if eq $p.PipelineStep "matched"}}
 <div id="wait-status" class="text-center space-y-4 py-4">
   <p class="text-4xl">❤️</p>
-  <p class="text-white font-bold">Match found!</p>
-  <p class="text-gray-500 text-sm">{{if $p.MatchedWith}}Check your match!{{else}}Loading match...{{end}}</p>
+  <p class="text-gray-900 font-bold">Match found!</p>
+  <p class="text-gray-700 text-sm">{{if $p.MatchedWith}}Check your match!{{else}}Loading match...{{end}}</p>
 </div>
 {{else}}
 <div
@@ -109,17 +116,17 @@
   hx-swap="outerHTML"
   class="text-center space-y-4"
 >
-  <div class="text-gray-300">
-    <p class="text-5xl font-black text-white">{{.Count}}</p>
-    <p class="text-gray-400 mt-1">{{if eq .Count 1}}person{{else}}people{{end}} ready in the room</p>
+  <div>
+    <p class="text-5xl font-black text-gray-900">{{.Count}}</p>
+    <p class="text-gray-700 mt-1">{{if eq .Count 1}}person{{else}}people{{end}} ready in the room</p>
   </div>
 
-  <div class="flex items-center justify-center gap-2 text-gray-600 text-sm">
-    <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+  <div class="flex items-center justify-center gap-2 text-gray-700 text-sm">
+    <span class="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
     Looking for your perfect match...
   </div>
 
-  <p class="text-gray-700 text-xs">Watch the big screen!</p>
+  <p class="text-gray-600 text-xs">Watch the big screen!</p>
 </div>
 {{end}}
 {{end}}
