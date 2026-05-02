@@ -44,6 +44,19 @@ func newHandler(db *DB, github *GitHubClient, mistral *MistralClient) *Handler {
 			}
 			return c
 		},
+		"textColor": func(bgClass string) string {
+			m := map[string]string{
+				"bg-teal-400":   "text-teal-900",
+				"bg-red-400":    "text-red-900",
+				"bg-purple-400": "text-purple-900",
+				"bg-amber-400":  "text-amber-900",
+				"bg-blue-400":   "text-blue-900",
+			}
+			if c, ok := m[bgClass]; ok {
+				return c
+			}
+			return "text-gray-900"
+		},
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{db: db, agents: agents, tmpl: tmpl}
@@ -57,11 +70,32 @@ func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 	}
 }
 
+const cookieName = "participant_id"
+const cookieMaxAge = 7 * 24 * 60 * 60 // 7 days
+
 // ── /user ──────────────────────────────────────────────────────────────────
 
 // GET /user
 func (h *Handler) Landing(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(cookieName); err == nil {
+		if p, err := h.db.GetParticipant(c.Value); err == nil {
+			http.Redirect(w, r, "/user/onboard/"+p.ID, http.StatusSeeOther)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Path: "/", MaxAge: -1})
+	}
 	h.render(w, "landing.html", nil)
+}
+
+func setParticipantCookie(w http.ResponseWriter, id string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    id,
+		Path:     "/",
+		MaxAge:   cookieMaxAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 // POST /user/join
@@ -78,6 +112,7 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if existing, err := h.db.GetParticipantByHandle(handle); err == nil {
+		setParticipantCookie(w, existing.ID)
 		http.Redirect(w, r, "/user/onboard/"+existing.ID, http.StatusSeeOther)
 		return
 	}
@@ -89,6 +124,7 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go h.agents.RunSetup(id, handle)
+	setParticipantCookie(w, id)
 	http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 }
 
@@ -179,6 +215,11 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	p, err := h.db.GetParticipant(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "not found", 404)
+		return
+	}
+
+	if p.PipelineStep != "interviewing" {
+		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
 		return
 	}
 
@@ -320,6 +361,36 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		"GreenFlags":  greenFlags,
 		"Icebreakers": icebreakers,
 		"Others":      others,
+	})
+}
+
+// GET /user/explore/{myId}/{otherId}
+func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
+	me, err := h.db.GetParticipant(r.PathValue("myId"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	other, err := h.db.GetParticipant(r.PathValue("otherId"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	result, err := h.agents.generateMatch(me, other)
+	if err != nil {
+		http.Error(w, "compatibility analysis failed: "+err.Error(), 500)
+		return
+	}
+
+	h.render(w, "explore.html", map[string]any{
+		"Me":          me,
+		"Other":       other,
+		"Score":       result.Score,
+		"Reason":      result.Reason,
+		"GreenFlags":  result.GreenFlags,
+		"RedFlags":    result.RedFlags,
+		"Icebreakers": result.Icebreakers,
 	})
 }
 
@@ -544,8 +615,36 @@ func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/reset
 func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
-	h.db.Exec(`DELETE FROM participants`)
-	h.db.Exec(`DELETE FROM activity_log`)
+	if err := h.db.Reset(); err != nil {
+		http.Error(w, "reset failed: "+err.Error(), 500)
+		return
+	}
 	h.db.SetPhase("onboarding")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// POST /admin/rematch
+func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
+	if err := h.db.UnmatchAll(); err != nil {
+		http.Error(w, "rematch failed: "+err.Error(), 500)
+		return
+	}
+	h.db.SetPhase("matching")
+	h.db.LogActivity("🔄 Admin triggered full rematch")
+	go func() {
+		if err := h.agents.RunMatching(); err != nil {
+			log.Printf("Rematch error: %v", err)
+		}
+	}()
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// DELETE /data/participant/{id}
+func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.db.DeleteParticipant(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }

@@ -47,8 +47,14 @@ func (a *AgentPipeline) RunSetup(participantID, githubHandle string) {
 	persona, err := a.generatePersona(profile)
 	if err != nil {
 		log.Printf("Persona generation error: %v", err)
+		toTitle := func(s string) string {
+			if s == "" {
+				return s
+			}
+			return strings.ToUpper(s[:1]) + s[1:]
+		}
 		persona = &personaResult{
-			Name:    "The " + strings.Title(githubHandle),
+			Name:    "The " + toTitle(githubHandle),
 			Tagline: "Mysterious coder. Ships things.",
 		}
 	}
@@ -236,15 +242,23 @@ func (a *AgentPipeline) generateMatch(p1, p2 *Participant) (*matchResult, error)
 	system := `You are the matchmaker at a tech meetup blind date event.
 Analyze two developers' profiles and produce a fun, humorous compatibility assessment.
 Respond with ONLY valid JSON — no markdown:
-{"score": <0-100>, "reason": "<one funny sentence max 80 chars>", "red_flags": ["...", "..."], "green_flags": ["...", "..."], "icebreakers": ["...", "...", "..."]}`
+{"score": <0-100>, "reason": "<one funny sentence max 80 chars>", "red_flags": ["...", "..."], "green_flags": ["...", "..."], "icebreakers": ["<question one can ask the other>", "<question>", "<question>"]}`
 
 	var p1Profile, p2Profile GitHubProfile
-	json.Unmarshal([]byte(p1.ProfileJSON), &p1Profile)
-	json.Unmarshal([]byte(p2.ProfileJSON), &p2Profile)
+	if err := json.Unmarshal([]byte(p1.ProfileJSON), &p1Profile); err != nil {
+		log.Printf("unmarshal profile for %s: %v", p1.GitHubHandle, err)
+	}
+	if err := json.Unmarshal([]byte(p2.ProfileJSON), &p2Profile); err != nil {
+		log.Printf("unmarshal profile for %s: %v", p2.GitHubHandle, err)
+	}
 
 	var p1Ans, p2Ans map[string]string
-	json.Unmarshal([]byte(p1.AnswersJSON), &p1Ans)
-	json.Unmarshal([]byte(p2.AnswersJSON), &p2Ans)
+	if err := json.Unmarshal([]byte(p1.AnswersJSON), &p1Ans); err != nil {
+		log.Printf("unmarshal answers for %s: %v", p1.GitHubHandle, err)
+	}
+	if err := json.Unmarshal([]byte(p2.AnswersJSON), &p2Ans); err != nil {
+		log.Printf("unmarshal answers for %s: %v", p2.GitHubHandle, err)
+	}
 
 	user := fmt.Sprintf(`Compare these two developers:
 
@@ -356,8 +370,12 @@ func pairScore(a, b *Participant) int {
 	score := 0
 
 	var aP, bP GitHubProfile
-	json.Unmarshal([]byte(a.ProfileJSON), &aP)
-	json.Unmarshal([]byte(b.ProfileJSON), &bP)
+	if err := json.Unmarshal([]byte(a.ProfileJSON), &aP); err != nil {
+		log.Printf("unmarshal profile for %s: %v", a.GitHubHandle, err)
+	}
+	if err := json.Unmarshal([]byte(b.ProfileJSON), &bP); err != nil {
+		log.Printf("unmarshal profile for %s: %v", b.GitHubHandle, err)
+	}
 
 	aLangs := map[string]bool{}
 	for _, l := range aP.Languages {
@@ -370,8 +388,12 @@ func pairScore(a, b *Participant) int {
 	}
 
 	var aAns, bAns map[string]string
-	json.Unmarshal([]byte(a.AnswersJSON), &aAns)
-	json.Unmarshal([]byte(b.AnswersJSON), &bAns)
+	if err := json.Unmarshal([]byte(a.AnswersJSON), &aAns); err != nil {
+		log.Printf("unmarshal answers for %s: %v", a.GitHubHandle, err)
+	}
+	if err := json.Unmarshal([]byte(b.AnswersJSON), &bAns); err != nil {
+		log.Printf("unmarshal answers for %s: %v", b.GitHubHandle, err)
+	}
 
 	for k, av := range aAns {
 		if bv, ok := bAns[k]; ok && av == bv {
@@ -406,7 +428,10 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 	breakingExistingMatch := false
 	if len(pool) == 0 {
 		// All existing participants are matched — consider breaking the weakest pair
-		allParticipants, _ := a.db.GetAllParticipants()
+		allParticipants, err := a.db.GetAllParticipants()
+		if err != nil {
+			return fmt.Errorf("GetAllParticipants: %w", err)
+		}
 		var matched []*Participant
 		for _, p := range allParticipants {
 			if p.PipelineStep == "matched" && p.MatchedWith != "" && p.ID != newParticipant.ID {

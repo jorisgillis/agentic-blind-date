@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -194,7 +195,7 @@ func (g *GitHubClient) get(url string) ([]byte, error) {
 }
 
 func (g *GitHubClient) fetchUser(handle string) (*ghUser, error) {
-	body, err := g.get("https://api.github.com/users/" + handle)
+	body, err := g.get("https://api.github.com/users/" + url.PathEscape(handle))
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +204,7 @@ func (g *GitHubClient) fetchUser(handle string) (*ghUser, error) {
 }
 
 func (g *GitHubClient) fetchRepos(handle string) ([]ghRepo, error) {
-	body, err := g.get("https://api.github.com/users/" + handle + "/repos?sort=stars&per_page=30")
+	body, err := g.get("https://api.github.com/users/" + url.PathEscape(handle) + "/repos?sort=stars&per_page=30")
 	if err != nil {
 		return nil, err
 	}

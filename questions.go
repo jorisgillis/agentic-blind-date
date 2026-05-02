@@ -39,6 +39,6 @@ var FixedQuestions = []Question{
 	},
 }
 
-const TotalFixedQuestions = 6
+var TotalFixedQuestions = len(FixedQuestions)
 const TotalCustomQuestions = 3
-const TotalQuestions = TotalFixedQuestions + TotalCustomQuestions
+var TotalQuestions = TotalFixedQuestions + TotalCustomQuestions

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 type MistralClient struct {
-	apiKey string
-	model  string
+	apiKey     string
+	model      string
+	httpClient *http.Client
 }
 
 type mistralReq struct {
@@ -36,7 +38,7 @@ type mistralResp struct {
 	} `json:"error,omitempty"`
 }
 
-func (m *MistralClient) Chat(system, user string) (string, error) {
+func (m *MistralClient) doChat(system, user string) (string, error) {
 	req := mistralReq{
 		Model: m.model,
 		Messages: []mistralMsg{
@@ -56,7 +58,7 @@ func (m *MistralClient) Chat(system, user string) (string, error) {
 	httpReq.Header.Set("Authorization", "Bearer "+m.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := m.httpClient.Do(httpReq)
 	if err != nil {
 		return "", err
 	}
@@ -85,4 +87,19 @@ func (m *MistralClient) Chat(system, user string) (string, error) {
 	}
 
 	return result.Choices[0].Message.Content, nil
+}
+
+func (m *MistralClient) Chat(system, user string) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(1<<uint(attempt)) * time.Second)
+		}
+		result, err := m.doChat(system, user)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+	}
+	return "", lastErr
 }

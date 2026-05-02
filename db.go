@@ -2,15 +2,15 @@ package main
 
 import (
 	"database/sql"
+	"log"
+	"math/rand"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var tailwindColors = []string{
-	"bg-red-400", "bg-blue-400", "bg-amber-400", "bg-green-400",
-	"bg-purple-400", "bg-pink-400", "bg-teal-400", "bg-orange-400",
-	"bg-indigo-400", "bg-rose-400", "bg-cyan-400", "bg-lime-400",
+	"bg-teal-400", "bg-red-400", "bg-purple-400", "bg-amber-400", "bg-blue-400",
 }
 
 var personaSymbols = []string{"🦊", "🦁", "🐯", "🐺", "🦝", "🦔", "🐙", "🦈", "🦅", "🐸"}
@@ -37,19 +37,19 @@ type Participant struct {
 }
 
 type DB struct {
-	*sql.DB
+	db *sql.DB
 }
 
 func initDB(path string) (*DB, error) {
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000")
+	sqlDB, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Ping(); err != nil {
+	if err := sqlDB.Ping(); err != nil {
 		return nil, err
 	}
 
-	_, err = db.Exec(`
+	_, err = sqlDB.Exec(`
 		CREATE TABLE IF NOT EXISTS participants (
 			id               TEXT PRIMARY KEY,
 			github_handle    TEXT UNIQUE NOT NULL,
@@ -94,10 +94,36 @@ func initDB(path string) (*DB, error) {
 		`ALTER TABLE participants ADD COLUMN persona_symbol TEXT NOT NULL DEFAULT '🎭'`,
 		`ALTER TABLE participants ADD COLUMN persona_tagline TEXT NOT NULL DEFAULT ''`,
 	} {
-		db.Exec(m)
+		sqlDB.Exec(m)
 	}
 
-	return &DB{db}, nil
+	return &DB{sqlDB}, nil
+}
+
+func (db *DB) Close() error {
+	return db.db.Close()
+}
+
+func (db *DB) SetMaxOpenConns(n int) {
+	db.db.SetMaxOpenConns(n)
+}
+
+func (db *DB) Reset() error {
+	if _, err := db.db.Exec(`DELETE FROM participants`); err != nil {
+		return err
+	}
+	_, err := db.db.Exec(`DELETE FROM activity_log`)
+	return err
+}
+
+func (db *DB) UnmatchAll() error {
+	_, err := db.db.Exec(`UPDATE participants SET matched_with='', compat_score=0, compat_reason='', pipeline_step='ready' WHERE pipeline_step='matched'`)
+	return err
+}
+
+func (db *DB) DeleteParticipant(id string) error {
+	_, err := db.db.Exec(`DELETE FROM participants WHERE id=?`, id)
+	return err
 }
 
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {
@@ -121,46 +147,88 @@ const selectParticipant = `
 	FROM participants`
 
 func (db *DB) CreateParticipant(id, handle, name string) error {
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM participants`).Scan(&count)
-	symbol := personaSymbols[count%len(personaSymbols)]
-	color := tailwindColors[(count/len(personaSymbols))%len(tailwindColors)]
-	_, err := db.Exec(
+	tx, err := db.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Get all used color+symbol combinations
+	rows, err := tx.Query(`SELECT persona_color, persona_symbol FROM participants`)
+	if err != nil {
+		return err
+	}
+	used := make(map[string]bool)
+	for rows.Next() {
+		var c, s string
+		if err := rows.Scan(&c, &s); err != nil {
+			rows.Close()
+			return err
+		}
+		used[c+"|"+s] = true
+	}
+	rows.Close()
+
+	// Find all available combinations
+	var available [][2]string
+	for _, c := range tailwindColors {
+		for _, s := range personaSymbols {
+			if !used[c+"|"+s] {
+				available = append(available, [2]string{c, s})
+			}
+		}
+	}
+
+	var color, symbol string
+	if len(available) > 0 {
+		// Pick a random available combination
+		color, symbol = available[rand.Intn(len(available))][0], available[rand.Intn(len(available))][1]
+	} else {
+		// Fallback: all combinations used, pick sequentially
+		n := len(used)
+		symbol = personaSymbols[n%len(personaSymbols)]
+		color = tailwindColors[(n/len(personaSymbols))%len(tailwindColors)]
+	}
+
+	_, err = tx.Exec(
 		`INSERT INTO participants (id, github_handle, name, persona_color, persona_symbol) VALUES (?, ?, ?, ?, ?)`,
 		id, handle, name, color, symbol,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (db *DB) GetParticipant(id string) (*Participant, error) {
-	row := db.QueryRow(selectParticipant+` WHERE id = ?`, id)
+	row := db.db.QueryRow(selectParticipant+` WHERE id = ?`, id)
 	return scanParticipant(row)
 }
 
 func (db *DB) GetParticipantByHandle(handle string) (*Participant, error) {
-	row := db.QueryRow(selectParticipant+` WHERE github_handle = ?`, handle)
+	row := db.db.QueryRow(selectParticipant+` WHERE github_handle = ?`, handle)
 	return scanParticipant(row)
 }
 
 func (db *DB) UpdatePipelineStep(id, step string) error {
-	_, err := db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
+	_, err := db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
 	return err
 }
 
 func (db *DB) UpdateProfile(id, profileJSON, personaName, personaTagline, customQuestions string) error {
-	_, err := db.Exec(`
+	_, err := db.db.Exec(`
 		UPDATE participants SET profile_json = ?, persona_name = ?, persona_tagline = ?, custom_questions = ?
 		WHERE id = ?`, profileJSON, personaName, personaTagline, customQuestions, id)
 	return err
 }
 
 func (db *DB) UpdateAnswers(id, answersJSON string) error {
-	_, err := db.Exec(`UPDATE participants SET answers_json = ? WHERE id = ?`, answersJSON, id)
+	_, err := db.db.Exec(`UPDATE participants SET answers_json = ? WHERE id = ?`, answersJSON, id)
 	return err
 }
 
 func (db *DB) SetMatched(id, matchedWith string, score int, reason, redFlags, greenFlags, icebreakers string) error {
-	_, err := db.Exec(`
+	_, err := db.db.Exec(`
 		UPDATE participants SET matched_with = ?, compat_score = ?, compat_reason = ?,
 		    red_flags = ?, green_flags = ?, icebreakers = ?, pipeline_step = 'matched'
 		WHERE id = ?`, matchedWith, score, reason, redFlags, greenFlags, icebreakers, id)
@@ -168,7 +236,7 @@ func (db *DB) SetMatched(id, matchedWith string, score int, reason, redFlags, gr
 }
 
 func (db *DB) GetAllParticipants() ([]*Participant, error) {
-	rows, err := db.Query(selectParticipant + ` ORDER BY created_at`)
+	rows, err := db.db.Query(selectParticipant + ` ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +254,7 @@ func (db *DB) GetAllParticipants() ([]*Participant, error) {
 }
 
 func (db *DB) GetAllByStep(step string) ([]*Participant, error) {
-	rows, err := db.Query(selectParticipant+` WHERE pipeline_step = ? ORDER BY created_at`, step)
+	rows, err := db.db.Query(selectParticipant+` WHERE pipeline_step = ? ORDER BY created_at`, step)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +273,7 @@ func (db *DB) GetAllByStep(step string) ([]*Participant, error) {
 
 func (db *DB) GetReadyUnmatched() ([]*Participant, error) {
 	// Get participants who are ready and not yet matched
-	rows, err := db.Query(selectParticipant+` WHERE pipeline_step = 'ready' AND (matched_with = '' OR matched_with IS NULL) ORDER BY created_at`)
+	rows, err := db.db.Query(selectParticipant+` WHERE pipeline_step = 'ready' AND (matched_with = '' OR matched_with IS NULL) ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -223,27 +291,29 @@ func (db *DB) GetReadyUnmatched() ([]*Participant, error) {
 }
 
 func (db *DB) UnmatchParticipant(id string) error {
-	_, err := db.Exec(`UPDATE participants SET matched_with='', compat_score=0, compat_reason='', pipeline_step='ready' WHERE id=?`, id)
+	_, err := db.db.Exec(`UPDATE participants SET matched_with='', compat_score=0, compat_reason='', pipeline_step='ready' WHERE id=?`, id)
 	return err
 }
 
 func (db *DB) GetPhase() (string, error) {
 	var phase string
-	err := db.QueryRow(`SELECT value FROM event_state WHERE key = 'phase'`).Scan(&phase)
+	err := db.db.QueryRow(`SELECT value FROM event_state WHERE key = 'phase'`).Scan(&phase)
 	return phase, err
 }
 
 func (db *DB) SetPhase(phase string) error {
-	_, err := db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, phase)
+	_, err := db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, phase)
 	return err
 }
 
 func (db *DB) LogActivity(message string) {
-	db.Exec(`INSERT INTO activity_log (message) VALUES (?)`, message)
+	if _, err := db.db.Exec(`INSERT INTO activity_log (message) VALUES (?)`, message); err != nil {
+		log.Printf("LogActivity: %v", err)
+	}
 }
 
 func (db *DB) GetRecentActivity(limit int) ([]string, error) {
-	rows, err := db.Query(`SELECT message FROM activity_log ORDER BY created_at DESC LIMIT ?`, limit)
+	rows, err := db.db.Query(`SELECT message FROM activity_log ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -262,12 +332,12 @@ func (db *DB) GetRecentActivity(limit int) ([]string, error) {
 
 func (db *DB) ParticipantCount() int {
 	var n int
-	db.QueryRow(`SELECT COUNT(*) FROM participants`).Scan(&n)
+	db.db.QueryRow(`SELECT COUNT(*) FROM participants`).Scan(&n)
 	return n
 }
 
 func (db *DB) ReadyCount() int {
 	var n int
-	db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step IN ('ready', 'matched')`).Scan(&n)
+	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step IN ('ready', 'matched')`).Scan(&n)
 	return n
 }

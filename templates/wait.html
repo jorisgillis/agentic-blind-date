@@ -19,11 +19,15 @@
       <div class="w-36 h-36 rounded-3xl bg-white/20 flex items-center justify-center text-8xl mb-4 shadow-xl ring-4 ring-black/10">
         {{$p.PersonaSymbol}}
       </div>
-      <h2 class="text-2xl font-black text-gray-900">{{$p.PersonaName}}</h2>
+      <h2 class="text-2xl font-black {{textColor $p.PersonaColor}}">{{$p.PersonaName}}</h2>
       {{if $p.PersonaTagline}}
       <p class="text-gray-700 text-sm mt-1 italic" data-md>"{{$p.PersonaTagline}}"</p>
       {{end}}
       <p class="text-gray-600 text-xs mt-1">@{{$p.GitHubHandle}}</p>
+      <div class="mt-4">
+        <p class="text-gray-600 text-xs mb-2">📲 Let others find your profile</p>
+        <img id="qr" alt="QR code" class="mx-auto rounded-lg shadow-md" width="120" height="120" />
+      </div>
     </div>
 
     {{/* GitHub summary */}}
@@ -88,6 +92,10 @@
     }
     document.addEventListener('DOMContentLoaded', renderMd);
     document.addEventListener('htmx:afterSwap', renderMd);
+    const qr = document.getElementById('qr');
+    if (qr) {
+      qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent(window.location.href);
+    }
   </script>
 </body>
 </html>

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 func loadDotEnv() {
@@ -35,6 +36,13 @@ func loadDotEnv() {
 func main() {
 	loadDotEnv()
 
+	if os.Getenv("MISTRAL_API_KEY") == "" {
+		log.Println("WARNING: MISTRAL_API_KEY not set — LLM calls will fail")
+	}
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		log.Println("WARNING: GITHUB_TOKEN not set — GitHub API limited to 60 req/hr")
+	}
+
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
 		dbPath = "blind_date.db"
@@ -47,14 +55,15 @@ func main() {
 
 	github := &GitHubClient{token: os.Getenv("GITHUB_TOKEN")}
 	mistral := &MistralClient{
-		apiKey: os.Getenv("MISTRAL_API_KEY"),
-		model:  "mistral-medium-latest",
+		apiKey:     os.Getenv("MISTRAL_API_KEY"),
+		model:      "mistral-medium-latest",
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 
 	h := newHandler(db, github, mistral)
 
-	addr := ":8080"
-	log.Println("Starting Agentic Blind Date on http://localhost" + addr)
+	addr := "0.0.0.0:8080"
+	log.Println("Starting Agentic Blind Date on http://" + addr)
 	log.Fatal(http.ListenAndServe(addr, buildMux(h)))
 }
 
@@ -77,6 +86,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/wait/{id}", h.Wait)
 	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
 	mux.HandleFunc("GET /user/match/{id}", h.Match)
+	mux.HandleFunc("GET /user/explore/{myId}/{otherId}", h.Explore)
 
 	mux.HandleFunc("GET /bigscreen", h.Screen)
 	mux.HandleFunc("GET /bigscreen/state", h.ScreenState)
@@ -85,12 +95,14 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /data", h.DataIndex)
 	mux.HandleFunc("GET /data/participants", h.DataParticipants)
 	mux.HandleFunc("GET /data/participant/{id}", h.DataParticipant)
+	mux.HandleFunc("DELETE /data/participant/{id}", h.DeleteParticipant)
 	mux.HandleFunc("GET /data/activity", h.DataActivity)
 	mux.HandleFunc("GET /data/state", h.DataState)
 
 	mux.HandleFunc("GET /admin", h.Admin)
 	mux.HandleFunc("POST /admin/reveal", h.TriggerReveal)
 	mux.HandleFunc("POST /admin/reset", h.Reset)
+	mux.HandleFunc("POST /admin/rematch", h.Rematch)
 
 	return mux
 }

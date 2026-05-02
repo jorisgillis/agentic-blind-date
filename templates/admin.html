@@ -41,6 +41,16 @@
       </button>
     </form>
 
+    <form action="/admin/rematch" method="POST">
+      <button
+        type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-3 transition-colors text-sm"
+        onclick="return confirm('Re-run matching for all participants?')"
+      >
+        🔄 Rematch
+      </button>
+    </form>
+
     <div class="text-center space-y-1">
       <a href="/bigscreen" target="_blank" class="block text-indigo-400 hover:text-indigo-300 text-sm">Open big screen →</a>
       <a href="/user" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open participant landing →</a>

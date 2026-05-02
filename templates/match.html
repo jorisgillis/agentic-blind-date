@@ -16,7 +16,8 @@
     .pop-in { animation: pop-in 0.5s ease-out forwards; }
   </style>
 </head>
-<body class="{{.Me.PersonaColor}} text-gray-900 min-h-screen px-4 py-10">
+<body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10" style="color-scheme: light;">
+<div class="{{textColor .Me.PersonaColor}}">
   <div class="max-w-md mx-auto">
 
     <div class="text-center mb-8 pop-in">
@@ -41,7 +42,7 @@
       </div>
     </div>
 
-    {{/* Match card */}}
+    {{/* Match card + Find them merged */}}
     <div class="bg-black/15 border border-black/10 rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
       <div class="flex items-center gap-4">
         <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
@@ -55,6 +56,15 @@
       {{if .Me.CompatReason}}
       <p class="mt-4 text-gray-800 italic text-sm" data-md>"{{.Me.CompatReason}}"</p>
       {{end}}
+      <div class="mt-4 pt-4 border-t border-black/10 flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow">
+          {{$m.PersonaSymbol}}
+        </div>
+        <div>
+          <p class="text-pink-800 font-bold text-xs">📍 Find them in the room</p>
+          <p class="text-gray-900 text-sm font-medium mt-0.5">{{$m.PersonaSymbol}} on a {{colorName $m.PersonaColor}} background</p>
+        </div>
+      </div>
     </div>
 
     {{/* Flags */}}
@@ -81,8 +91,8 @@
 
     {{/* Icebreakers */}}
     {{if .Icebreakers}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in" style="animation-delay:0.3s">
-      <p class="text-indigo-800 font-bold text-sm mb-3">💬 Conversation starters</p>
+    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mb-4" style="animation-delay:0.3s">
+      <p class="text-indigo-800 font-bold text-sm mb-3">💬 Ask them</p>
       {{range .Icebreakers}}
       <p class="text-gray-800 text-sm mb-2" data-md>→ {{.}}</p>
       {{end}}
@@ -91,33 +101,24 @@
 
     {{/* Others at the event */}}
     {{if .Others}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mt-4" style="animation-delay:0.6s">
+    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mt-4" style="animation-delay:0.45s">
       <p class="text-gray-700 font-bold text-sm mb-3">👥 Others at the event</p>
       <div class="grid grid-cols-3 gap-3">
         {{range .Others}}
-        <div class="flex flex-col items-center text-center">
+        <a href="/user/explore/{{$.Me.ID}}/{{.ID}}" class="flex flex-col items-center text-center hover:opacity-75 active:scale-95 transition-all">
           <div class="w-12 h-12 rounded-xl {{.PersonaColor}} flex items-center justify-center text-xl mb-1 shadow-sm">{{.PersonaSymbol}}</div>
           <p class="text-xs font-bold leading-tight text-gray-900">{{if .PersonaName}}{{.PersonaName}}{{else}}@{{.GitHubHandle}}{{end}}</p>
           <p class="text-gray-600 text-xs">@{{.GitHubHandle}}</p>
-        </div>
+        </a>
         {{end}}
       </div>
     </div>
     {{end}}
 
-    {{/* Find your partner in the room */}}
-    <div class="bg-black/15 border border-pink-400/40 rounded-xl p-5 pop-in mt-4" style="animation-delay:0.45s">
-      <p class="text-pink-800 font-bold text-sm mb-3">📍 Find them in the room</p>
-      <p class="text-gray-700 text-sm mb-3">Look for the person with:</p>
-      <div class="flex items-center gap-4">
-        <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-3xl flex-shrink-0 shadow-lg">
-          {{$m.PersonaSymbol}}
-        </div>
-        <div>
-          <p class="text-gray-900 text-lg font-bold">{{$m.PersonaSymbol}} on a {{colorName $m.PersonaColor}} background</p>
-          <p class="text-gray-600 text-xs mt-0.5">That's {{$m.PersonaName}}</p>
-        </div>
-      </div>
+    {{/* QR code */}}
+    <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
+      <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
+      <img id="qr" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
     </div>
 
     {{else}}
@@ -128,6 +129,7 @@
     {{end}}
 
   </div>
+</div>
   <script>
     function renderMd() {
       document.querySelectorAll('[data-md]').forEach(el => {
@@ -135,6 +137,10 @@
       });
     }
     document.addEventListener('DOMContentLoaded', renderMd);
+    const qr = document.getElementById('qr');
+    if (qr) {
+      qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.href);
+    }
   </script>
 </body>
 </html>
