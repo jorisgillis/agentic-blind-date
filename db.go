@@ -181,8 +181,8 @@ func (db *DB) CreateParticipant(id, handle, name string) error {
 
 	var color, symbol string
 	if len(available) > 0 {
-		// Pick a random available combination
-		color, symbol = available[rand.Intn(len(available))][0], available[rand.Intn(len(available))][1]
+		pick := available[rand.Intn(len(available))]
+		color, symbol = pick[0], pick[1]
 	} else {
 		// Fallback: all combinations used, pick sequentially
 		n := len(used)

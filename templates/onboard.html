@@ -31,6 +31,9 @@
     }
     document.addEventListener('DOMContentLoaded', renderMd);
     document.addEventListener('htmx:afterSwap', renderMd);
+    const _es = new EventSource('/user/pipeline-stream/{{.ID}}');
+    _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
+    _es.onerror = () => _es.close();
   </script>
 </body>
 </html>

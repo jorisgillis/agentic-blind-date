@@ -220,3 +220,30 @@ func (g *GitHubClient) fetchRepos(handle string) ([]ghRepo, error) {
 	}
 	return own, nil
 }
+
+// checkFollows returns true if follower follows followee on GitHub.
+// GitHub returns 204 (following) or 404 (not following).
+func (g *GitHubClient) checkFollows(follower, followee string) bool {
+	endpoint := "https://api.github.com/users/" +
+		url.PathEscape(follower) + "/following/" + url.PathEscape(followee)
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if g.token != "" {
+		req.Header.Set("Authorization", "Bearer "+g.token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == 204
+}
+
+// CheckMutualFollow returns (aFollowsB, bFollowsA).
+func (g *GitHubClient) CheckMutualFollow(handleA, handleB string) (bool, bool) {
+	return g.checkFollows(handleA, handleB), g.checkFollows(handleB, handleA)
+}

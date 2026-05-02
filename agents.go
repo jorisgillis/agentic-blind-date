@@ -260,6 +260,19 @@ Respond with ONLY valid JSON — no markdown:
 		log.Printf("unmarshal answers for %s: %v", p2.GitHubHandle, err)
 	}
 
+	followNote := ""
+	if a.github != nil {
+		aFollowsB, bFollowsA := a.github.CheckMutualFollow(p1.GitHubHandle, p2.GitHubHandle)
+		switch {
+		case aFollowsB && bFollowsA:
+			followNote = fmt.Sprintf("\nNote: %s and %s already follow each other on GitHub!", p1.PersonaName, p2.PersonaName)
+		case aFollowsB:
+			followNote = fmt.Sprintf("\nNote: %s already follows %s on GitHub.", p1.PersonaName, p2.PersonaName)
+		case bFollowsA:
+			followNote = fmt.Sprintf("\nNote: %s already follows %s on GitHub.", p2.PersonaName, p1.PersonaName)
+		}
+	}
+
 	user := fmt.Sprintf(`Compare these two developers:
 
 DEVELOPER 1 (%s):
@@ -268,9 +281,10 @@ Interview answers: %v
 
 DEVELOPER 2 (%s):
 %s
-Interview answers: %v`,
+Interview answers: %v%s`,
 		p1.PersonaName, p1Profile.Summary(), p1Ans,
 		p2.PersonaName, p2Profile.Summary(), p2Ans,
+		followNote,
 	)
 
 	response, err := a.mistral.Chat(system, user)

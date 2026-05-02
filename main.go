@@ -91,6 +91,10 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /bigscreen", h.Screen)
 	mux.HandleFunc("GET /bigscreen/state", h.ScreenState)
 	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
+	mux.HandleFunc("GET /bigscreen/stream", h.ScreenStream)
+
+	mux.HandleFunc("GET /user/pipeline-stream/{id}", h.PipelineStream)
+	mux.HandleFunc("GET /user/wait-stream/{id}", h.WaitStream)
 
 	mux.HandleFunc("GET /data", h.DataIndex)
 	mux.HandleFunc("GET /data/participants", h.DataParticipants)

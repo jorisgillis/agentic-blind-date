@@ -224,22 +224,19 @@ function updateGraph(data) {
   }
 }
 
-async function poll() {
-  try {
-    const res = await fetch('/bigscreen/graph-data');
-    if (res.ok) updateGraph(await res.json());
-  } catch (e) {
-    console.warn('graph poll error:', e);
-  }
-  setTimeout(poll, 5000);
-}
+const es = new EventSource('/bigscreen/stream');
+es.addEventListener('message', e => {
+  try { updateGraph(JSON.parse(e.data)); } catch(err) { console.warn('graph parse error:', err); }
+});
+es.onerror = () => {
+  // fall back to polling if SSE fails
+  setTimeout(() => fetch('/bigscreen/graph-data').then(r => r.json()).then(updateGraph).catch(() => {}), 5000);
+};
 
 window.addEventListener('resize', () => {
   simulation.force('center', d3.forceCenter(w() / 2, h() / 2));
   simulation.alpha(0.1).restart();
 });
-
-poll();
 </script>
 </body>
 </html>

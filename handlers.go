@@ -10,9 +10,62 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+type Badge struct {
+	Icon  string
+	Label string
+	Color string
+}
+
+func computeBadges(p GitHubProfile) []Badge {
+	var out []Badge
+	years := p.AccountAgeDays / 365
+	if years >= 10 {
+		out = append(out, Badge{"🦕", "GitHub Dinosaur", "bg-yellow-200"})
+	}
+	if p.TotalStars >= 100 {
+		out = append(out, Badge{"⭐", "GitHub Celebrity", "bg-amber-200"})
+	}
+	if p.PublicRepos >= 50 {
+		out = append(out, Badge{"🗂", "The Hoarder", "bg-orange-200"})
+	}
+	if len(p.Languages) >= 5 {
+		out = append(out, Badge{"🌍", "Polyglot", "bg-green-200"})
+	}
+	if p.HasProfileReadme {
+		out = append(out, Badge{"📖", "Storyteller", "bg-blue-200"})
+	}
+	if p.AccountAgeDays > 0 && p.AccountAgeDays < 180 {
+		out = append(out, Badge{"🆕", "Fresh Blood", "bg-pink-200"})
+	}
+	if p.Followers >= 100 && p.PublicRepos < 5 {
+		out = append(out, Badge{"🔭", "Lurker", "bg-purple-200"})
+	}
+	if len(p.Languages) == 1 {
+		out = append(out, Badge{"🎯", "Focused", "bg-teal-200"})
+	}
+	return out
+}
+
+type graphNode struct {
+	ID          string `json:"id"`
+	PersonaName string `json:"persona_name"`
+	Color       string `json:"color"`
+	Symbol      string `json:"symbol"`
+	Step        string `json:"step"`
+	Handle      string `json:"handle"`
+}
+
+type graphEdge struct {
+	Source  string `json:"source"`
+	Target  string `json:"target"`
+	Score   int    `json:"score"`
+	Matched bool   `json:"matched"`
+}
 
 type Handler struct {
 	db     *DB
@@ -23,7 +76,8 @@ type Handler struct {
 func newHandler(db *DB, github *GitHubClient, mistral *MistralClient) *Handler {
 	agents := &AgentPipeline{db: db, github: github, mistral: mistral}
 	funcs := template.FuncMap{
-		"add": func(a, b int) int { return a + b },
+		"add":    func(a, b int) int { return a + b },
+		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
 		"percent": func(n, total int) int {
 			if total == 0 {
 				return 0
@@ -401,26 +455,10 @@ func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "screen.html", nil)
 }
 
-// GET /bigscreen/graph-data  — polled by D3 frontend every 5s
-func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) buildGraphPayload() map[string]any {
 	phase, _ := h.db.GetPhase()
 	participants, _ := h.db.GetAllParticipants()
 	activity, _ := h.db.GetRecentActivity(3)
-
-	type graphNode struct {
-		ID          string `json:"id"`
-		PersonaName string `json:"persona_name"`
-		Color       string `json:"color"`
-		Symbol      string `json:"symbol"`
-		Step        string `json:"step"`
-		Handle      string `json:"handle"`
-	}
-	type graphEdge struct {
-		Source  string `json:"source"`
-		Target  string `json:"target"`
-		Score   int    `json:"score"`
-		Matched bool   `json:"matched"`
-	}
 
 	nodes := make([]graphNode, 0, len(participants))
 	for _, p := range participants {
@@ -437,7 +475,6 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 	edges := make([]graphEdge, 0)
 	seen := map[string]bool{}
 
-	// Always show match edges when participants are matched (regardless of phase)
 	for _, p := range participants {
 		if p.MatchedWith == "" {
 			continue
@@ -456,7 +493,6 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Show heuristic runner-up edges for all participants (top-2 after their actual match)
 	type scored struct {
 		id    string
 		score int
@@ -499,12 +535,17 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, map[string]any{
+	return map[string]any{
 		"phase":    phase,
 		"nodes":    nodes,
 		"edges":    edges,
 		"activity": activity,
-	})
+	}
+}
+
+// GET /bigscreen/graph-data  — kept as fallback; big screen now uses /bigscreen/stream
+func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, h.buildGraphPayload())
 }
 
 // GET /bigscreen/state  — HTMX polled every 3s
@@ -647,4 +688,112 @@ func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// ── SSE ────────────────────────────────────────────────────────────────────
+
+func sseHeaders(w http.ResponseWriter) bool {
+	if _, ok := w.(http.Flusher); !ok {
+		http.Error(w, "streaming not supported", 500)
+		return false
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	return true
+}
+
+func sseRedirect(w http.ResponseWriter, url string) {
+	fmt.Fprintf(w, "event: redirect\ndata: %s\n\n", url)
+	w.(http.Flusher).Flush()
+}
+
+// GET /user/pipeline-stream/{id}
+// Pushes a redirect event when the participant transitions to ready or matched.
+// Complements HTMX polling (which handles the spinner HTML updates).
+func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := h.db.GetParticipant(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !sseHeaders(w) {
+		return
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			p, err := h.db.GetParticipant(id)
+			if err != nil {
+				return
+			}
+			switch p.PipelineStep {
+			case "ready":
+				sseRedirect(w, "/user/wait/"+p.ID)
+				return
+			case "matched":
+				sseRedirect(w, "/user/match/"+p.ID)
+				return
+			}
+		}
+	}
+}
+
+// GET /user/wait-stream/{id}
+// Pushes a redirect event when the participant is matched.
+func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := h.db.GetParticipant(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !sseHeaders(w) {
+		return
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			p, err := h.db.GetParticipant(id)
+			if err != nil {
+				return
+			}
+			if p.PipelineStep == "matched" {
+				sseRedirect(w, "/user/match/"+p.ID)
+				return
+			}
+		}
+	}
+}
+
+// GET /bigscreen/stream
+// Pushes graph-data JSON for D3, replacing the JS setTimeout poll.
+func (h *Handler) ScreenStream(w http.ResponseWriter, r *http.Request) {
+	if !sseHeaders(w) {
+		return
+	}
+	flusher := w.(http.Flusher)
+	sendData := func() {
+		data, _ := json.Marshal(h.buildGraphPayload())
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+	sendData()
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			sendData()
+		}
+	}
 }

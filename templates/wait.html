@@ -63,6 +63,14 @@
         </div>
         {{end}}
       </div>
+      {{$bs := badges $prof}}
+      {{if $bs}}
+      <div class="flex gap-2 flex-wrap mt-3">
+        {{range $bs}}
+        <span class="{{.Color}} text-gray-800 rounded-full px-3 py-1 text-xs font-semibold shadow-sm">{{.Icon}} {{.Label}}</span>
+        {{end}}
+      </div>
+      {{end}}
     </div>
     {{end}}
 
@@ -96,6 +104,9 @@
     if (qr) {
       qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent(window.location.href);
     }
+    const _es = new EventSource('/user/wait-stream/{{$p.ID}}');
+    _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
+    _es.onerror = () => _es.close();
   </script>
 </body>
 </html>
