@@ -39,6 +39,9 @@ type mistralResp struct {
 }
 
 func (m *MistralClient) doChat(system, user string) (string, error) {
+	if m.httpClient == nil {
+		return "", fmt.Errorf("httpClient not initialized")
+	}
 	req := mistralReq{
 		Model: m.model,
 		Messages: []mistralMsg{

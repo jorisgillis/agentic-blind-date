@@ -24,8 +24,10 @@ type Participant struct {
 	PersonaSymbol   string
 	PersonaTagline  string
 	ProfileJSON     string
-	CustomQuestions string
+	Questions       string
 	AnswersJSON     string
+	ExtraAnswers    string
+	Interests      string
 	PipelineStep    string
 	MatchedWith     string
 	CompatScore     int
@@ -52,15 +54,17 @@ func initDB(path string) (*DB, error) {
 	_, err = sqlDB.Exec(`
 		CREATE TABLE IF NOT EXISTS participants (
 			id               TEXT PRIMARY KEY,
-			github_handle    TEXT UNIQUE NOT NULL,
+			github_handle    TEXT UNIQUE,
 			name             TEXT NOT NULL DEFAULT '',
 			persona_name     TEXT NOT NULL DEFAULT '',
 			persona_color    TEXT NOT NULL DEFAULT 'bg-gray-400',
 			persona_symbol   TEXT NOT NULL DEFAULT '🎭',
 			persona_tagline  TEXT NOT NULL DEFAULT '',
 			profile_json     TEXT NOT NULL DEFAULT '{}',
-			custom_questions TEXT NOT NULL DEFAULT '[]',
+			questions       TEXT NOT NULL DEFAULT '[]',
 			answers_json     TEXT NOT NULL DEFAULT '{}',
+			extra_answers    TEXT NOT NULL DEFAULT '{}',
+			interests       TEXT NOT NULL DEFAULT '{}',
 			pipeline_step    TEXT NOT NULL DEFAULT 'fetching_github',
 			matched_with     TEXT REFERENCES participants(id),
 			compat_score     INTEGER NOT NULL DEFAULT 0,
@@ -93,6 +97,11 @@ func initDB(path string) (*DB, error) {
 		`ALTER TABLE participants ADD COLUMN name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE participants ADD COLUMN persona_symbol TEXT NOT NULL DEFAULT '🎭'`,
 		`ALTER TABLE participants ADD COLUMN persona_tagline TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE participants MODIFY github_handle TEXT UNIQUE`,
+		`ALTER TABLE participants ADD COLUMN extra_answers TEXT NOT NULL DEFAULT '{}'`,
+		`ALTER TABLE participants ADD COLUMN interests TEXT NOT NULL DEFAULT '{}'`,
+		`ALTER TABLE participants ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'`,
+		`UPDATE participants SET questions = custom_questions WHERE custom_questions IS NOT NULL`,
 	} {
 		sqlDB.Exec(m)
 	}
@@ -131,7 +140,8 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 	err := row.Scan(
 		&p.ID, &p.GitHubHandle, &p.Name,
 		&p.PersonaName, &p.PersonaColor, &p.PersonaSymbol, &p.PersonaTagline,
-		&p.ProfileJSON, &p.CustomQuestions, &p.AnswersJSON, &p.PipelineStep,
+		&p.ProfileJSON, &p.Questions, &p.AnswersJSON, &p.ExtraAnswers, &p.Interests,
+		&p.PipelineStep,
 		&p.MatchedWith, &p.CompatScore, &p.CompatReason,
 		&p.RedFlags, &p.GreenFlags, &p.Icebreakers, &p.CreatedAt,
 	)
@@ -141,7 +151,7 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 const selectParticipant = `
 	SELECT id, github_handle, name,
 	       persona_name, persona_color, persona_symbol, persona_tagline,
-	       profile_json, custom_questions, answers_json, pipeline_step,
+	       profile_json, questions, answers_json, extra_answers, interests, pipeline_step,
 	       COALESCE(matched_with, ''), compat_score, compat_reason,
 	       red_flags, green_flags, icebreakers, created_at
 	FROM participants`
@@ -191,8 +201,8 @@ func (db *DB) CreateParticipant(id, handle, name string) error {
 	}
 
 	_, err = tx.Exec(
-		`INSERT INTO participants (id, github_handle, name, persona_color, persona_symbol) VALUES (?, ?, ?, ?, ?)`,
-		id, handle, name, color, symbol,
+		`INSERT INTO participants (id, github_handle, name, persona_color, persona_symbol, questions, extra_answers, interests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, handle, name, color, symbol, "[]", "{}", "{}",
 	)
 	if err != nil {
 		return err
@@ -215,10 +225,20 @@ func (db *DB) UpdatePipelineStep(id, step string) error {
 	return err
 }
 
-func (db *DB) UpdateProfile(id, profileJSON, personaName, personaTagline, customQuestions string) error {
+func (db *DB) UpdateProfile(id, profileJSON, personaName, personaTagline, questions string) error {
 	_, err := db.db.Exec(`
-		UPDATE participants SET profile_json = ?, persona_name = ?, persona_tagline = ?, custom_questions = ?
-		WHERE id = ?`, profileJSON, personaName, personaTagline, customQuestions, id)
+		UPDATE participants SET profile_json = ?, persona_name = ?, persona_tagline = ?, questions = ?
+		WHERE id = ?`, profileJSON, personaName, personaTagline, questions, id)
+	return err
+}
+
+func (db *DB) UpdateExtraAnswers(id, extraAnswers string) error {
+	_, err := db.db.Exec(`UPDATE participants SET extra_answers = ? WHERE id = ?`, extraAnswers, id)
+	return err
+}
+
+func (db *DB) UpdateInterests(id, interests string) error {
+	_, err := db.db.Exec(`UPDATE participants SET interests = ? WHERE id = ?`, interests, id)
 	return err
 }
 

@@ -1,17 +1,24 @@
 # Agentic Blind Date
 
-A web app for tech meetups, built as a live demo of agentic AI. Participants register with their GitHub handle, get interviewed by an AI pipeline, and are matched with their most compatible tech soulmate — then revealed all at once on a big screen.
+A web app for tech meetups, built as a live demo of agentic AI. Participants
+register with their GitHub handle, get interviewed by an AI pipeline, and are
+matched with their most compatible tech soulmate — then revealed all at once on
+a big screen.
 
-The app is inspired by the TV show [Blind Date](https://en.wikipedia.org/wiki/Blind_date): matching is based on technical preferences and GitHub profiles rather than romance.
+The app is inspired by the TV show [Blind
+Date](https://en.wikipedia.org/wiki/Blind_date): matching is based on technical
+preferences and GitHub profiles rather than romance.
 
 ## Features
 
 ### The agent pipeline
 
-Each participant runs through four AI agents in sequence, visible in real-time on their phone:
+Each participant runs through four AI agents in sequence, visible in real-time
+on their phone:
 
 1. **GitHub Fetch Agent** — pulls public profile data: languages, top repos, bio, contribution stats
-2. **Profile Agent** — uses Mistral to generate a funny anonymous persona ("The Grumpy Kernel King", "The YAML Wrangler") with a unique color-coded card and animal emoji (first 10 participants each get a distinct animal)
+2. **Profile Agent** — uses Mistral to generate a funny anonymous persona 
+  ("The Grumpy Kernel King", "The YAML Wrangler") with a unique color-coded card and animal emoji (first 10 participants each get a distinct animal)
 3. **Interviewer Agent** — asks 5 fixed opinionated questions (tabs vs spaces, deploy on Friday?, etc.) plus 3 questions tailored to the participant's GitHub profile
 4. **Matchmaker Agent** — after the host triggers the reveal, pairs all participants by compatibility and generates a score, explanation, red/green flags, and conversation starters for each pair
 
@@ -179,11 +186,15 @@ For each participant, every other participant is scored with a heuristic:
 - +3 points per shared programming language
 - +1 point per identical answer to the same question
 
-Each participant keeps their top-5 candidates. All unique pairs across every top-5 list are collected — at most N×5 pairs, typically fewer after deduplication. This caps the number of Mistral calls at a manageable level regardless of event size.
+Each participant keeps their top-5 candidates. All unique pairs across every
+top-5 list are collected — at most N×5 pairs, typically fewer after
+deduplication. This caps the number of Mistral calls at a manageable level
+regardless of event size.
 
 **Phase 2 — LLM scoring** (`generateMatch`)
 
-Every unique candidate pair gets a Mistral API call, two running in parallel. Results are cached in memory so no pair is scored twice. Each call produces:
+Every unique candidate pair gets a Mistral API call, two running in parallel.
+Results are cached in memory so no pair is scored twice. Each call produces:
 - `score` — a 0–100 compatibility percentage
 - `reason` — a one-sentence humorous explanation
 - `red_flags` / `green_flags` — compatibility highlights
@@ -191,9 +202,18 @@ Every unique candidate pair gets a Mistral API call, two running in parallel. Re
 
 **Phase 3 — Greedy assignment from LLM scores**
 
-Candidate pairs are sorted by their Mistral score descending. A greedy sweep assigns each participant to their highest-scoring available partner. If a participant was not covered by any top-5 list (can happen with large odd-numbered groups), they fall back to a heuristic pair and get their own Mistral call.
+Candidate pairs are sorted by their Mistral score descending. A greedy sweep
+assigns each participant to their highest-scoring available partner. If a
+participant was not covered by any top-5 list (can happen with large
+odd-numbered groups), they fall back to a heuristic pair and get their own
+Mistral call.
 
-**Why three phases?** The heuristic narrows O(n²) possible pairs down to a manageable candidate set in microseconds. Mistral then makes the actual pairing decision based on full profile and interview context — not just language overlap. The big screen graph during onboarding uses the same heuristic scores to draw top-3 affinity edges per node, giving the audience a preview before the reveal.
+**Why three phases?** The heuristic narrows O(n²) possible pairs down to a
+manageable candidate set in microseconds. Mistral then makes the actual pairing
+decision based on full profile and interview context — not just language
+overlap. The big screen graph during onboarding uses the same heuristic scores
+to draw top-3 affinity edges per node, giving the audience a preview before the
+reveal.
 
 ### Database
 

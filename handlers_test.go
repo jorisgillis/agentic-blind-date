@@ -62,7 +62,7 @@ func TestLandingReturns200(t *testing.T) {
 func TestJoinRegistersParticipant(t *testing.T) {
 	srv, db := testServer(t)
 
-	resp := post(t, srv, "/user/join", url.Values{"github": {"testuser"}})
+	resp := post(t, srv, "/user/join", url.Values{"name": {"Test User"}, "github": {"testuser"}})
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("POST /user/join: want 303, got %d", resp.StatusCode)
 	}
@@ -97,9 +97,36 @@ func TestJoinDuplicateHandle(t *testing.T) {
 
 func TestJoinEmptyHandle(t *testing.T) {
 	srv, _ := testServer(t)
-	resp := post(t, srv, "/user/join", url.Values{"github": {""}})
+	resp := post(t, srv, "/user/join", url.Values{"name": {"Test"}, "github": {""}})
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("empty handle: want 400, got %d", resp.StatusCode)
+		t.Errorf("POST /user/join with empty handle: want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestJoinWithoutGitHub(t *testing.T) {
+	srv, db := testServer(t)
+
+	languages, _ := json.Marshal([]string{"Go", "Python"})
+	resp := post(t, srv, "/user/join", url.Values{
+		"name":           {"Non GitHub User"},
+		"no_github":     {"on"},
+		"languages":      {string(languages)},
+		"project_type":   {"Web"},
+		"dev_environment": {`["IDE","VIM"]`},
+		"weirdest_bug":   {"A race condition on Tuesdays"},
+		"keyboard":       {"Mechanical"},
+	})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("POST /user/join without GitHub: want 303, got %d", resp.StatusCode)
+	}
+
+	loc := resp.Header.Get("Location")
+	if !strings.HasPrefix(loc, "/user/onboard/") {
+		t.Errorf("Location: want /user/onboard/..., got %s", loc)
+	}
+
+	if db.ParticipantCount() == 0 {
+		t.Fatal("participant should exist in DB")
 	}
 }
 
@@ -147,7 +174,7 @@ func TestReset(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Register a participant first
-	post(t, srv, "/user/join", url.Values{"github": {"willbereset"}})
+	post(t, srv, "/user/join", url.Values{"name": {"Will Be Reset"}, "github": {"willbereset"}})
 	if db.ParticipantCount() == 0 {
 		t.Fatal("participant should exist before reset")
 	}

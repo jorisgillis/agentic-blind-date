@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -29,55 +30,332 @@ type matchResult struct {
 	Icebreakers []string `json:"icebreakers"`
 }
 
+// CompleteProfile combines all data about a participant for persona generation
+type CompleteProfile struct {
+	GitHubProfile    *GitHubProfile
+	ExtraAnswers     *ExtraAnswers
+	InterviewAnswers map[string]string
+	Interests       map[string]interface{}
+}
+
 // RunSetup fetches GitHub profile, creates persona, generates custom questions.
 // Runs in a goroutine after participant registration.
 func (a *AgentPipeline) RunSetup(participantID, githubHandle string) {
-	a.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle))
+	a.RunSetupWithExtraAnswers(participantID, githubHandle, "", "", "", "", "", "", "")
+}
 
-	profile, err := a.github.FetchProfile(githubHandle)
-	if err != nil {
-		log.Printf("GitHub fetch error for %s: %v", githubHandle, err)
-		profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
+// RunSetupWithExtraAnswers handles both GitHub and non-GitHub participants.
+func (a *AgentPipeline) RunSetupWithExtraAnswers(participantID, githubHandle, languages, projectType, devEnvironment, weirdestBug, keyboard, keyboardOther, devEnvOther string) {
+	var profile *GitHubProfile
+	var isGitHubUser bool
+
+	if languages == "" && projectType == "" {
+		isGitHubUser = true
+		a.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle))
+		profile, _ = a.github.FetchProfile(githubHandle)
+		if profile == nil {
+			profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
+		}
+	} else {
+		isGitHubUser = false
+		a.db.LogActivity(fmt.Sprintf("📝 Processing extra answers for non-GitHub user..."))
+
+		var langSlice []string
+		if languages != "" {
+			json.Unmarshal([]byte(languages), &langSlice)
+		}
+
+		var devEnvSlice []string
+		if devEnvironment != "" {
+			json.Unmarshal([]byte(devEnvironment), &devEnvSlice)
+		}
+
+		if keyboard == "Other" {
+			keyboard = keyboardOther
+		}
+
+		if len(devEnvSlice) == 1 && devEnvSlice[0] == "Other" {
+			devEnvSlice = []string{devEnvOther}
+		}
+
+		profile = &GitHubProfile{
+			ExtraAnswers: &ExtraAnswers{
+				Languages:      langSlice,
+				ProjectType:    projectType,
+				DevEnvironment: devEnvSlice,
+				WeirdestBug:    weirdestBug,
+				Keyboard:       keyboard,
+			},
+		}
 	}
+
+	a.db.UpdatePipelineStep(participantID, "interviewing")
+
+	var activityMsg string
+	if isGitHubUser {
+		activityMsg = fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle)
+	} else {
+		activityMsg = "📝 Preparing interview questions..."
+	}
+	a.db.LogActivity(activityMsg)
+
+	var questions []Question
+	if isGitHubUser {
+		customQs, err := a.generateCustomQuestions(profile)
+		if err != nil {
+			log.Printf("Custom questions error: %v", err)
+			customQs = []string{
+				"What's your most controversial tech opinion?",
+				"Worst bug you've ever shipped to production?",
+				"Coffee or tea while coding?",
+			}
+		}
+		questions = append(FixedQuestions, a.stringsToQuestions(customQs, "custom")...)
+	} else {
+		questions = append(ExtraQuestions, a.filterFixedQuestions()...)
+	}
+
+	questionsJSON, _ := json.Marshal(questions)
 	profileJSON, _ := json.Marshal(profile)
 
-	a.db.UpdatePipelineStep(participantID, "creating_persona")
-	a.db.LogActivity(fmt.Sprintf("🎭 Crafting persona for @%s...", githubHandle))
+	a.db.UpdateProfile(participantID, string(profileJSON), "", "", string(questionsJSON))
 
-	persona, err := a.generatePersona(profile)
+	if !isGitHubUser {
+		extraAnswersJSON, _ := json.Marshal(profile.ExtraAnswers)
+		a.db.UpdateExtraAnswers(participantID, string(extraAnswersJSON))
+	}
+
+	a.db.UpdatePipelineStep(participantID, "interviewing")
+	a.db.LogActivity("✅ Ready for the interview!")
+}
+
+// RunFinalSetup generates persona and computes interests after all interview answers are collected.
+func (a *AgentPipeline) RunFinalSetup(participantID string) {
+	a.db.LogActivity(fmt.Sprintf("🎭 Crafting persona for participant %s...", participantID))
+
+	p, err := a.db.GetParticipant(participantID)
+	if err != nil {
+		log.Printf("RunFinalSetup: participant not found: %v", err)
+		return
+	}
+
+	var profile GitHubProfile
+	if err := json.Unmarshal([]byte(p.ProfileJSON), &profile); err != nil {
+		log.Printf("RunFinalSetup: unmarshal profile error: %v", err)
+		return
+	}
+
+	var answers map[string]string
+	if err := json.Unmarshal([]byte(p.AnswersJSON), &answers); err != nil {
+		log.Printf("RunFinalSetup: unmarshal answers error: %v", err)
+		return
+	}
+
+	var extraAnswers *ExtraAnswers
+	if p.ExtraAnswers != "" && p.ExtraAnswers != "{}" {
+		if err := json.Unmarshal([]byte(p.ExtraAnswers), &extraAnswers); err != nil {
+			log.Printf("RunFinalSetup: unmarshal extra answers error: %v", err)
+		}
+	}
+
+	completeProfile := a.buildCompleteProfile(&profile, extraAnswers, answers)
+	
+	persona, err := a.generatePersonaFromCompleteProfile(completeProfile)
 	if err != nil {
 		log.Printf("Persona generation error: %v", err)
-		toTitle := func(s string) string {
-			if s == "" {
-				return s
-			}
-			return strings.ToUpper(s[:1]) + s[1:]
+		persona = a.generateFallbackPersonaFromCompleteProfile(completeProfile)
+	}
+
+	interests := a.computeInterestsFromCompleteProfile(completeProfile)
+	interestsJSON, _ := json.Marshal(interests)
+
+	a.db.UpdateProfile(participantID, string(p.ProfileJSON), persona.Name, persona.Tagline, p.Questions)
+	a.db.UpdateInterests(participantID, string(interestsJSON))
+	a.db.UpdatePipelineStep(participantID, "ready")
+	a.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))
+}
+
+func (a *AgentPipeline) buildCompleteProfile(profile *GitHubProfile, extraAnswers *ExtraAnswers, interviewAnswers map[string]string) *CompleteProfile {
+	interests := a.computeInterestsFromCompleteProfile(&CompleteProfile{
+		GitHubProfile:    profile,
+		ExtraAnswers:     extraAnswers,
+		InterviewAnswers: interviewAnswers,
+	})
+	
+	return &CompleteProfile{
+		GitHubProfile:    profile,
+		ExtraAnswers:     extraAnswers,
+		InterviewAnswers: interviewAnswers,
+		Interests:       interests,
+	}
+}
+
+func (a *AgentPipeline) computeInterestsFromCompleteProfile(profile *CompleteProfile) map[string]interface{} {
+	interests := map[string]interface{}{
+		"languages": []string{},
+		"tools":    []string{},
+		"domains":  []string{},
+	}
+
+	if profile.GitHubProfile != nil {
+		gp := profile.GitHubProfile
+		interests["languages"] = gp.Languages
+		interests["tools"] = gp.TopTopics
+	} else if profile.ExtraAnswers != nil {
+		ea := profile.ExtraAnswers
+		interests["languages"] = ea.Languages
+		interests["tools"] = ea.DevEnvironment
+		if ea.ProjectType != "" {
+			interests["domains"] = []string{ea.ProjectType}
 		}
-		persona = &personaResult{
-			Name:    "The " + toTitle(githubHandle),
+	}
+
+	return interests
+}
+
+func (a *AgentPipeline) generatePersonaFromCompleteProfile(profile *CompleteProfile) (*personaResult, error) {
+	if a.mistral == nil {
+		return nil, fmt.Errorf("mistral client not initialized")
+	}
+
+	system := `You are a fun tech personality generator for a programming meetup blind date event.
+Create a funny, tongue-in-cheek anonymous persona based on a developer's profile and interview answers.
+Respond with ONLY a valid JSON object — no markdown, no backticks:
+{"name": "The [Adjective] [Tech Noun]", "tagline": "<funny one-liner max 60 chars>"}`
+
+	prompt := a.buildPersonaPrompt(profile)
+
+	response, err := a.mistral.Chat(system, prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	var result personaResult
+	if err := json.Unmarshal([]byte(extractJSON(response)), &result); err != nil {
+		return nil, fmt.Errorf("persona parse error: %v (raw: %s)", err, response)
+	}
+	return &result, nil
+}
+
+func (a *AgentPipeline) buildPersonaPrompt(profile *CompleteProfile) string {
+	var parts []string
+	
+	if profile.GitHubProfile != nil && profile.GitHubProfile.Login != "" {
+		parts = append(parts, fmt.Sprintf("GitHub: @%s", profile.GitHubProfile.Login))
+		parts = append(parts, profile.GitHubProfile.Summary())
+	} else if profile.ExtraAnswers != nil {
+		ea := profile.ExtraAnswers
+		if len(ea.Languages) > 0 {
+			parts = append(parts, "Languages: "+strings.Join(ea.Languages, ", "))
+		}
+		if ea.ProjectType != "" {
+			parts = append(parts, "Project type: "+ea.ProjectType)
+		}
+		if len(ea.DevEnvironment) > 0 {
+			parts = append(parts, "Dev environment: "+strings.Join(ea.DevEnvironment, ", "))
+		}
+		if ea.WeirdestBug != "" {
+			parts = append(parts, "Weirdest bug: "+ea.WeirdestBug)
+		}
+		if ea.Keyboard != "" {
+			parts = append(parts, "Keyboard: "+ea.Keyboard)
+		}
+	}
+	
+	parts = append(parts, "\nInterview answers:")
+	for qid, answer := range profile.InterviewAnswers {
+		parts = append(parts, fmt.Sprintf("Q[%s]: %s", qid, answer))
+	}
+	
+	return strings.Join(parts, "\n")
+}
+
+func (a *AgentPipeline) generateFallbackPersonaFromCompleteProfile(profile *CompleteProfile) *personaResult {
+	toTitle := func(s string) string {
+		if s == "" {
+			return s
+		}
+		return strings.ToUpper(s[:1]) + s[1:]
+	}
+
+	if profile.GitHubProfile != nil && profile.GitHubProfile.Login != "" {
+		return &personaResult{
+			Name:    "The " + toTitle(profile.GitHubProfile.Login),
 			Tagline: "Mysterious coder. Ships things.",
 		}
 	}
 
-	a.db.LogActivity(fmt.Sprintf("🤔 Preparing interview for %s...", persona.Name))
+	var name string
+	if profile.ExtraAnswers != nil && len(profile.ExtraAnswers.Languages) > 0 {
+		name = "The " + toTitle(profile.ExtraAnswers.Languages[0]) + " Developer"
+	} else if profile.InterviewAnswers != nil {
+		if lang, ok := profile.InterviewAnswers["fixed_1"]; ok && lang != "" {
+			name = "The " + toTitle(lang) + " Developer"
+		} else {
+			name = "The Mysterious Coder"
+		}
+	} else {
+		name = "The Mysterious Coder"
+	}
+	return &personaResult{
+		Name:    name,
+		Tagline: "Ships things.",
+	}
+}
 
-	customQs, err := a.generateCustomQuestions(profile)
-	if err != nil {
-		log.Printf("Custom questions error: %v", err)
-		customQs = []string{
-			"What's your most controversial tech opinion?",
-			"Worst bug you've ever shipped to production?",
-			"Coffee or tea while coding?",
+func (a *AgentPipeline) generateFallbackPersona(profile *GitHubProfile, isGitHubUser bool) *personaResult {
+	toTitle := func(s string) string {
+		if s == "" {
+			return s
+		}
+		return strings.ToUpper(s[:1]) + s[1:]
+	}
+
+	if isGitHubUser {
+		return &personaResult{
+			Name:    "The " + toTitle(profile.Login),
+			Tagline: "Mysterious coder. Ships things.",
 		}
 	}
-	customQsJSON, _ := json.Marshal(customQs)
 
-	a.db.UpdateProfile(participantID, string(profileJSON), persona.Name, persona.Tagline, string(customQsJSON))
-	a.db.UpdatePipelineStep(participantID, "interviewing")
-	a.db.LogActivity(fmt.Sprintf("✅ %s is ready for the interview!", persona.Name))
+	var name string
+	if len(profile.ExtraAnswers.Languages) > 0 {
+		name = "The " + toTitle(profile.ExtraAnswers.Languages[0]) + " Developer"
+	} else {
+		name = "The Mysterious Coder"
+	}
+	return &personaResult{
+		Name:    name,
+		Tagline: "Ships things without GitHub.",
+	}
+}
+
+func (a *AgentPipeline) computeInterests(profile *GitHubProfile) map[string]interface{} {
+	interests := map[string]interface{}{
+		"languages": []string{},
+		"tools":    []string{},
+		"domains":  []string{},
+	}
+
+	if profile.ExtraAnswers != nil {
+		ea := profile.ExtraAnswers
+		interests["languages"] = ea.Languages
+		interests["tools"] = ea.DevEnvironment
+		if ea.ProjectType != "" {
+			interests["domains"] = []string{ea.ProjectType}
+		}
+	} else {
+		interests["languages"] = profile.Languages
+		interests["tools"] = profile.TopTopics
+	}
+
+	return interests
 }
 
 func (a *AgentPipeline) generatePersona(profile *GitHubProfile) (*personaResult, error) {
+	if a.mistral == nil {
+		return nil, fmt.Errorf("mistral client not initialized")
+	}
 	system := `You are a fun tech personality generator for a programming meetup blind date event.
 Create a funny, tongue-in-cheek anonymous persona based on a GitHub profile.
 Respond with ONLY a valid JSON object — no markdown, no backticks:
@@ -260,8 +538,16 @@ Respond with ONLY valid JSON — no markdown:
 		log.Printf("unmarshal answers for %s: %v", p2.GitHubHandle, err)
 	}
 
+	var p1Interests, p2Interests map[string]interface{}
+	if p1.Interests != "" {
+		json.Unmarshal([]byte(p1.Interests), &p1Interests)
+	}
+	if p2.Interests != "" {
+		json.Unmarshal([]byte(p2.Interests), &p2Interests)
+	}
+
 	followNote := ""
-	if a.github != nil {
+	if a.github != nil && p1.GitHubHandle != "" && p2.GitHubHandle != "" {
 		aFollowsB, bFollowsA := a.github.CheckMutualFollow(p1.GitHubHandle, p2.GitHubHandle)
 		switch {
 		case aFollowsB && bFollowsA:
@@ -273,18 +559,22 @@ Respond with ONLY valid JSON — no markdown:
 		}
 	}
 
-	user := fmt.Sprintf(`Compare these two developers:
+	interestsNote := ""
+	if p1Interests != nil || p2Interests != nil {
+		p1InterestsStr := fmtInterests(p1Interests)
+		p2InterestsStr := fmtInterests(p2Interests)
+		if p1InterestsStr != "" && p2InterestsStr != "" {
+			interestsNote = fmt.Sprintf("\nInterests: %s | %s", p1InterestsStr, p2InterestsStr)
+		} else if p1InterestsStr != "" {
+			interestsNote = fmt.Sprintf("\nInterests: %s", p1InterestsStr)
+		} else if p2InterestsStr != "" {
+			interestsNote = fmt.Sprintf("\nInterests: %s", p2InterestsStr)
+		}
+	}
 
-DEVELOPER 1 (%s):
-%s
-Interview answers: %v
-
-DEVELOPER 2 (%s):
-%s
-Interview answers: %v%s`,
-		p1.PersonaName, p1Profile.Summary(), p1Ans,
-		p2.PersonaName, p2Profile.Summary(), p2Ans,
-		followNote,
+	user := fmt.Sprintf("Compare these two developers:\n\nDEVELOPER 1 (%s):\n%s\nInterview answers: %v%s\n\nDEVELOPER 2 (%s):\n%s\nInterview answers: %v%s",
+		p1.PersonaName, p1Profile.Summary(), p1Ans, interestsNote,
+		p2.PersonaName, p2Profile.Summary(), p2Ans, followNote,
 	)
 
 	response, err := a.mistral.Chat(system, user)
@@ -297,6 +587,41 @@ Interview answers: %v%s`,
 		return nil, fmt.Errorf("match parse error: %v (raw: %s)", err, response)
 	}
 	return &result, nil
+}
+
+func fmtInterests(interests map[string]interface{}) string {
+	if len(interests) == 0 {
+		return ""
+	}
+	var parts []string
+	for category, items := range interests {
+		if itemSlice, ok := items.([]string); ok && len(itemSlice) > 0 {
+			parts = append(parts, category+": "+strings.Join(itemSlice, ", "))
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
+func (a *AgentPipeline) stringsToQuestions(texts []string, prefix string) []Question {
+	var questions []Question
+	for i, text := range texts {
+		questions = append(questions, Question{
+			ID:      prefix + "_" + strconv.Itoa(i),
+			Text:    text,
+			Options: nil,
+		})
+	}
+	return questions
+}
+
+func (a *AgentPipeline) filterFixedQuestions() []Question {
+	var filtered []Question
+	for _, q := range FixedQuestions {
+		if q.ID != "fixed_1" {
+			filtered = append(filtered, q)
+		}
+	}
+	return filtered
 }
 
 func pairKey(a, b *Participant) string {

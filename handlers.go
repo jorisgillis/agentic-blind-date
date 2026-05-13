@@ -159,9 +159,71 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 	handle = strings.TrimPrefix(handle, "https://github.com/")
 	handle = strings.TrimSuffix(handle, "/")
 	name := strings.TrimSpace(r.FormValue("name"))
+	noGitHub := r.FormValue("no_github") == "on"
 
-	if handle == "" {
+	if name == "" {
+		http.Error(w, "Name is required", 400)
+		return
+	}
+
+	if !noGitHub && handle == "" {
 		http.Error(w, "GitHub handle required", 400)
+		return
+	}
+
+	if noGitHub {
+		languages := r.FormValue("languages")
+		projectType := strings.TrimSpace(r.FormValue("project_type"))
+		devEnvironment := r.FormValue("dev_environment")
+		weirdestBug := strings.TrimSpace(r.FormValue("weirdest_bug"))
+		keyboard := strings.TrimSpace(r.FormValue("keyboard"))
+		keyboardOther := strings.TrimSpace(r.FormValue("keyboard_other"))
+		devEnvOther := strings.TrimSpace(r.FormValue("dev_environment_other"))
+
+		if languages == "" {
+			http.Error(w, "At least one programming language is required", 400)
+			return
+		}
+
+		if projectType == "" {
+			http.Error(w, "Project type is required", 400)
+			return
+		}
+
+		if devEnvironment == "" {
+			http.Error(w, "Development environment is required", 400)
+			return
+		}
+
+		if weirdestBug == "" {
+			http.Error(w, "Weirdest bug description is required", 400)
+			return
+		}
+
+		if keyboard == "" {
+			http.Error(w, "Keyboard preference is required", 400)
+			return
+		}
+
+		if keyboard == "Other" && keyboardOther == "" {
+			http.Error(w, "Please specify your keyboard preference", 400)
+			return
+		}
+
+		if devEnvironment == `["Other"]` && devEnvOther == "" {
+			http.Error(w, "Please specify your development environment", 400)
+			return
+		}
+
+		id := uuid.New().String()
+		if err := h.db.CreateParticipant(id, "", name); err != nil {
+			http.Error(w, "registration failed", 500)
+			return
+		}
+
+		go h.agents.RunSetupWithExtraAnswers(id, "", languages, projectType, devEnvironment, weirdestBug, keyboard, keyboardOther, devEnvOther)
+		setParticipantCookie(w, id)
+		http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 		return
 	}
 
@@ -239,27 +301,20 @@ func (h *Handler) buildQuestionData(p *Participant) *QuestionData {
 		answers = map[string]string{}
 	}
 
+	var questions []Question
+	json.Unmarshal([]byte(p.Questions), &questions)
+
 	idx := len(answers)
-	if idx >= TotalQuestions {
+	if idx >= len(questions) {
 		return nil
 	}
 
-	var q Question
-	if idx < TotalFixedQuestions {
-		q = FixedQuestions[idx]
-	} else {
-		var customQs []string
-		json.Unmarshal([]byte(p.CustomQuestions), &customQs)
-		ci := idx - TotalFixedQuestions
-		if ci < len(customQs) {
-			q = Question{ID: strconv.Itoa(idx), Text: customQs[ci]}
-		}
-	}
+	q := questions[idx]
 
 	return &QuestionData{
 		ParticipantID: p.ID,
 		Index:         idx,
-		Total:         TotalQuestions,
+		Total:         len(questions),
 		Question:      q,
 	}
 }
@@ -285,17 +340,23 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		answers = map[string]string{}
 	}
 
-	idx := len(answers)
-	answers[strconv.Itoa(idx)] = answer
+	var questions []Question
+	json.Unmarshal([]byte(p.Questions), &questions)
+
+	currentIndex := len(answers)
+	if currentIndex < len(questions) {
+		currentQuestion := questions[currentIndex]
+		answers[currentQuestion.ID] = answer
+	}
+
 	answersJSON, _ := json.Marshal(answers)
 	h.db.UpdateAnswers(p.ID, string(answersJSON))
 
-	if idx+1 >= TotalQuestions {
-		h.db.UpdatePipelineStep(p.ID, "ready")
-		h.db.LogActivity(fmt.Sprintf("✅ %s finished the interview!", p.PersonaName))
-		// Trigger continuous matching - match this participant against existing ready pool
-		go func() {
-			pFull, err := h.db.GetParticipant(p.ID)
+	if len(answers) >= len(questions) {
+		go h.agents.RunFinalSetup(p.ID)
+		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
+		return
+	}
 			if err == nil {
 				if err := h.agents.RunContinuousMatching(pFull); err != nil {
 					log.Printf("Continuous matching error for %s: %v", p.PersonaName, err)
@@ -327,27 +388,18 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 
 	var answers map[string]string
 	json.Unmarshal([]byte(p.AnswersJSON), &answers)
-	var customQs []string
-	json.Unmarshal([]byte(p.CustomQuestions), &customQs)
+	
+	var questions []Question
+	json.Unmarshal([]byte(p.Questions), &questions)
 
 	type QAPair struct {
 		Question string
 		Answer   string
 	}
 	var qaPairs []QAPair
-	for i := 0; i < TotalQuestions; i++ {
-		ans, ok := answers[strconv.Itoa(i)]
-		if !ok {
-			break
-		}
-		var qText string
-		if i < TotalFixedQuestions {
-			qText = FixedQuestions[i].Text
-		} else if ci := i - TotalFixedQuestions; ci < len(customQs) {
-			qText = customQs[ci]
-		}
-		if qText != "" {
-			qaPairs = append(qaPairs, QAPair{Question: qText, Answer: ans})
+	for _, q := range questions {
+		if ans, ok := answers[q.ID]; ok {
+			qaPairs = append(qaPairs, QAPair{Question: q.Text, Answer: ans})
 		}
 	}
 

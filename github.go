@@ -29,6 +29,15 @@ type GitHubProfile struct {
 	TopTopics        []string   `json:"top_topics"`
 	HasProfileReadme bool       `json:"has_profile_readme"`
 	TopRepos         []RepoInfo `json:"top_repos"`
+	ExtraAnswers     *ExtraAnswers `json:"extra_answers,omitempty"`
+}
+
+type ExtraAnswers struct {
+	Languages       []string `json:"languages"`
+	ProjectType     string   `json:"project_type"`
+	DevEnvironment  []string `json:"dev_environment"`
+	WeirdestBug     string   `json:"weirdest_bug"`
+	Keyboard        string   `json:"keyboard"`
 }
 
 type RepoInfo struct {
@@ -106,44 +115,63 @@ func (g *GitHubClient) FetchProfile(handle string) (*GitHubProfile, error) {
 
 func (p *GitHubProfile) Summary() string {
 	var parts []string
-	parts = append(parts, fmt.Sprintf("GitHub: @%s", p.Login))
-	if p.Name != "" {
-		parts = append(parts, "Name: "+p.Name)
-	}
-	if p.Bio != "" {
-		parts = append(parts, "Bio: "+p.Bio)
-	}
-	if p.Company != "" {
-		parts = append(parts, "Company: "+p.Company)
-	}
-	if p.Location != "" {
-		parts = append(parts, "Location: "+p.Location)
-	}
-	if p.AccountAgeDays > 0 {
-		parts = append(parts, fmt.Sprintf("Account age: %d days (~%d years)", p.AccountAgeDays, p.AccountAgeDays/365))
-	}
-	parts = append(parts, fmt.Sprintf("Public repos: %d, Followers: %d, Total stars: %d", p.PublicRepos, p.Followers, p.TotalStars))
-	if p.HasProfileReadme {
-		parts = append(parts, "Has profile README: yes")
-	}
-	if len(p.Languages) > 0 {
-		parts = append(parts, "Languages used: "+strings.Join(p.Languages, ", "))
-	}
-	if len(p.TopTopics) > 0 {
-		parts = append(parts, "Top topics: "+strings.Join(p.TopTopics, ", "))
-	}
-	for _, r := range p.TopRepos {
-		line := "Repo: " + r.Name
-		if r.Description != "" {
-			line += " — " + r.Description
+	if p.Login != "" {
+		parts = append(parts, fmt.Sprintf("GitHub: @%s", p.Login))
+		if p.Name != "" {
+			parts = append(parts, "Name: "+p.Name)
 		}
-		if r.Language != "" {
-			line += " (" + r.Language + ")"
+		if p.Bio != "" {
+			parts = append(parts, "Bio: "+p.Bio)
 		}
-		if r.Stars > 0 {
-			line += fmt.Sprintf(" ⭐%d", r.Stars)
+		if p.Company != "" {
+			parts = append(parts, "Company: "+p.Company)
 		}
-		parts = append(parts, line)
+		if p.Location != "" {
+			parts = append(parts, "Location: "+p.Location)
+		}
+		if p.AccountAgeDays > 0 {
+			parts = append(parts, fmt.Sprintf("Account age: %d days (~%d years)", p.AccountAgeDays, p.AccountAgeDays/365))
+		}
+		parts = append(parts, fmt.Sprintf("Public repos: %d, Followers: %d, Total stars: %d", p.PublicRepos, p.Followers, p.TotalStars))
+		if p.HasProfileReadme {
+			parts = append(parts, "Has profile README: yes")
+		}
+		if len(p.Languages) > 0 {
+			parts = append(parts, "Languages used: "+strings.Join(p.Languages, ", "))
+		}
+		if len(p.TopTopics) > 0 {
+			parts = append(parts, "Top topics: "+strings.Join(p.TopTopics, ", "))
+		}
+		for _, r := range p.TopRepos {
+			line := "Repo: " + r.Name
+			if r.Description != "" {
+				line += " — " + r.Description
+			}
+			if r.Language != "" {
+				line += " (" + r.Language + ")"
+			}
+			if r.Stars > 0 {
+				line += fmt.Sprintf(" ⭐%d", r.Stars)
+			}
+			parts = append(parts, line)
+		}
+	} else if p.ExtraAnswers != nil {
+		ea := p.ExtraAnswers
+		if len(ea.Languages) > 0 {
+			parts = append(parts, "Languages: "+strings.Join(ea.Languages, ", "))
+		}
+		if ea.ProjectType != "" {
+			parts = append(parts, "Project type: "+ea.ProjectType)
+		}
+		if len(ea.DevEnvironment) > 0 {
+			parts = append(parts, "Dev environment: "+strings.Join(ea.DevEnvironment, ", "))
+		}
+		if ea.WeirdestBug != "" {
+			parts = append(parts, "Weirdest bug: "+ea.WeirdestBug)
+		}
+		if ea.Keyboard != "" {
+			parts = append(parts, "Keyboard: "+ea.Keyboard)
+		}
 	}
 	return strings.Join(parts, "\n")
 }

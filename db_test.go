@@ -97,8 +97,8 @@ func TestUpdateProfile(t *testing.T) {
 	if p.ProfileJSON != `{"login":"octocat"}` {
 		t.Errorf("ProfileJSON unexpected: %s", p.ProfileJSON)
 	}
-	if p.CustomQuestions != `["q1","q2"]` {
-		t.Errorf("CustomQuestions unexpected: %s", p.CustomQuestions)
+	if p.Questions != `["q1","q2"]` {
+		t.Errorf("Questions unexpected: %s", p.Questions)
 	}
 }
 
