@@ -86,6 +86,16 @@ func initDB(path string) (*DB, error) {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
+		CREATE TABLE IF NOT EXISTS llm_cache (
+			pair_key   TEXT PRIMARY KEY,
+			score      INTEGER NOT NULL,
+			reason     TEXT NOT NULL,
+			red_flags  TEXT NOT NULL,
+			green_flags TEXT NOT NULL,
+			icebreakers TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
 		INSERT OR IGNORE INTO event_state (key, value) VALUES ('phase', 'onboarding');
 	`)
 	if err != nil {
@@ -360,4 +370,47 @@ func (db *DB) ReadyCount() int {
 	var n int
 	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step IN ('ready', 'matched')`).Scan(&n)
 	return n
+}
+
+// LLM Cache methods
+type LLMCacheEntry struct {
+	Score       int
+	Reason      string
+	RedFlags    string
+	GreenFlags  string
+	Icebreakers string
+}
+
+func (db *DB) GetLLMCache(pairKey string) (*LLMCacheEntry, bool) {
+	var entry LLMCacheEntry
+	err := db.db.QueryRow(
+		`SELECT score, reason, red_flags, green_flags, icebreakers FROM llm_cache WHERE pair_key = ?`,
+		pairKey,
+	).Scan(&entry.Score, &entry.Reason, &entry.RedFlags, &entry.GreenFlags, &entry.Icebreakers)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, false
+		}
+		log.Printf("LLM cache read error for %s: %v", pairKey, err)
+		return nil, false
+	}
+	return &entry, true
+}
+
+func (db *DB) SetLLMCache(pairKey string, score int, reason, redFlags, greenFlags, icebreakers string) {
+	_, err := db.db.Exec(
+		`INSERT OR REPLACE INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES (?, ?, ?, ?, ?, ?)`,
+		pairKey, score, reason, redFlags, greenFlags, icebreakers,
+	)
+	if err != nil {
+		log.Printf("LLM cache write error for %s: %v", pairKey, err)
+	}
+}
+
+func (db *DB) ClearLLMCache() {
+	_, err := db.db.Exec(`DELETE FROM llm_cache`)
+	if err != nil {
+		log.Printf("LLM cache clear error: %v", err)
+	}
 }

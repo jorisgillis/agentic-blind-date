@@ -15,6 +15,8 @@ type AgentPipeline struct {
 	github  *GitHubClient
 	mistral *MistralClient
 	matchMu sync.Mutex // Serializes matching operations to prevent race conditions
+	llmCache map[string]*matchResult // In-memory cache for LLM match scores
+	cacheMu sync.Mutex // Protects llmCache
 }
 
 type personaResult struct {
@@ -397,6 +399,81 @@ Respond with ONLY valid JSON — no markdown:
 	return result.Questions, nil
 }
 
+// getCachedMatchResult retrieves a cached match result or returns nil if not found
+func (a *AgentPipeline) getCachedMatchResult(p1, p2 *Participant) *matchResult {
+	// Initialize in-memory cache if nil
+	if a.llmCache == nil {
+		a.llmCache = make(map[string]*matchResult)
+	}
+	
+	key := pairKey(p1, p2)
+	
+	// Check in-memory cache first
+	a.cacheMu.Lock()
+	if cached, exists := a.llmCache[key]; exists {
+		a.cacheMu.Unlock()
+		return cached
+	}
+	a.cacheMu.Unlock()
+	
+	// Check SQLite cache
+	if a.db != nil {
+		cacheEntry, exists := a.db.GetLLMCache(key)
+		if exists {
+			result := &matchResult{
+				Score:       cacheEntry.Score,
+				Reason:      cacheEntry.Reason,
+				RedFlags:    strings.Split(cacheEntry.RedFlags, ","),
+				GreenFlags:  strings.Split(cacheEntry.GreenFlags, ","),
+				Icebreakers: strings.Split(cacheEntry.Icebreakers, ","),
+			}
+			// Store in in-memory cache for future access
+			a.cacheMu.Lock()
+			a.llmCache[key] = result
+			a.cacheMu.Unlock()
+			return result
+		}
+	}
+	
+	return nil
+}
+
+// cacheMatchResult stores a match result in both in-memory and SQLite caches
+func (a *AgentPipeline) cacheMatchResult(p1, p2 *Participant, result *matchResult) {
+	// Initialize in-memory cache if nil
+	if a.llmCache == nil {
+		a.llmCache = make(map[string]*matchResult)
+	}
+	
+	key := pairKey(p1, p2)
+	
+	// Store in in-memory cache
+	a.cacheMu.Lock()
+	a.llmCache[key] = result
+	a.cacheMu.Unlock()
+	
+	// Store in SQLite cache (best-effort)
+	if a.db != nil {
+		redFlags := strings.Join(result.RedFlags, ",")
+		greenFlags := strings.Join(result.GreenFlags, ",")
+		icebreakers := strings.Join(result.Icebreakers, ",")
+		a.db.SetLLMCache(key, result.Score, result.Reason, redFlags, greenFlags, icebreakers)
+	}
+}
+
+// clearLLMCache clears both in-memory and SQLite caches
+func (a *AgentPipeline) clearLLMCache() {
+	// Clear in-memory cache
+	a.cacheMu.Lock()
+	a.llmCache = make(map[string]*matchResult)
+	a.cacheMu.Unlock()
+	
+	// Clear SQLite cache
+	if a.db != nil {
+		a.db.ClearLLMCache()
+	}
+}
+
 // RunMatching pairs all ready participants and generates match results via Mistral.
 // Phase 1: heuristic top-5 per participant → candidate pairs.
 // Phase 2: LLM-score every unique candidate pair (concurrency=2, cached).
@@ -420,9 +497,7 @@ func (a *AgentPipeline) RunMatching() error {
 	candidatePairs := collectCandidatePairs(participants)
 	a.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidate pairs...", len(candidatePairs)))
 
-	// Phase 2: LLM-score all candidate pairs, concurrency=2, in-memory cache
-	cache := map[string]*matchResult{}
-	var mu sync.Mutex
+	// Phase 2: LLM-score all candidate pairs, concurrency=2, with persistent caching
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 2)
 
@@ -430,14 +505,12 @@ func (a *AgentPipeline) RunMatching() error {
 		wg.Add(1)
 		go func(p1, p2 *Participant) {
 			defer wg.Done()
-			key := pairKey(p1, p2)
 
-			mu.Lock()
-			if _, exists := cache[key]; exists {
-				mu.Unlock()
+			// Check persistent cache first
+			if cached := a.getCachedMatchResult(p1, p2); cached != nil {
+				a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%% (cached)", p1.PersonaName, p2.PersonaName, cached.Score))
 				return
 			}
-			mu.Unlock()
 
 			sem <- struct{}{}
 			result, err := a.generateMatch(p1, p2)
@@ -448,9 +521,8 @@ func (a *AgentPipeline) RunMatching() error {
 				result = defaultMatchResult()
 			}
 
-			mu.Lock()
-			cache[key] = result
-			mu.Unlock()
+			// Cache the result
+			a.cacheMatchResult(p1, p2, result)
 
 			a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", p1.PersonaName, p2.PersonaName, result.Score))
 		}(pair[0], pair[1])
@@ -464,8 +536,14 @@ func (a *AgentPipeline) RunMatching() error {
 	}
 	var scored []llmPair
 	for _, pair := range candidatePairs {
-		if r := cache[pairKey(pair[0], pair[1])]; r != nil {
-			scored = append(scored, llmPair{pair, r.Score})
+		p1, p2 := pair[0], pair[1]
+		// Check persistent cache for this pair
+		if cached := a.getCachedMatchResult(p1, p2); cached != nil {
+			scored = append(scored, llmPair{pair, cached.Score})
+		} else {
+			// If not in persistent cache, it should have been scored in Phase 2
+			// This shouldn't happen, but handle it gracefully
+			log.Printf("Warning: pair %s:%s not scored in Phase 2", p1.ID, p2.ID)
 		}
 	}
 	sort.Slice(scored, func(a, b int) bool { return scored[a].score > scored[b].score })
@@ -490,19 +568,32 @@ func (a *AgentPipeline) RunMatching() error {
 	}
 	for _, fp := range greedyMatch(unmatched) {
 		p1, p2 := fp[0], fp[1]
-		result, err := a.generateMatch(p1, p2)
-		if err != nil {
-			log.Printf("Fallback match error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
-			result = defaultMatchResult()
+		// Check persistent cache first
+		if cached := a.getCachedMatchResult(p1, p2); cached != nil {
+			// Use cached result
+			finalPairs = append(finalPairs, fp)
+		} else {
+			// Generate new match
+			result, err := a.generateMatch(p1, p2)
+			if err != nil {
+				log.Printf("Fallback match error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
+				result = defaultMatchResult()
+			}
+			a.cacheMatchResult(p1, p2, result)
+			finalPairs = append(finalPairs, fp)
 		}
-		cache[pairKey(p1, p2)] = result
-		finalPairs = append(finalPairs, fp)
 	}
 
 	// Store results for all final pairs
 	for _, pair := range finalPairs {
 		p1, p2 := pair[0], pair[1]
-		result := cache[pairKey(p1, p2)]
+		// Get the result from persistent cache
+		result := a.getCachedMatchResult(p1, p2)
+		if result == nil {
+			// Shouldn't happen, but fallback to default
+			log.Printf("Warning: no cached result for final pair %s:%s", p1.ID, p2.ID)
+			result = defaultMatchResult()
+		}
 		redJSON, _ := json.Marshal(result.RedFlags)
 		greenJSON, _ := json.Marshal(result.GreenFlags)
 		iceJSON, _ := json.Marshal(result.Icebreakers)
@@ -830,8 +921,6 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 	a.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidates for %s...", len(candidates), newParticipant.PersonaName))
 
 	// Phase 2: LLM-score all candidate pairs
-	cache := map[string]*matchResult{}
-	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 2)
 
@@ -839,14 +928,12 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 		wg.Add(1)
 		go func(p1, p2 *Participant) {
 			defer wg.Done()
-			key := pairKey(p1, p2)
 
-			mu.Lock()
-			if _, exists := cache[key]; exists {
-				mu.Unlock()
+			// Check persistent cache first
+			if cached := a.getCachedMatchResult(p1, p2); cached != nil {
+				a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%% (cached)", p1.PersonaName, p2.PersonaName, cached.Score))
 				return
 			}
-			mu.Unlock()
 
 			sem <- struct{}{}
 			result, err := a.generateMatch(p1, p2)
@@ -857,9 +944,8 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 				result = defaultMatchResult()
 			}
 
-			mu.Lock()
-			cache[key] = result
-			mu.Unlock()
+			// Cache the result
+			a.cacheMatchResult(p1, p2, result)
 
 			a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", p1.PersonaName, p2.PersonaName, result.Score))
 		}(newParticipant, candidate)
@@ -873,8 +959,9 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 	}
 	var scored []scoredCandidate
 	for _, candidate := range candidates {
-		if r := cache[pairKey(newParticipant, candidate)]; r != nil {
-			scored = append(scored, scoredCandidate{candidate, r.Score})
+		// Get the cached result for this pair
+		if cached := a.getCachedMatchResult(newParticipant, candidate); cached != nil {
+			scored = append(scored, scoredCandidate{candidate, cached.Score})
 		}
 	}
 
@@ -918,9 +1005,11 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 			a.db.LogActivity(fmt.Sprintf("🔄 Breaking %s's previous match to accommodate %s", bestMatch.PersonaName, newParticipant.PersonaName))
 		}
 
-		// Get the match result (from cache or generate)
-		result := cache[pairKey(newParticipant, bestMatch)]
+		// Get the match result (from persistent cache or generate)
+		result := a.getCachedMatchResult(newParticipant, bestMatch)
 		if result == nil {
+			// Shouldn't happen since we scored all candidates in Phase 2, but fallback
+			log.Printf("Warning: no cached result for best match %s:%s", newParticipant.ID, bestMatch.ID)
 			result = defaultMatchResult()
 		}
 

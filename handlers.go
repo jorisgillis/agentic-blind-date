@@ -702,6 +702,10 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "reset failed: "+err.Error(), 500)
 		return
 	}
+	// Clear LLM cache when resetting event
+	if h.agents != nil {
+		h.agents.clearLLMCache()
+	}
 	h.db.SetPhase("onboarding")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }

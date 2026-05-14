@@ -228,3 +228,48 @@ func TestCounts(t *testing.T) {
 		t.Errorf("ReadyCount: want 2 (ready+matched), got %d", n)
 	}
 }
+
+func TestLLMCache(t *testing.T) {
+	db := testDB(t)
+
+	// Test cache miss
+	entry, exists := db.GetLLMCache("a:b")
+	if exists {
+		t.Error("expected cache miss for non-existent key")
+	}
+	if entry != nil {
+		t.Error("expected nil entry for cache miss")
+	}
+
+	// Test cache set and get
+	db.SetLLMCache("a:b", 85, "Great match!", "red1,red2", "green1,green2", "ice1,ice2")
+	entry, exists = db.GetLLMCache("a:b")
+	if !exists {
+		t.Error("expected cache hit for existing key")
+	}
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.Score != 85 {
+		t.Errorf("Score: want 85, got %d", entry.Score)
+	}
+	if entry.Reason != "Great match!" {
+		t.Errorf("Reason: want 'Great match!', got %q", entry.Reason)
+	}
+	if entry.RedFlags != "red1,red2" {
+		t.Errorf("RedFlags: want 'red1,red2', got %q", entry.RedFlags)
+	}
+	if entry.GreenFlags != "green1,green2" {
+		t.Errorf("GreenFlags: want 'green1,green2', got %q", entry.GreenFlags)
+	}
+	if entry.Icebreakers != "ice1,ice2" {
+		t.Errorf("Icebreakers: want 'ice1,ice2', got %q", entry.Icebreakers)
+	}
+
+	// Test cache clear
+	db.ClearLLMCache()
+	entry, exists = db.GetLLMCache("a:b")
+	if exists {
+		t.Error("expected cache miss after clear")
+	}
+}
