@@ -104,10 +104,10 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(participantID, githubHandle, la
 		customQs, err := a.generateCustomQuestions(profile)
 		if err != nil {
 			log.Printf("Custom questions error: %v", err)
-			customQs = []string{
-				"What's your most controversial tech opinion?",
-				"Worst bug you've ever shipped to production?",
-				"Coffee or tea while coding?",
+			// Use ExtraQuestions as fallback for consistency with non-GitHub users
+			customQs = make([]string, len(ExtraQuestions))
+			for i, q := range ExtraQuestions {
+				customQs[i] = q.Text
 			}
 		}
 		questions = append(FixedQuestions, a.stringsToQuestions(customQs, "custom")...)

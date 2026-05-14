@@ -179,6 +179,55 @@ func TestPairScore_devEnvironments(t *testing.T) {
 	}
 }
 
+func TestFallbackQuestions(t *testing.T) {
+	// This test verifies that GitHub users with LLM failures get ExtraQuestions as fallback
+	// We can't easily test this without mocking the LLM, but we can verify the structure
+	
+	// Verify ExtraQuestions has the expected questions
+	expectedCount := 5
+	if len(ExtraQuestions) != expectedCount {
+		t.Errorf("expected %d ExtraQuestions, got %d", expectedCount, len(ExtraQuestions))
+	}
+	
+	// Verify ExtraQuestions covers the key categories
+	foundLanguages := false
+	foundProjectType := false
+	foundDevEnv := false
+	foundWeirdestBug := false
+	foundKeyboard := false
+	
+	for _, q := range ExtraQuestions {
+		switch q.ID {
+		case "extra_0":
+			foundLanguages = true
+		case "extra_1":
+			foundProjectType = true
+		case "extra_2":
+			foundDevEnv = true
+		case "extra_3":
+			foundWeirdestBug = true
+		case "extra_4":
+			foundKeyboard = true
+		}
+	}
+	
+	if !foundLanguages {
+		t.Error("ExtraQuestions missing languages question (extra_0)")
+	}
+	if !foundProjectType {
+		t.Error("ExtraQuestions missing project type question (extra_1)")
+	}
+	if !foundDevEnv {
+		t.Error("ExtraQuestions missing dev environment question (extra_2)")
+	}
+	if !foundWeirdestBug {
+		t.Error("ExtraQuestions missing weirdest bug question (extra_3)")
+	}
+	if !foundKeyboard {
+		t.Error("ExtraQuestions missing keyboard question (extra_4)")
+	}
+}
+
 func TestTop5Candidates(t *testing.T) {
 	// Make 7 participants; p0 shares languages with p1..p5 (+3 each)
 	p0 := makeParticipant("p0", []string{"Go"}, nil)
