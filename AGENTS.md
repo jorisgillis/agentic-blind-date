@@ -16,6 +16,20 @@ preferences and GitHub profiles.
 - SQLite3 storage
 - Mistral AI as LLM
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for this repository. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Uses default GitHub label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repository with `CONTEXT.md` and `docs/adr/` at the root. See `docs/agents/domain.md`.
+
 ## Project Documentation
 
 For a comprehensive overview of the project architecture, components, workflow, and technical details, see:
