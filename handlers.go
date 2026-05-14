@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -354,15 +353,6 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 
 	if len(answers) >= len(questions) {
 		go h.agents.RunFinalSetup(p.ID)
-		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
-		return
-	}
-			if err == nil {
-				if err := h.agents.RunContinuousMatching(pFull); err != nil {
-					log.Printf("Continuous matching error for %s: %v", p.PersonaName, err)
-				}
-			}
-		}()
 		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
 		return
 	}

@@ -711,11 +711,14 @@ func pairScore(a, b *Participant) int {
 	var aP, bP GitHubProfile
 	if err := json.Unmarshal([]byte(a.ProfileJSON), &aP); err != nil {
 		log.Printf("unmarshal profile for %s: %v", a.GitHubHandle, err)
+		return 0
 	}
 	if err := json.Unmarshal([]byte(b.ProfileJSON), &bP); err != nil {
 		log.Printf("unmarshal profile for %s: %v", b.GitHubHandle, err)
+		return 0
 	}
 
+	// Score shared languages: +3 per match
 	aLangs := map[string]bool{}
 	for _, l := range aP.Languages {
 		aLangs[l] = true
@@ -726,6 +729,38 @@ func pairScore(a, b *Participant) int {
 		}
 	}
 
+	// Score shared topics: +2 per match
+	aTopics := map[string]bool{}
+	for _, t := range aP.TopTopics {
+		aTopics[t] = true
+	}
+	for _, t := range bP.TopTopics {
+		if aTopics[t] {
+			score += 2
+		}
+	}
+
+	// Score shared project types: +2 if same
+	if aP.ExtraAnswers != nil && bP.ExtraAnswers != nil {
+		if aP.ExtraAnswers.ProjectType != "" && aP.ExtraAnswers.ProjectType == bP.ExtraAnswers.ProjectType {
+			score += 2
+		}
+	}
+
+	// Score shared dev environments: +1 per match
+	if aP.ExtraAnswers != nil && bP.ExtraAnswers != nil {
+		aDevEnv := map[string]bool{}
+		for _, e := range aP.ExtraAnswers.DevEnvironment {
+			aDevEnv[e] = true
+		}
+		for _, e := range bP.ExtraAnswers.DevEnvironment {
+			if aDevEnv[e] {
+				score++
+			}
+		}
+	}
+
+	// Score matching interview answers: +1 per match
 	var aAns, bAns map[string]string
 	if err := json.Unmarshal([]byte(a.AnswersJSON), &aAns); err != nil {
 		log.Printf("unmarshal answers for %s: %v", a.GitHubHandle, err)

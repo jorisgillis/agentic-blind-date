@@ -18,6 +18,51 @@ func makeParticipant(id string, langs []string, answers map[string]string) *Part
 	}
 }
 
+func makeParticipantWithTopics(id string, langs []string, topics []string, answers map[string]string) *Participant {
+	profile := GitHubProfile{Login: id, Languages: langs, TopTopics: topics}
+	profileJSON, _ := json.Marshal(profile)
+	answersJSON, _ := json.Marshal(answers)
+	return &Participant{
+		ID:          id,
+		GitHubHandle: id,
+		PersonaName: "The " + id,
+		ProfileJSON:  string(profileJSON),
+		AnswersJSON:  string(answersJSON),
+	}
+}
+
+func makeParticipantWithProjectType(id string, langs []string, projectType string, answers map[string]string) *Participant {
+	profile := GitHubProfile{Login: id, Languages: langs}
+	if projectType != "" {
+		profile.ExtraAnswers = &ExtraAnswers{ProjectType: projectType}
+	}
+	profileJSON, _ := json.Marshal(profile)
+	answersJSON, _ := json.Marshal(answers)
+	return &Participant{
+		ID:          id,
+		GitHubHandle: id,
+		PersonaName: "The " + id,
+		ProfileJSON:  string(profileJSON),
+		AnswersJSON:  string(answersJSON),
+	}
+}
+
+func makeParticipantWithDevEnv(id string, langs []string, devEnv []string, answers map[string]string) *Participant {
+	profile := GitHubProfile{Login: id, Languages: langs}
+	if len(devEnv) > 0 {
+		profile.ExtraAnswers = &ExtraAnswers{DevEnvironment: devEnv}
+	}
+	profileJSON, _ := json.Marshal(profile)
+	answersJSON, _ := json.Marshal(answers)
+	return &Participant{
+		ID:          id,
+		GitHubHandle: id,
+		PersonaName: "The " + id,
+		ProfileJSON:  string(profileJSON),
+		AnswersJSON:  string(answersJSON),
+	}
+}
+
 func TestPairKey(t *testing.T) {
 	a := &Participant{ID: "aaa"}
 	b := &Participant{ID: "bbb"}
@@ -75,6 +120,62 @@ func TestPairScore_noOverlap(t *testing.T) {
 
 	if score := pairScore(a, b); score != 0 {
 		t.Errorf("expected 0, got %d", score)
+	}
+}
+
+// Note: Follow relationship scoring requires GitHub API access and is deferred for a follow-up
+// func TestPairScore_followRelationships
+
+func TestPairScore_topics(t *testing.T) {
+	a := makeParticipantWithTopics("a", []string{"Go"}, []string{"web", "api"}, nil)
+	b := makeParticipantWithTopics("b", []string{"Python"}, []string{"web", "data"}, nil)
+
+	score := pairScore(a, b)
+	expected := 2 // 1 shared topic (web) * 2 points
+	if score != expected {
+		t.Errorf("expected %d (one shared topic), got %d", expected, score)
+	}
+
+	c := makeParticipantWithTopics("c", []string{"Rust"}, []string{"web", "api"}, nil)
+	score2 := pairScore(a, c)
+	expected2 := 4 // 2 shared topics * 2 points
+	if score2 != expected2 {
+		t.Errorf("expected %d (two shared topics), got %d", expected2, score2)
+	}
+}
+
+func TestPairScore_projectTypes(t *testing.T) {
+	a := makeParticipantWithProjectType("a", []string{"Go"}, "Web", nil)
+	b := makeParticipantWithProjectType("b", []string{"Python"}, "Web", nil)
+
+	score := pairScore(a, b)
+	expected := 2 // shared project type
+	if score != expected {
+		t.Errorf("expected %d (shared project type), got %d", expected, score)
+	}
+
+	c := makeParticipantWithProjectType("c", []string{"Rust"}, "Backend", nil)
+	score2 := pairScore(a, c)
+	if score2 != 0 {
+		t.Errorf("expected 0 (different project types), got %d", score2)
+	}
+}
+
+func TestPairScore_devEnvironments(t *testing.T) {
+	a := makeParticipantWithDevEnv("a", []string{"Go"}, []string{"IDE", "VIM"}, nil)
+	b := makeParticipantWithDevEnv("b", []string{"Python"}, []string{"IDE", "Cloud"}, nil)
+
+	score := pairScore(a, b)
+	expected := 1 // 1 shared dev environment
+	if score != expected {
+		t.Errorf("expected %d (one shared dev env), got %d", expected, score)
+	}
+
+	c := makeParticipantWithDevEnv("c", []string{"Rust"}, []string{"IDE", "VIM"}, nil)
+	score2 := pairScore(a, c)
+	expected2 := 2 // 2 shared dev environments
+	if score2 != expected2 {
+		t.Errorf("expected %d (two shared dev envs), got %d", expected2, score2)
 	}
 }
 
