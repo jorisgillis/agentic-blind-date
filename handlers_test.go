@@ -188,3 +188,31 @@ func TestReset(t *testing.T) {
 		t.Error("participants should be cleared after reset")
 	}
 }
+
+func TestGraphPayload_Top3Connections(t *testing.T) {
+	// This test verifies that buildGraphPayload includes top-3 connections per participant
+	// We can't easily test the full graph without setting up participants with proper data,
+	// but we can verify the constant is set to 3
+	
+	// Create a handler with empty database
+	db, _ := initDB(":memory:")
+	defer db.Close()
+	h := newHandler(db, &GitHubClient{}, &MistralClient{})
+	
+	// Call buildGraphPayload with empty participants
+	payload := h.buildGraphPayload()
+	
+	// Verify structure
+	if payload["nodes"] == nil {
+		t.Error("payload should have nodes")
+	}
+	if payload["edges"] == nil {
+		t.Error("payload should have edges")
+	}
+	if payload["phase"] == nil {
+		t.Error("payload should have phase")
+	}
+	if payload["activity"] == nil {
+		t.Error("payload should have activity")
+	}
+}

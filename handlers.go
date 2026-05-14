@@ -558,8 +558,8 @@ func (h *Handler) buildGraphPayload() map[string]any {
 	for _, p := range participants {
 		candidates := topEdges[p.ID]
 		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
-		if len(candidates) > 2 {
-			candidates = candidates[:2]
+		if len(candidates) > 3 {
+			candidates = candidates[:3]
 		}
 		for _, c := range candidates {
 			key := p.ID + ":" + c.id
