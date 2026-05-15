@@ -238,6 +238,8 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		setParticipantCookie(w, existing.ID)
 		http.Redirect(w, r, "/user/onboard/"+existing.ID, http.StatusSeeOther)
 		return
+	} else if err != nil {
+		log.Printf("GetParticipantByHandle failed for handle=%s: %v", handle, err)
 	}
 
 	id := uuid.New().String()
