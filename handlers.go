@@ -176,49 +176,6 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if noGitHub {
-		languages := r.FormValue("languages")
-		projectType := strings.TrimSpace(r.FormValue("project_type"))
-		devEnvironment := r.FormValue("dev_environment")
-		weirdestBug := strings.TrimSpace(r.FormValue("weirdest_bug"))
-		keyboard := strings.TrimSpace(r.FormValue("keyboard"))
-		keyboardOther := strings.TrimSpace(r.FormValue("keyboard_other"))
-		devEnvOther := strings.TrimSpace(r.FormValue("dev_environment_other"))
-
-		if languages == "" {
-			http.Error(w, "At least one programming language is required", 400)
-			return
-		}
-
-		if projectType == "" {
-			http.Error(w, "Project type is required", 400)
-			return
-		}
-
-		if devEnvironment == "" {
-			http.Error(w, "Development environment is required", 400)
-			return
-		}
-
-		if weirdestBug == "" {
-			http.Error(w, "Weirdest bug description is required", 400)
-			return
-		}
-
-		if keyboard == "" {
-			http.Error(w, "Keyboard preference is required", 400)
-			return
-		}
-
-		if keyboard == "Other" && keyboardOther == "" {
-			http.Error(w, "Please specify your keyboard preference", 400)
-			return
-		}
-
-		if devEnvironment == `["Other"]` && devEnvOther == "" {
-			http.Error(w, "Please specify your development environment", 400)
-			return
-		}
-
 		id := uuid.New().String()
 		// For non-GitHub users, generate a unique handle to avoid UNIQUE constraint violation
 		handle = "no-github-" + id[:8]
@@ -228,7 +185,8 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		go h.agents.RunSetupWithExtraAnswers(id, handle, languages, projectType, devEnvironment, weirdestBug, keyboard, keyboardOther, devEnvOther)
+		// Non-GitHub users will get ExtraQuestions during interview
+		go h.agents.RunSetupWithExtraAnswers(id, handle, "", "", "", "", "", "", "")
 		setParticipantCookie(w, id)
 		http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 		return

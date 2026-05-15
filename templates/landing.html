@@ -38,98 +38,12 @@
            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-5 py-4 text-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-center"
          />
        </div>
-       <div class="flex items-center justify-center gap-2">
-         <input type="checkbox" id="noGitHubCheckbox" name="no_github" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
-         <label for="noGitHubCheckbox" class="text-sm text-gray-400 cursor-pointer">I don't have a GitHub account</label>
-       </div>
-       
-       <div id="extraQuestions" class="hidden space-y-4">
-         <p class="text-sm text-gray-400">Answer these 5 questions instead:</p>
-         
-         <div>
-           <p class="text-sm text-gray-400 mb-2">1. What are your top 3 programming languages?</p>
-           <div id="languageOptions" class="grid grid-cols-3 gap-2">
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="Go">Go</button>
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="Python">Python</button>
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="JavaScript">JavaScript</button>
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="TypeScript">TypeScript</button>
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="Java">Java</button>
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="C#">C#</button>
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="C++">C++</button>
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="PHP">PHP</button>
-             <button type="button" class="language-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-language="Rust">Rust</button>
-           </div>
-           <p class="text-xs text-gray-500 mt-2"><span id="languageCounter">0</span>/3 selected</p>
-           <input type="hidden" name="languages" id="selectedLanguages" value="" />
-         </div>
-         
-         <div>
-           <p class="text-sm text-gray-400 mb-2">2. What type of projects do you most enjoy working on?</p>
-           <select name="project_type" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
-             <option value="">Select one...</option>
-             <option value="Web">Web Development</option>
-             <option value="Mobile">Mobile Development</option>
-             <option value="Backend">Backend Services</option>
-             <option value="Frontend">Frontend Development</option>
-             <option value="Data">Data Science/Engineering</option>
-             <option value="DevOps">DevOps/Infrastructure</option>
-             <option value="Embedded">Embedded Systems</option>
-             <option value="Game">Game Development</option>
-           </select>
-         </div>
-         
-         <div>
-           <p class="text-sm text-gray-400 mb-2">3. What's your preferred development environment?</p>
-           <div id="devEnvOptions" class="grid grid-cols-2 gap-2">
-             <button type="button" class="dev-env-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-env="IDE">IDE</button>
-             <button type="button" class="dev-env-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-env="VIM">VIM</button>
-             <button type="button" class="dev-env-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-env="Emacs">Emacs</button>
-             <button type="button" class="dev-env-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-env="Cloud">Cloud</button>
-             <button type="button" class="dev-env-btn bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors" data-env="Other">Other</button>
-           </div>
-           <div id="otherDevEnvContainer" class="hidden mt-2">
-             <input type="text" name="dev_environment_other" placeholder="Specify other..." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
-           </div>
-           <input type="hidden" name="dev_environment" id="selectedDevEnv" value="" />
-         </div>
-         
-         <div>
-           <p class="text-sm text-gray-400 mb-2">4. What's the weirdest bug you've ever fixed?</p>
-           <textarea name="weirdest_bug" placeholder="Tell us your story..." maxlength="500" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none" rows="3"></textarea>
-           <p class="text-xs text-gray-500 mt-1 text-right"><span id="bugCounter">0</span>/500</p>
-         </div>
-         
-         <div>
-           <p class="text-sm text-gray-400 mb-2">5. Keyboard preference?</p>
-           <div class="grid grid-cols-2 gap-2">
-             <label class="flex items-center justify-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors cursor-pointer">
-               <input type="radio" name="keyboard" value="Mechanical" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
-               Mechanical
-             </label>
-             <label class="flex items-center justify-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors cursor-pointer">
-               <input type="radio" name="keyboard" value="Laptop" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
-               Laptop
-             </label>
-             <label class="flex items-center justify-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors cursor-pointer">
-               <input type="radio" name="keyboard" value="Wireless" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
-               Wireless
-             </label>
-             <label class="flex items-center justify-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors cursor-pointer">
-               <input type="radio" name="keyboard" value="Ergonomic" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
-               Ergonomic
-             </label>
-             <label class="flex items-center justify-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm hover:bg-gray-700 transition-colors cursor-pointer">
-               <input type="radio" name="keyboard" value="Other" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
-               Other
-             </label>
-           </div>
-           <div id="otherKeyboardContainer" class="hidden mt-2">
-             <input type="text" name="keyboard_other" placeholder="Specify other..." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500" />
-           </div>
-         </div>
-       </div>
-       
-       <button
+        <div class="flex items-center justify-center gap-2">
+          <input type="checkbox" id="noGitHubCheckbox" name="no_github" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
+          <label for="noGitHubCheckbox" class="text-sm text-gray-400 cursor-pointer">I don't have a GitHub account</label>
+        </div>
+        
+        <button
          type="submit"
          class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-4 text-lg transition-colors"
        >
@@ -137,143 +51,31 @@
        </button>
      </form>
      
-     <script>
-       document.addEventListener('DOMContentLoaded', function() {
-         const noGitHubCheckbox = document.getElementById('noGitHubCheckbox');
-         const githubHandle = document.getElementById('githubHandle');
-         const extraQuestions = document.getElementById('extraQuestions');
-         const form = document.getElementById('joinForm');
-         
-         function toggleExtraQuestions() {
-           const isChecked = noGitHubCheckbox.checked;
-           extraQuestions.classList.toggle('hidden', !isChecked);
-           githubHandle.disabled = isChecked;
-           if (isChecked) {
-             githubHandle.value = '';
-           }
-         }
-         
-         noGitHubCheckbox.addEventListener('change', toggleExtraQuestions);
-         
-         const languageButtons = document.querySelectorAll('.language-btn');
-         const selectedLanguagesInput = document.getElementById('selectedLanguages');
-         const languageCounter = document.getElementById('languageCounter');
-         let selectedLanguages = [];
-         
-         languageButtons.forEach(btn => {
-           btn.addEventListener('click', function() {
-             const language = this.dataset.language;
-             const index = selectedLanguages.indexOf(language);
-             
-             if (index === -1) {
-               if (selectedLanguages.length < 3) {
-                 selectedLanguages.push(language);
-                 this.classList.add('bg-indigo-600', 'border-indigo-500');
-                 this.classList.remove('bg-gray-800', 'border-gray-700');
-               }
-             } else {
-               selectedLanguages.splice(index, 1);
-               this.classList.remove('bg-indigo-600', 'border-indigo-500');
-               this.classList.add('bg-gray-800', 'border-gray-700');
-             }
-             
-             selectedLanguagesInput.value = JSON.stringify(selectedLanguages);
-             languageCounter.textContent = selectedLanguages.length;
-           });
-         });
-         
-         const devEnvButtons = document.querySelectorAll('.dev-env-btn');
-         const selectedDevEnvInput = document.getElementById('selectedDevEnv');
-         const otherDevEnvContainer = document.getElementById('otherDevEnvContainer');
-         let selectedDevEnv = [];
-         
-         devEnvButtons.forEach(btn => {
-           btn.addEventListener('click', function() {
-             const env = this.dataset.env;
-             const index = selectedDevEnv.indexOf(env);
-             
-             if (index === -1) {
-               selectedDevEnv.push(env);
-               this.classList.add('bg-indigo-600', 'border-indigo-500');
-               this.classList.remove('bg-gray-800', 'border-gray-700');
-             } else {
-               selectedDevEnv.splice(index, 1);
-               this.classList.remove('bg-indigo-600', 'border-indigo-500');
-               this.classList.add('bg-gray-800', 'border-gray-700');
-             }
-             
-             selectedDevEnvInput.value = JSON.stringify(selectedDevEnv);
-             
-             if (env === 'Other') {
-               otherDevEnvContainer.classList.toggle('hidden', selectedDevEnv.indexOf('Other') === -1);
-             }
-           });
-         });
-         
-         const weirdestBug = document.querySelector('textarea[name="weirdest_bug"]');
-         const bugCounter = document.getElementById('bugCounter');
-         
-         weirdestBug.addEventListener('input', function() {
-           const remaining = 500 - this.value.length;
-           bugCounter.textContent = this.value.length;
-         });
-         
-         const keyboardRadios = document.querySelectorAll('input[name="keyboard"]');
-         const otherKeyboardContainer = document.getElementById('otherKeyboardContainer');
-         
-         keyboardRadios.forEach(radio => {
-           radio.addEventListener('change', function() {
-             otherKeyboardContainer.classList.toggle('hidden', this.value !== 'Other');
-           });
-         });
-         
-         form.addEventListener('submit', function(e) {
-           const hasGitHub = githubHandle.value.trim() !== '' && !githubHandle.disabled;
-           const hasExtraAnswers = noGitHubCheckbox.checked;
-           
-           if (!hasGitHub && !hasExtraAnswers) {
-             e.preventDefault();
-             alert('Please provide either a GitHub handle or answer the 5 questions.');
-             return;
-           }
-           
-           if (hasExtraAnswers) {
-             if (selectedLanguages.length === 0) {
-               e.preventDefault();
-               alert('Please select at least one programming language.');
-               return;
-             }
-             
-             const projectType = document.querySelector('select[name="project_type"]').value;
-             if (!projectType) {
-               e.preventDefault();
-               alert('Please select a project type.');
-               return;
-             }
-             
-             if (selectedDevEnv.length === 0) {
-               e.preventDefault();
-               alert('Please select at least one development environment.');
-               return;
-             }
-             
-             const weirdestBugValue = document.querySelector('textarea[name="weirdest_bug"]').value.trim();
-             if (!weirdestBugValue) {
-               e.preventDefault();
-               alert('Please tell us about the weirdest bug you\'ve fixed.');
-               return;
-             }
-             
-             const keyboardValue = document.querySelector('input[name="keyboard"]:checked');
-             if (!keyboardValue) {
-               e.preventDefault();
-               alert('Please select your keyboard preference.');
-               return;
-             }
-           }
-         });
-       });
-     </script>
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          const noGitHubCheckbox = document.getElementById('noGitHubCheckbox');
+          const githubHandle = document.getElementById('githubHandle');
+          const form = document.getElementById('joinForm');
+          
+          noGitHubCheckbox.addEventListener('change', function() {
+            githubHandle.disabled = this.checked;
+            if (this.checked) {
+              githubHandle.value = '';
+            }
+          });
+          
+          form.addEventListener('submit', function(e) {
+            const hasGitHub = githubHandle.value.trim() !== '' && !githubHandle.disabled;
+            const hasNoGitHub = noGitHubCheckbox.checked;
+            
+            if (!hasGitHub && !hasNoGitHub) {
+              e.preventDefault();
+              alert('Please provide a GitHub handle or check "I don\'t have a GitHub account".');
+              return;
+            }
+          });
+        });
+      </script>
 
     <p class="text-gray-600 text-xs mt-8">Only your public GitHub data is used.</p>
   </div>

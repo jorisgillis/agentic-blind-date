@@ -57,8 +57,10 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 	var profile *GitHubProfile
 	var isGitHubUser bool
 
-	if languages == "" && projectType == "" {
-		isGitHubUser = true
+	// Check if this is a non-GitHub user (handle starts with "no-github-")
+	isGitHubUser = !strings.HasPrefix(githubHandle, "no-github-")
+
+	if isGitHubUser {
 		a.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle))
 		var err error
 		profile, err = a.github.FetchProfile(githubHandle)
@@ -71,36 +73,9 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 			profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
 		}
 	} else {
-		isGitHubUser = false
-		a.db.LogActivity(fmt.Sprintf("📝 Processing extra answers for non-GitHub user..."))
-
-		var langSlice []string
-		if languages != "" {
-			json.Unmarshal([]byte(languages), &langSlice)
-		}
-
-		var devEnvSlice []string
-		if devEnvironment != "" {
-			json.Unmarshal([]byte(devEnvironment), &devEnvSlice)
-		}
-
-		if keyboard == "Other" {
-			keyboard = keyboardOther
-		}
-
-		if len(devEnvSlice) == 1 && devEnvSlice[0] == "Other" {
-			devEnvSlice = []string{devEnvOther}
-		}
-
-		profile = &GitHubProfile{
-			ExtraAnswers: &ExtraAnswers{
-				Languages:      langSlice,
-				ProjectType:    projectType,
-				DevEnvironment: devEnvSlice,
-				WeirdestBug:    weirdestBug,
-				Keyboard:       keyboard,
-			},
-		}
+		a.db.LogActivity("📝 Processing non-GitHub user...")
+		// Non-GitHub users will answer ExtraQuestions during interview
+		profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
 	}
 
 	a.db.UpdatePipelineStep(participantID, "interviewing")
