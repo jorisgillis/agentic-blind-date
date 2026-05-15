@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// MistralClient provides access to the Mistral AI API for LLM operations.
 type MistralClient struct {
 	apiKey     string
 	model      string

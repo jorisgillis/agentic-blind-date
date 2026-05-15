@@ -11,10 +11,12 @@ import (
 	"time"
 )
 
+// GitHubClient provides access to the GitHub API for fetching user profiles and repositories.
 type GitHubClient struct {
 	token string
 }
 
+// GitHubProfile contains data fetched from a user's GitHub account.
 type GitHubProfile struct {
 	Login            string        `json:"login"`
 	Name             string        `json:"name"`
@@ -32,6 +34,7 @@ type GitHubProfile struct {
 	ExtraAnswers     *ExtraAnswers `json:"extra_answers,omitempty"`
 }
 
+// ExtraAnswers contains profile data for non-GitHub users who manually enter their information.
 type ExtraAnswers struct {
 	Languages      []string `json:"languages"`
 	ProjectType    string   `json:"project_type"`
@@ -40,6 +43,7 @@ type ExtraAnswers struct {
 	Keyboard       string   `json:"keyboard"`
 }
 
+// RepoInfo contains information about a GitHub repository.
 type RepoInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`

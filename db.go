@@ -15,6 +15,8 @@ var tailwindColors = []string{
 
 var personaSymbols = []string{"🦊", "🦁", "🐯", "🐺", "🦝", "🦔", "🐙", "🦈", "🦅", "🐸"}
 
+// Participant represents a person attending the meetup event.
+// It contains their profile data, answers, persona, and matching information.
 type Participant struct {
 	ID             string
 	GitHubHandle   string
@@ -38,6 +40,7 @@ type Participant struct {
 	CreatedAt      time.Time
 }
 
+// DB wraps the SQLite database connection and provides participant management operations.
 type DB struct {
 	db *sql.DB
 }
@@ -373,6 +376,8 @@ func (db *DB) ReadyCount() int {
 }
 
 // LLM Cache methods
+
+// LLMCacheEntry stores the cached result of an LLM match scoring operation.
 type LLMCacheEntry struct {
 	Score       int
 	Reason      string

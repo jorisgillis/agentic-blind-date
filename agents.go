@@ -10,6 +10,9 @@ import (
 	"sync"
 )
 
+// AgentPipeline orchestrates the agent workflow for participant onboarding and matching.
+// It coordinates GitHub profile fetching, persona generation, interview questions,
+// and match scoring using LLM.
 type AgentPipeline struct {
 	db       *DB
 	github   *GitHubClient
@@ -24,6 +27,7 @@ type personaResult struct {
 	Tagline string `json:"tagline"`
 }
 
+// matchResult contains the LLM-generated compatibility assessment between two participants.
 type matchResult struct {
 	Score       int      `json:"score"`
 	Reason      string   `json:"reason"`

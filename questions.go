@@ -1,5 +1,6 @@
 package main
 
+// Question represents a single interview question.
 type Question struct {
 	ID            string
 	Text          string

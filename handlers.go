@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Badge represents a visual badge displayed on participant cards.
 type Badge struct {
 	Icon  string
 	Label string
@@ -66,6 +67,7 @@ type graphEdge struct {
 	Matched bool   `json:"matched"`
 }
 
+// Handler handles HTTP requests for the web application.
 type Handler struct {
 	db     *DB
 	agents *AgentPipeline
@@ -286,6 +288,7 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// QuestionData contains the data needed to render a single interview question.
 type QuestionData struct {
 	ParticipantID string
 	Index         int
