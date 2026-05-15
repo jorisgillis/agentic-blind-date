@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -361,5 +363,119 @@ func TestGreedyMatch_oddNumber(t *testing.T) {
 	// 5 participants → 2 pairs, 1 leftover (greedyMatch leaves odd one out)
 	if len(pairs) != 2 {
 		t.Errorf("expected 2 pairs for 5 participants, got %d", len(pairs))
+	}
+}
+
+func TestFilterFixedQuestions(t *testing.T) {
+	// filterFixedQuestions removes fixed_1 from FixedQuestions
+	pipeline := &AgentPipeline{}
+	filtered := pipeline.filterFixedQuestions()
+	
+	// Should have one less question than FixedQuestions
+	expectedLen := len(FixedQuestions) - 1
+	if len(filtered) != expectedLen {
+		t.Errorf("expected %d filtered questions, got %d", expectedLen, len(filtered))
+	}
+	
+	// Should not contain fixed_1
+	for _, q := range filtered {
+		if q.ID == "fixed_1" {
+			t.Error("filtered questions should not contain fixed_1")
+		}
+	}
+	
+	// Should contain all other questions
+	found := make(map[string]bool)
+	for _, q := range filtered {
+		found[q.ID] = true
+	}
+	for _, q := range FixedQuestions {
+		if q.ID != "fixed_1" && !found[q.ID] {
+			t.Errorf("expected to find question %s in filtered list", q.ID)
+		}
+	}
+}
+
+func TestStringsToQuestions(t *testing.T) {
+	pipeline := &AgentPipeline{}
+	
+	texts := []string{"Q1", "Q2", "Q3"}
+	questions := pipeline.stringsToQuestions(texts, "custom")
+	
+	if len(questions) != len(texts) {
+		t.Errorf("expected %d questions, got %d", len(texts), len(questions))
+	}
+	
+	for i, q := range questions {
+		if q.Text != texts[i] {
+			t.Errorf("question %d: expected text %q, got %q", i, texts[i], q.Text)
+		}
+		if q.ID != fmt.Sprintf("custom_%d", i) {
+			t.Errorf("question %d: expected ID %q, got %q", i, fmt.Sprintf("custom_%d", i), q.ID)
+		}
+		if q.Options != nil {
+			t.Errorf("question %d: expected nil options, got %v", i, q.Options)
+		}
+	}
+}
+
+func TestComputeInterestsFromCompleteProfile(t *testing.T) {
+	pipeline := &AgentPipeline{}
+	
+	// Test with GitHub profile
+	profile := &CompleteProfile{
+		GitHubProfile: &GitHubProfile{
+			Languages: []string{"Go", "Python"},
+			TopTopics: []string{"web", "api"},
+		},
+	}
+	
+	interests := pipeline.computeInterestsFromCompleteProfile(profile)
+	
+	if interests == nil {
+		t.Fatal("expected non-nil interests")
+	}
+	
+	// Check languages
+	if langs, ok := interests["languages"].([]string); !ok {
+		t.Errorf("expected languages to be []string, got %T", interests["languages"])
+	} else if len(langs) != 2 {
+		t.Errorf("expected 2 languages, got %d", len(langs))
+	}
+	
+	// Check tools (topics)
+	if tools, ok := interests["tools"].([]string); !ok {
+		t.Errorf("expected tools to be []string, got %T", interests["tools"])
+	} else if len(tools) != 2 {
+		t.Errorf("expected 2 tools, got %d", len(tools))
+	}
+}
+
+func TestBuildPersonaPrompt(t *testing.T) {
+	pipeline := &AgentPipeline{}
+	
+	profile := &CompleteProfile{
+		GitHubProfile: &GitHubProfile{
+			Login:   "testuser",
+			Name:    "Test User",
+			Bio:     "Test bio",
+			Company: "Test Co",
+		},
+		InterviewAnswers: map[string]string{
+			"q1": "answer1",
+			"q2": "answer2",
+		},
+	}
+	
+	prompt := pipeline.buildPersonaPrompt(profile)
+	
+	// Should contain GitHub info
+	if !strings.Contains(prompt, "@testuser") {
+		t.Error("prompt should contain GitHub handle")
+	}
+	
+	// Should contain interview answers
+	if !strings.Contains(prompt, "Q[q1]:") {
+		t.Error("prompt should contain interview answers")
 	}
 }
