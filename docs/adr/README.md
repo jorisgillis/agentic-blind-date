@@ -23,6 +23,7 @@ Each ADR follows this structure:
 | [0002](0002-llm-caching-strategy.md) | LLM Response Caching Strategy | Accepted | 2026-05-14 |
 | [0003](0003-consistent-interview-experience.md) | Consistent Interview Experience for All Participants | Accepted | 2026-05-14 |
 | [0004](0004-big-screen-top-connections.md) | Big Screen Shows Top-3 Connections | Accepted | 2026-05-14 |
+| [0005](0005-dependency-injection.md) | Dependency Injection Strategy | Accepted | 2026-05-15 |
 
 ## When to Create an ADR
 

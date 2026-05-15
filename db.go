@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"log"
 	"math/rand"
 	"time"
@@ -25,11 +26,11 @@ type Participant struct {
 	PersonaColor   string
 	PersonaSymbol  string
 	PersonaTagline string
-	ProfileJSON    string
-	Questions      string
-	AnswersJSON    string
-	ExtraAnswers   string
-	Interests      string
+	Profile        *GitHubProfile
+	Questions     []Question
+	Answers        map[string]string
+	Extra          *ExtraAnswers
+	Interests      map[string]interface{}
 	PipelineStep   string
 	MatchedWith    string
 	CompatScore    int
@@ -45,7 +46,9 @@ type DB struct {
 	db *sql.DB
 }
 
-func initDB(path string) (*DB, error) {
+// NewDB creates and initializes a new database connection.
+// It opens a SQLite connection, pings to verify it works, and creates the necessary tables.
+func NewDB(path string) (*DB, error) {
 	sqlDB, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, err
@@ -150,15 +153,46 @@ func (db *DB) DeleteParticipant(id string) error {
 
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {
 	p := &Participant{}
+	var profileJSON, questionsJSON, answersJSON, extraAnswersJSON, interestsJSON string
 	err := row.Scan(
 		&p.ID, &p.GitHubHandle, &p.Name,
 		&p.PersonaName, &p.PersonaColor, &p.PersonaSymbol, &p.PersonaTagline,
-		&p.ProfileJSON, &p.Questions, &p.AnswersJSON, &p.ExtraAnswers, &p.Interests,
+		&profileJSON, &questionsJSON, &answersJSON, &extraAnswersJSON, &interestsJSON,
 		&p.PipelineStep,
 		&p.MatchedWith, &p.CompatScore, &p.CompatReason,
 		&p.RedFlags, &p.GreenFlags, &p.Icebreakers, &p.CreatedAt,
 	)
-	return p, err
+	if err != nil {
+		return nil, err
+	}
+
+	if profileJSON != "" {
+		if err := json.Unmarshal([]byte(profileJSON), &p.Profile); err != nil {
+			return nil, err
+		}
+	}
+	if questionsJSON != "" {
+		if err := json.Unmarshal([]byte(questionsJSON), &p.Questions); err != nil {
+			return nil, err
+		}
+	}
+	if answersJSON != "" {
+		if err := json.Unmarshal([]byte(answersJSON), &p.Answers); err != nil {
+			return nil, err
+		}
+	}
+	if extraAnswersJSON != "" {
+		if err := json.Unmarshal([]byte(extraAnswersJSON), &p.Extra); err != nil {
+			return nil, err
+		}
+	}
+	if interestsJSON != "" {
+		if err := json.Unmarshal([]byte(interestsJSON), &p.Interests); err != nil {
+			return nil, err
+		}
+	}
+
+	return p, nil
 }
 
 const selectParticipant = `
@@ -238,25 +272,45 @@ func (db *DB) UpdatePipelineStep(id, step string) error {
 	return err
 }
 
-func (db *DB) UpdateProfile(id, profileJSON, personaName, personaTagline, questions string) error {
-	_, err := db.db.Exec(`
+func (db *DB) UpdateProfile(id string, profile *GitHubProfile, personaName, personaTagline string, questions []Question) error {
+	profileJSON, err := json.Marshal(profile)
+	if err != nil {
+		return err
+	}
+	questionsJSON, err := json.Marshal(questions)
+	if err != nil {
+		return err
+	}
+	_, err = db.db.Exec(`
 		UPDATE participants SET profile_json = ?, persona_name = ?, persona_tagline = ?, questions = ?
-		WHERE id = ?`, profileJSON, personaName, personaTagline, questions, id)
+		WHERE id = ?`, string(profileJSON), personaName, personaTagline, string(questionsJSON), id)
 	return err
 }
 
-func (db *DB) UpdateExtraAnswers(id, extraAnswers string) error {
-	_, err := db.db.Exec(`UPDATE participants SET extra_answers = ? WHERE id = ?`, extraAnswers, id)
+func (db *DB) UpdateExtraAnswers(id string, extra *ExtraAnswers) error {
+	extraAnswersJSON, err := json.Marshal(extra)
+	if err != nil {
+		return err
+	}
+	_, err = db.db.Exec(`UPDATE participants SET extra_answers = ? WHERE id = ?`, string(extraAnswersJSON), id)
 	return err
 }
 
-func (db *DB) UpdateInterests(id, interests string) error {
-	_, err := db.db.Exec(`UPDATE participants SET interests = ? WHERE id = ?`, interests, id)
+func (db *DB) UpdateInterests(id string, interests map[string]interface{}) error {
+	interestsJSON, err := json.Marshal(interests)
+	if err != nil {
+		return err
+	}
+	_, err = db.db.Exec(`UPDATE participants SET interests = ? WHERE id = ?`, string(interestsJSON), id)
 	return err
 }
 
-func (db *DB) UpdateAnswers(id, answersJSON string) error {
-	_, err := db.db.Exec(`UPDATE participants SET answers_json = ? WHERE id = ?`, answersJSON, id)
+func (db *DB) UpdateAnswers(id string, answers map[string]string) error {
+	answersJSON, err := json.Marshal(answers)
+	if err != nil {
+		return err
+	}
+	_, err = db.db.Exec(`UPDATE participants SET answers_json = ? WHERE id = ?`, string(answersJSON), id)
 	return err
 }
 

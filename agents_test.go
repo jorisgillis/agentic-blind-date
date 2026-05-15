@@ -1,35 +1,28 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 )
 
 func makeParticipant(id string, langs []string, answers map[string]string) *Participant {
-	profile := GitHubProfile{Login: id, Languages: langs}
-	profileJSON, _ := json.Marshal(profile)
-	answersJSON, _ := json.Marshal(answers)
 	return &Participant{
 		ID:           id,
 		GitHubHandle: id,
 		PersonaName:  "The " + id,
-		ProfileJSON:  string(profileJSON),
-		AnswersJSON:  string(answersJSON),
+		Profile:     &GitHubProfile{Login: id, Languages: langs},
+		Answers:      answers,
 	}
 }
 
 func makeParticipantWithTopics(id string, langs []string, topics []string, answers map[string]string) *Participant {
-	profile := GitHubProfile{Login: id, Languages: langs, TopTopics: topics}
-	profileJSON, _ := json.Marshal(profile)
-	answersJSON, _ := json.Marshal(answers)
 	return &Participant{
 		ID:           id,
 		GitHubHandle: id,
 		PersonaName:  "The " + id,
-		ProfileJSON:  string(profileJSON),
-		AnswersJSON:  string(answersJSON),
+		Profile:     &GitHubProfile{Login: id, Languages: langs, TopTopics: topics},
+		Answers:      answers,
 	}
 }
 
@@ -38,14 +31,12 @@ func makeParticipantWithProjectType(id string, langs []string, projectType strin
 	if projectType != "" {
 		profile.ExtraAnswers = &ExtraAnswers{ProjectType: projectType}
 	}
-	profileJSON, _ := json.Marshal(profile)
-	answersJSON, _ := json.Marshal(answers)
 	return &Participant{
 		ID:           id,
 		GitHubHandle: id,
 		PersonaName:  "The " + id,
-		ProfileJSON:  string(profileJSON),
-		AnswersJSON:  string(answersJSON),
+		Profile:     &profile,
+		Answers:      answers,
 	}
 }
 
@@ -54,14 +45,12 @@ func makeParticipantWithDevEnv(id string, langs []string, devEnv []string, answe
 	if len(devEnv) > 0 {
 		profile.ExtraAnswers = &ExtraAnswers{DevEnvironment: devEnv}
 	}
-	profileJSON, _ := json.Marshal(profile)
-	answersJSON, _ := json.Marshal(answers)
 	return &Participant{
 		ID:           id,
 		GitHubHandle: id,
 		PersonaName:  "The " + id,
-		ProfileJSON:  string(profileJSON),
-		AnswersJSON:  string(answersJSON),
+		Profile:     &profile,
+		Answers:      answers,
 	}
 }
 
@@ -81,46 +70,50 @@ func TestPairKey(t *testing.T) {
 }
 
 func TestPairScore_languages(t *testing.T) {
+	matcher := &Matcher{}
 	a := makeParticipant("a", []string{"Go", "Python"}, nil)
 	b := makeParticipant("b", []string{"Go", "Rust"}, nil)
 
-	score := pairScore(a, b)
+	score := matcher.PairScore(a, b)
 	if score != 3 {
 		t.Errorf("expected 3 (one shared language), got %d", score)
 	}
 
 	c := makeParticipant("c", []string{"Go", "Python"}, nil)
-	score2 := pairScore(a, c)
+	score2 := matcher.PairScore(a, c)
 	if score2 != 6 {
 		t.Errorf("expected 6 (two shared languages), got %d", score2)
 	}
 }
 
 func TestPairScore_answers(t *testing.T) {
+	matcher := &Matcher{}
 	a := makeParticipant("a", nil, map[string]string{"0": "Tabs", "1": "Go"})
 	b := makeParticipant("b", nil, map[string]string{"0": "Tabs", "1": "Python"})
 
-	score := pairScore(a, b)
+	score := matcher.PairScore(a, b)
 	if score != 1 {
 		t.Errorf("expected 1 (one matching answer), got %d", score)
 	}
 }
 
 func TestPairScore_combined(t *testing.T) {
+	matcher := &Matcher{}
 	a := makeParticipant("a", []string{"Go"}, map[string]string{"0": "Tabs"})
 	b := makeParticipant("b", []string{"Go"}, map[string]string{"0": "Tabs"})
 
-	score := pairScore(a, b)
+	score := matcher.PairScore(a, b)
 	if score != 4 {
 		t.Errorf("expected 4 (3 language + 1 answer), got %d", score)
 	}
 }
 
 func TestPairScore_noOverlap(t *testing.T) {
+	matcher := &Matcher{}
 	a := makeParticipant("a", []string{"Go"}, map[string]string{"0": "Tabs"})
 	b := makeParticipant("b", []string{"Rust"}, map[string]string{"0": "Spaces"})
 
-	if score := pairScore(a, b); score != 0 {
+	if score := matcher.PairScore(a, b); score != 0 {
 		t.Errorf("expected 0, got %d", score)
 	}
 }
@@ -129,17 +122,18 @@ func TestPairScore_noOverlap(t *testing.T) {
 // func TestPairScore_followRelationships
 
 func TestPairScore_topics(t *testing.T) {
+	matcher := &Matcher{}
 	a := makeParticipantWithTopics("a", []string{"Go"}, []string{"web", "api"}, nil)
 	b := makeParticipantWithTopics("b", []string{"Python"}, []string{"web", "data"}, nil)
 
-	score := pairScore(a, b)
+	score := matcher.PairScore(a, b)
 	expected := 2 // 1 shared topic (web) * 2 points
 	if score != expected {
 		t.Errorf("expected %d (one shared topic), got %d", expected, score)
 	}
 
 	c := makeParticipantWithTopics("c", []string{"Rust"}, []string{"web", "api"}, nil)
-	score2 := pairScore(a, c)
+	score2 := matcher.PairScore(a, c)
 	expected2 := 4 // 2 shared topics * 2 points
 	if score2 != expected2 {
 		t.Errorf("expected %d (two shared topics), got %d", expected2, score2)
@@ -147,34 +141,36 @@ func TestPairScore_topics(t *testing.T) {
 }
 
 func TestPairScore_projectTypes(t *testing.T) {
+	matcher := &Matcher{}
 	a := makeParticipantWithProjectType("a", []string{"Go"}, "Web", nil)
 	b := makeParticipantWithProjectType("b", []string{"Python"}, "Web", nil)
 
-	score := pairScore(a, b)
+	score := matcher.PairScore(a, b)
 	expected := 2 // shared project type
 	if score != expected {
 		t.Errorf("expected %d (shared project type), got %d", expected, score)
 	}
 
 	c := makeParticipantWithProjectType("c", []string{"Rust"}, "Backend", nil)
-	score2 := pairScore(a, c)
+	score2 := matcher.PairScore(a, c)
 	if score2 != 0 {
 		t.Errorf("expected 0 (different project types), got %d", score2)
 	}
 }
 
 func TestPairScore_devEnvironments(t *testing.T) {
+	matcher := &Matcher{}
 	a := makeParticipantWithDevEnv("a", []string{"Go"}, []string{"IDE", "VIM"}, nil)
 	b := makeParticipantWithDevEnv("b", []string{"Python"}, []string{"IDE", "Cloud"}, nil)
 
-	score := pairScore(a, b)
+	score := matcher.PairScore(a, b)
 	expected := 1 // 1 shared dev environment
 	if score != expected {
 		t.Errorf("expected %d (one shared dev env), got %d", expected, score)
 	}
 
 	c := makeParticipantWithDevEnv("c", []string{"Rust"}, []string{"IDE", "VIM"}, nil)
-	score2 := pairScore(a, c)
+	score2 := matcher.PairScore(a, c)
 	expected2 := 2 // 2 shared dev environments
 	if score2 != expected2 {
 		t.Errorf("expected %d (two shared dev envs), got %d", expected2, score2)
@@ -231,6 +227,7 @@ func TestFallbackQuestions(t *testing.T) {
 }
 
 func TestTop5Candidates(t *testing.T) {
+	matcher := &Matcher{}
 	// Make 7 participants; p0 shares languages with p1..p5 (+3 each)
 	p0 := makeParticipant("p0", []string{"Go"}, nil)
 	var all []*Participant
@@ -243,7 +240,7 @@ func TestTop5Candidates(t *testing.T) {
 		all = append(all, makeParticipant(string(rune('p'+i)), langs, nil))
 	}
 
-	top := top5Candidates(p0, all)
+	top := matcher.Top5Candidates(p0, all)
 	if len(top) != 5 {
 		t.Errorf("expected 5 candidates, got %d", len(top))
 	}
@@ -256,25 +253,27 @@ func TestTop5Candidates(t *testing.T) {
 }
 
 func TestTop5Candidates_fewerThan5(t *testing.T) {
+	matcher := &Matcher{}
 	p0 := makeParticipant("p0", nil, nil)
 	others := []*Participant{
 		makeParticipant("p1", nil, nil),
 		makeParticipant("p2", nil, nil),
 	}
 	all := append([]*Participant{p0}, others...)
-	top := top5Candidates(p0, all)
+	top := matcher.Top5Candidates(p0, all)
 	if len(top) != 2 {
 		t.Errorf("expected 2 candidates (n-1), got %d", len(top))
 	}
 }
 
 func TestCollectCandidatePairs(t *testing.T) {
+	matcher := &Matcher{}
 	var ps []*Participant
 	for i := 0; i < 6; i++ {
 		ps = append(ps, makeParticipant(string(rune('a'+i)), nil, nil))
 	}
 
-	pairs := collectCandidatePairs(ps)
+	pairs := matcher.CollectCandidatePairs(ps)
 
 	// Upper bound: N*5 = 30, but with dedup fewer
 	if len(pairs) > 6*5 {
@@ -326,12 +325,13 @@ func TestExtractJSON_trailingGarbage(t *testing.T) {
 }
 
 func TestGreedyMatch_allMatched(t *testing.T) {
+	matcher := &Matcher{}
 	var ps []*Participant
 	for i := 0; i < 6; i++ {
 		ps = append(ps, makeParticipant(string(rune('a'+i)), nil, nil))
 	}
 
-	pairs := greedyMatch(ps)
+	pairs := matcher.GreedyMatch(ps)
 
 	if len(pairs) != 3 {
 		t.Errorf("expected 3 pairs for 6 participants, got %d", len(pairs))
@@ -353,12 +353,13 @@ func TestGreedyMatch_allMatched(t *testing.T) {
 }
 
 func TestGreedyMatch_oddNumber(t *testing.T) {
+	matcher := &Matcher{}
 	var ps []*Participant
 	for i := 0; i < 5; i++ {
 		ps = append(ps, makeParticipant(string(rune('a'+i)), nil, nil))
 	}
 
-	pairs := greedyMatch(ps)
+	pairs := matcher.GreedyMatch(ps)
 
 	// 5 participants → 2 pairs, 1 leftover (greedyMatch leaves odd one out)
 	if len(pairs) != 2 {

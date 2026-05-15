@@ -16,6 +16,15 @@ type MistralClient struct {
 	httpClient *http.Client
 }
 
+// NewMistralClient creates a new MistralClient with the given API key, model, and HTTP client.
+func NewMistralClient(apiKey, model string, httpClient *http.Client) *MistralClient {
+	return &MistralClient{
+		apiKey:     apiKey,
+		model:      model,
+		httpClient: httpClient,
+	}
+}
+
 type mistralReq struct {
 	Model       string       `json:"model"`
 	Messages    []mistralMsg `json:"messages"`

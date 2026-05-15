@@ -6,9 +6,9 @@ import (
 
 func testDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := initDB(":memory:")
+	db, err := NewDB(":memory:")
 	if err != nil {
-		t.Fatalf("initDB: %v", err)
+		t.Fatalf("NewDB: %v", err)
 	}
 	// In-memory SQLite creates a new database per connection; pin to one connection.
 	db.SetMaxOpenConns(1)
@@ -82,7 +82,12 @@ func TestUpdateProfile(t *testing.T) {
 	db := testDB(t)
 	db.CreateParticipant("id-1", "octocat", "")
 
-	err := db.UpdateProfile("id-1", `{"login":"octocat"}`, "The Octo", "Ships things", `["q1","q2"]`)
+	profile := &GitHubProfile{Login: "octocat"}
+	questions := []Question{
+		{ID: "q1", Text: "Question 1"},
+		{ID: "q2", Text: "Question 2"},
+	}
+	err := db.UpdateProfile("id-1", profile, "The Octo", "Ships things", questions)
 	if err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
 	}
@@ -94,11 +99,11 @@ func TestUpdateProfile(t *testing.T) {
 	if p.PersonaTagline != "Ships things" {
 		t.Errorf("PersonaTagline: want 'Ships things', got %s", p.PersonaTagline)
 	}
-	if p.ProfileJSON != `{"login":"octocat"}` {
-		t.Errorf("ProfileJSON unexpected: %s", p.ProfileJSON)
+	if p.Profile == nil || p.Profile.Login != "octocat" {
+		t.Errorf("Profile unexpected: %+v", p.Profile)
 	}
-	if p.Questions != `["q1","q2"]` {
-		t.Errorf("Questions unexpected: %s", p.Questions)
+	if len(p.Questions) != 2 || p.Questions[0].ID != "q1" {
+		t.Errorf("Questions unexpected: %+v", p.Questions)
 	}
 }
 
@@ -106,14 +111,17 @@ func TestUpdateAnswers(t *testing.T) {
 	db := testDB(t)
 	db.CreateParticipant("id-1", "octocat", "")
 
-	answers := `{"0":"Tabs","1":"Go"}`
+	answers := map[string]string{"0": "Tabs", "1": "Go"}
 	if err := db.UpdateAnswers("id-1", answers); err != nil {
 		t.Fatalf("UpdateAnswers: %v", err)
 	}
 
 	p, _ := db.GetParticipant("id-1")
-	if p.AnswersJSON != answers {
-		t.Errorf("AnswersJSON: want %s, got %s", answers, p.AnswersJSON)
+	if p.Answers == nil {
+		t.Fatal("Answers is nil")
+	}
+	if p.Answers["0"] != "Tabs" || p.Answers["1"] != "Go" {
+		t.Errorf("Answers unexpected: %+v", p.Answers)
 	}
 }
 

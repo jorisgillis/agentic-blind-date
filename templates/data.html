@@ -72,7 +72,7 @@
                 {{end}}">{{.PipelineStep}}</td>
               <td class="py-2 pr-4">{{if .CompatScore}}{{.CompatScore}}%{{else}}-{{end}}</td>
               <td class="py-2 pr-4 text-gray-500 truncate max-w-xs">{{if .MatchedWith}}{{.MatchedWith}}{{else}}-{{end}}</td>
-              <td class="py-2 pr-4 text-gray-500 truncate max-w-xs">{{.AnswersJSON}}</td>
+					<td class="py-2 pr-4 text-gray-500 truncate max-w-xs">{{range $k, $v := .Answers}}{{if $k}}, {{end}}{{$k}}:{{$v}}{{end}}</td>
               <td class="py-2 pr-4"><a href="/data/participant/{{.ID}}" class="text-indigo-400 hover:underline">json</a></td>
               <td class="py-2">
                 <button

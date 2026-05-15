@@ -16,6 +16,11 @@ type GitHubClient struct {
 	token string
 }
 
+// NewGitHubClient creates a new GitHubClient with the given API token.
+func NewGitHubClient(token string) *GitHubClient {
+	return &GitHubClient{token: token}
+}
+
 // GitHubProfile contains data fetched from a user's GitHub account.
 type GitHubProfile struct {
 	Login            string        `json:"login"`

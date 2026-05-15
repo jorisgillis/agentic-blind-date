@@ -47,20 +47,20 @@ func main() {
 	if dbPath == "" {
 		dbPath = "blind_date.db"
 	}
-	db, err := initDB(dbPath)
+	db, err := NewDB(dbPath)
 	if err != nil {
 		log.Fatal("DB init:", err)
 	}
 	defer db.Close()
 
-	github := &GitHubClient{token: os.Getenv("GITHUB_TOKEN")}
-	mistral := &MistralClient{
-		apiKey:     os.Getenv("MISTRAL_API_KEY"),
-		model:      "mistral-medium-latest",
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-	}
+	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
+	mistral := NewMistralClient(
+		os.Getenv("MISTRAL_API_KEY"),
+		"mistral-medium-latest",
+		&http.Client{Timeout: 30 * time.Second},
+	)
 
-	h := newHandler(db, github, mistral)
+	h := NewHandler(db, github, mistral)
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)

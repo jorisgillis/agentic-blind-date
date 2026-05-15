@@ -12,14 +12,14 @@ import (
 
 func testServer(t *testing.T) (*httptest.Server, *DB) {
 	t.Helper()
-	db, err := initDB(":memory:")
+	db, err := NewDB(":memory:")
 	if err != nil {
-		t.Fatalf("initDB: %v", err)
+		t.Fatalf("NewDB: %v", err)
 	}
 	// Pin to one connection so all goroutines share the same in-memory database.
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	h := newHandler(db, &GitHubClient{}, &MistralClient{})
+	h := NewHandler(db, NewGitHubClient(""), NewMistralClient("", "", &http.Client{}))
 	srv := httptest.NewServer(buildMux(h))
 	t.Cleanup(srv.Close)
 	return srv, db
@@ -195,9 +195,9 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	// but we can verify the constant is set to 3
 
 	// Create a handler with empty database
-	db, _ := initDB(":memory:")
+	db, _ := NewDB(":memory:")
 	defer db.Close()
-	h := newHandler(db, &GitHubClient{}, &MistralClient{})
+	h := NewHandler(db, NewGitHubClient(""), NewMistralClient("", "", &http.Client{}))
 
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()

@@ -14,10 +14,11 @@ import (
 // It coordinates GitHub profile fetching, persona generation, interview questions,
 // and match scoring using LLM.
 type AgentPipeline struct {
-	db       *DB
-	github   *GitHubClient
-	mistral  *MistralClient
-	matchMu  sync.Mutex              // Serializes matching operations to prevent race conditions
+	db      *DB
+	github  *GitHubClient
+	mistral *MistralClient
+	matcher *Matcher
+	matchMu sync.Mutex              // Serializes matching operations to prevent race conditions
 	llmCache map[string]*matchResult // In-memory cache for LLM match scores
 	cacheMu  sync.Mutex              // Protects llmCache
 }
@@ -27,14 +28,6 @@ type personaResult struct {
 	Tagline string `json:"tagline"`
 }
 
-// matchResult contains the LLM-generated compatibility assessment between two participants.
-type matchResult struct {
-	Score       int      `json:"score"`
-	Reason      string   `json:"reason"`
-	RedFlags    []string `json:"red_flags"`
-	GreenFlags  []string `json:"green_flags"`
-	Icebreakers []string `json:"icebreakers"`
-}
 
 // CompleteProfile combines all data about a participant for persona generation
 type CompleteProfile struct {
@@ -136,26 +129,10 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 		questions = append(ExtraQuestions, a.filterFixedQuestions()...)
 	}
 
-	questionsJSON, err := json.Marshal(questions)
-	if err != nil {
-		log.Printf("Failed to marshal questions for %s: %v", participantID, err)
-		return
-	}
-	profileJSON, err := json.Marshal(profile)
-	if err != nil {
-		log.Printf("Failed to marshal profile for %s: %v", participantID, err)
-		return
-	}
+	a.db.UpdateProfile(participantID, profile, "", "", questions)
 
-	a.db.UpdateProfile(participantID, string(profileJSON), "", "", string(questionsJSON))
-
-	if !isGitHubUser {
-		extraAnswersJSON, err := json.Marshal(profile.ExtraAnswers)
-		if err != nil {
-			log.Printf("Failed to marshal extra answers for %s: %v", participantID, err)
-			return
-		}
-		a.db.UpdateExtraAnswers(participantID, string(extraAnswersJSON))
+	if !isGitHubUser && profile.ExtraAnswers != nil {
+		a.db.UpdateExtraAnswers(participantID, profile.ExtraAnswers)
 	}
 
 	a.db.UpdatePipelineStep(participantID, "interviewing")
@@ -172,24 +149,18 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 		return
 	}
 
-	var profile GitHubProfile
-	if err := json.Unmarshal([]byte(p.ProfileJSON), &profile); err != nil {
-		log.Printf("RunFinalSetup: unmarshal profile error: %v", err)
+	if p.Profile == nil {
+		log.Printf("RunFinalSetup: profile is nil for participant %s", participantID)
 		return
 	}
 
-	var answers map[string]string
-	if err := json.Unmarshal([]byte(p.AnswersJSON), &answers); err != nil {
-		log.Printf("RunFinalSetup: unmarshal answers error: %v", err)
-		return
+	profile := *p.Profile
+	answers := p.Answers
+	if answers == nil {
+		answers = map[string]string{}
 	}
 
-	var extraAnswers *ExtraAnswers
-	if p.ExtraAnswers != "" && p.ExtraAnswers != "{}" {
-		if err := json.Unmarshal([]byte(p.ExtraAnswers), &extraAnswers); err != nil {
-			log.Printf("RunFinalSetup: unmarshal extra answers error: %v", err)
-		}
-	}
+	extraAnswers := p.Extra
 
 	completeProfile := a.buildCompleteProfile(&profile, extraAnswers, answers)
 
@@ -200,14 +171,9 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 	}
 
 	interests := a.computeInterestsFromCompleteProfile(completeProfile)
-	interestsJSON, err := json.Marshal(interests)
-	if err != nil {
-		log.Printf("Failed to marshal interests for %s: %v", participantID, err)
-		return
-	}
 
-	a.db.UpdateProfile(participantID, string(p.ProfileJSON), persona.Name, persona.Tagline, p.Questions)
-	a.db.UpdateInterests(participantID, string(interestsJSON))
+	a.db.UpdateProfile(participantID, &profile, persona.Name, persona.Tagline, p.Questions)
+	a.db.UpdateInterests(participantID, interests)
 	a.db.UpdatePipelineStep(participantID, "ready")
 	a.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))
 }
@@ -529,39 +495,39 @@ func (a *AgentPipeline) RunMatching() error {
 	}
 
 	// Phase 1: heuristic top-5 narrows the candidate pool
-	candidatePairs := collectCandidatePairs(participants)
+	candidatePairs := a.matcher.CollectCandidatePairs(participants)
 	a.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidate pairs...", len(candidatePairs)))
 
 	// Phase 2: LLM-score all candidate pairs, concurrency=2, with persistent caching
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 2)
 
-	for _, pair := range candidatePairs {
-		wg.Add(1)
-		go func(p1, p2 *Participant) {
-			defer wg.Done()
+		for _, pair := range candidatePairs {
+			wg.Add(1)
+			go func(p1, p2 *Participant) {
+				defer wg.Done()
 
-			// Check persistent cache first
-			if cached := a.getCachedMatchResult(p1, p2); cached != nil {
-				a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%% (cached)", p1.PersonaName, p2.PersonaName, cached.Score))
-				return
-			}
+				// Check persistent cache first
+				if cached := a.getCachedMatchResult(p1, p2); cached != nil {
+					a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%% (cached)", p1.PersonaName, p2.PersonaName, cached.Score))
+					return
+				}
 
-			sem <- struct{}{}
-			result, err := a.generateMatch(p1, p2)
-			<-sem
+				sem <- struct{}{}
+				result, err := a.matcher.GenerateMatch(p1, p2)
+				<-sem
 
-			if err != nil {
-				log.Printf("Match scoring error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
-				result = defaultMatchResult()
-			}
+				if err != nil {
+					log.Printf("Match scoring error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
+					result = defaultMatchResult()
+				}
 
-			// Cache the result
-			a.cacheMatchResult(p1, p2, result)
+				// Cache the result
+				a.cacheMatchResult(p1, p2, result)
 
-			a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", p1.PersonaName, p2.PersonaName, result.Score))
-		}(pair[0], pair[1])
-	}
+				a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", p1.PersonaName, p2.PersonaName, result.Score))
+			}(pair[0], pair[1])
+		}
 	wg.Wait()
 
 	// Phase 3: greedy assignment using LLM scores
@@ -601,7 +567,7 @@ func (a *AgentPipeline) RunMatching() error {
 			unmatched = append(unmatched, p)
 		}
 	}
-	for _, fp := range greedyMatch(unmatched) {
+	for _, fp := range a.matcher.GreedyMatch(unmatched) {
 		p1, p2 := fp[0], fp[1]
 		// Check persistent cache first
 		if cached := a.getCachedMatchResult(p1, p2); cached != nil {
@@ -609,7 +575,7 @@ func (a *AgentPipeline) RunMatching() error {
 			finalPairs = append(finalPairs, fp)
 		} else {
 			// Generate new match
-			result, err := a.generateMatch(p1, p2)
+			result, err := a.matcher.GenerateMatch(p1, p2)
 			if err != nil {
 				log.Printf("Fallback match error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
 				result = defaultMatchResult()
@@ -660,28 +626,31 @@ Analyze two developers' profiles and produce a fun, humorous compatibility asses
 Respond with ONLY valid JSON — no markdown:
 {"score": <0-100>, "reason": "<one funny sentence max 80 chars>", "red_flags": ["...", "..."], "green_flags": ["...", "..."], "icebreakers": ["<question one can ask the other>", "<question>", "<question>"]}`
 
-	var p1Profile, p2Profile GitHubProfile
-	if err := json.Unmarshal([]byte(p1.ProfileJSON), &p1Profile); err != nil {
-		log.Printf("unmarshal profile for %s: %v", p1.GitHubHandle, err)
+	p1Profile := p1.Profile
+	if p1Profile == nil {
+		p1Profile = &GitHubProfile{}
 	}
-	if err := json.Unmarshal([]byte(p2.ProfileJSON), &p2Profile); err != nil {
-		log.Printf("unmarshal profile for %s: %v", p2.GitHubHandle, err)
-	}
-
-	var p1Ans, p2Ans map[string]string
-	if err := json.Unmarshal([]byte(p1.AnswersJSON), &p1Ans); err != nil {
-		log.Printf("unmarshal answers for %s: %v", p1.GitHubHandle, err)
-	}
-	if err := json.Unmarshal([]byte(p2.AnswersJSON), &p2Ans); err != nil {
-		log.Printf("unmarshal answers for %s: %v", p2.GitHubHandle, err)
+	p2Profile := p2.Profile
+	if p2Profile == nil {
+		p2Profile = &GitHubProfile{}
 	}
 
-	var p1Interests, p2Interests map[string]interface{}
-	if p1.Interests != "" {
-		json.Unmarshal([]byte(p1.Interests), &p1Interests)
+	p1Ans := p1.Answers
+	if p1Ans == nil {
+		p1Ans = map[string]string{}
 	}
-	if p2.Interests != "" {
-		json.Unmarshal([]byte(p2.Interests), &p2Interests)
+	p2Ans := p2.Answers
+	if p2Ans == nil {
+		p2Ans = map[string]string{}
+	}
+
+	p1Interests := p1.Interests
+	if p1Interests == nil {
+		p1Interests = map[string]interface{}{}
+	}
+	p2Interests := p2.Interests
+	if p2Interests == nil {
+		p2Interests = map[string]interface{}{}
 	}
 
 	followNote := ""
@@ -769,151 +738,11 @@ func pairKey(a, b *Participant) string {
 	return b.ID + ":" + a.ID
 }
 
-func top5Candidates(p *Participant, all []*Participant) []*Participant {
-	type scored struct {
-		participant *Participant
-		score       int
-	}
-	var candidates []scored
-	for _, other := range all {
-		if other.ID == p.ID {
-			continue
-		}
-		candidates = append(candidates, scored{other, pairScore(p, other)})
-	}
-	sort.Slice(candidates, func(a, b int) bool { return candidates[a].score > candidates[b].score })
-	k := 5
-	if len(candidates) < k {
-		k = len(candidates)
-	}
-	result := make([]*Participant, k)
-	for i := range k {
-		result[i] = candidates[i].participant
-	}
-	return result
-}
 
-func collectCandidatePairs(participants []*Participant) [][2]*Participant {
-	seen := map[string]bool{}
-	var pairs [][2]*Participant
-	for _, p := range participants {
-		for _, candidate := range top5Candidates(p, participants) {
-			key := pairKey(p, candidate)
-			if !seen[key] {
-				seen[key] = true
-				pairs = append(pairs, [2]*Participant{p, candidate})
-			}
-		}
-	}
-	return pairs
-}
 
-func defaultMatchResult() *matchResult {
-	return &matchResult{
-		Score:       42,
-		Reason:      "The algorithm has spoken. We cannot explain.",
-		RedFlags:    []string{},
-		GreenFlags:  []string{"You're both here tonight"},
-		Icebreakers: []string{"What brings you to this meetup?", "What are you currently building?", "Best tech talk you've seen recently?"},
-	}
-}
 
-// greedyMatch pairs participants by maximum language/answer overlap.
-func greedyMatch(participants []*Participant) [][2]*Participant {
-	n := len(participants)
-	paired := make([]bool, n)
 
-	type scoredPair struct{ i, j, score int }
-	var all []scoredPair
-	for i := 0; i < n; i++ {
-		for j := i + 1; j < n; j++ {
-			all = append(all, scoredPair{i, j, pairScore(participants[i], participants[j])})
-		}
-	}
-	sort.Slice(all, func(a, b int) bool { return all[a].score > all[b].score })
 
-	var pairs [][2]*Participant
-	for _, sp := range all {
-		if !paired[sp.i] && !paired[sp.j] {
-			pairs = append(pairs, [2]*Participant{participants[sp.i], participants[sp.j]})
-			paired[sp.i] = true
-			paired[sp.j] = true
-		}
-	}
-	return pairs
-}
-
-func pairScore(a, b *Participant) int {
-	score := 0
-
-	var aP, bP GitHubProfile
-	if err := json.Unmarshal([]byte(a.ProfileJSON), &aP); err != nil {
-		log.Printf("unmarshal profile for %s: %v", a.GitHubHandle, err)
-		return 0
-	}
-	if err := json.Unmarshal([]byte(b.ProfileJSON), &bP); err != nil {
-		log.Printf("unmarshal profile for %s: %v", b.GitHubHandle, err)
-		return 0
-	}
-
-	// Score shared languages: +3 per match
-	aLangs := map[string]bool{}
-	for _, l := range aP.Languages {
-		aLangs[l] = true
-	}
-	for _, l := range bP.Languages {
-		if aLangs[l] {
-			score += 3
-		}
-	}
-
-	// Score shared topics: +2 per match
-	aTopics := map[string]bool{}
-	for _, t := range aP.TopTopics {
-		aTopics[t] = true
-	}
-	for _, t := range bP.TopTopics {
-		if aTopics[t] {
-			score += 2
-		}
-	}
-
-	// Score shared project types: +2 if same
-	if aP.ExtraAnswers != nil && bP.ExtraAnswers != nil {
-		if aP.ExtraAnswers.ProjectType != "" && aP.ExtraAnswers.ProjectType == bP.ExtraAnswers.ProjectType {
-			score += 2
-		}
-	}
-
-	// Score shared dev environments: +1 per match
-	if aP.ExtraAnswers != nil && bP.ExtraAnswers != nil {
-		aDevEnv := map[string]bool{}
-		for _, e := range aP.ExtraAnswers.DevEnvironment {
-			aDevEnv[e] = true
-		}
-		for _, e := range bP.ExtraAnswers.DevEnvironment {
-			if aDevEnv[e] {
-				score++
-			}
-		}
-	}
-
-	// Score matching interview answers: +1 per match
-	var aAns, bAns map[string]string
-	if err := json.Unmarshal([]byte(a.AnswersJSON), &aAns); err != nil {
-		log.Printf("unmarshal answers for %s: %v", a.GitHubHandle, err)
-	}
-	if err := json.Unmarshal([]byte(b.AnswersJSON), &bAns); err != nil {
-		log.Printf("unmarshal answers for %s: %v", b.GitHubHandle, err)
-	}
-
-	for k, av := range aAns {
-		if bv, ok := bAns[k]; ok && av == bv {
-			score++
-		}
-	}
-	return score
-}
 
 // RunContinuousMatching matches a single new ready participant against the existing pool of ready, unmatched participants.
 // Uses the same 3-phase algorithm: heuristic top-5, LLM scoring, greedy selection.
@@ -960,7 +789,7 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 	}
 
 	// Phase 1: Get top-5 candidates from the pool for the new participant
-	candidates := top5Candidates(newParticipant, pool)
+	candidates := a.matcher.Top5Candidates(newParticipant, pool)
 	if len(candidates) == 0 {
 		return fmt.Errorf("no candidates found for %s", newParticipant.PersonaName)
 	}
@@ -983,7 +812,7 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 			}
 
 			sem <- struct{}{}
-			result, err := a.generateMatch(p1, p2)
+			result, err := a.matcher.GenerateMatch(p1, p2)
 			<-sem
 
 			if err != nil {

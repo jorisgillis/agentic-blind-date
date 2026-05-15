@@ -74,8 +74,11 @@ type Handler struct {
 	tmpl   *template.Template
 }
 
-func newHandler(db *DB, github *GitHubClient, mistral *MistralClient) *Handler {
-	agents := &AgentPipeline{db: db, github: github, mistral: mistral}
+// NewHandler creates a new Handler with the given dependencies.
+// It initializes the Matcher and AgentPipeline with the provided database, GitHub, and Mistral clients.
+func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient) *Handler {
+	matcher := NewMatcher(github, mistral)
+	agents := &AgentPipeline{db: db, github: github, mistral: mistral, matcher: matcher}
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -297,14 +300,12 @@ type QuestionData struct {
 }
 
 func (h *Handler) buildQuestionData(p *Participant) *QuestionData {
-	var answers map[string]string
-	json.Unmarshal([]byte(p.AnswersJSON), &answers)
+	answers := p.Answers
 	if answers == nil {
 		answers = map[string]string{}
 	}
 
-	var questions []Question
-	json.Unmarshal([]byte(p.Questions), &questions)
+	questions := p.Questions
 
 	idx := len(answers)
 	if idx >= len(questions) {
@@ -336,14 +337,12 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 
 	answer := strings.TrimSpace(r.FormValue("answer"))
 
-	var answers map[string]string
-	json.Unmarshal([]byte(p.AnswersJSON), &answers)
+	answers := p.Answers
 	if answers == nil {
 		answers = map[string]string{}
 	}
 
-	var questions []Question
-	json.Unmarshal([]byte(p.Questions), &questions)
+	questions := p.Questions
 
 	currentIndex := len(answers)
 	if currentIndex < len(questions) {
@@ -351,8 +350,7 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		answers[currentQuestion.ID] = answer
 	}
 
-	answersJSON, _ := json.Marshal(answers)
-	h.db.UpdateAnswers(p.ID, string(answersJSON))
+	h.db.UpdateAnswers(p.ID, answers)
 
 	if len(answers) >= len(questions) {
 		go h.agents.RunFinalSetup(p.ID)
@@ -360,7 +358,7 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.AnswersJSON = string(answersJSON)
+	p.Answers = answers
 	h.render(w, "fragment-question.html", h.buildQuestionData(p))
 }
 
@@ -376,14 +374,12 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var profile GitHubProfile
-	json.Unmarshal([]byte(p.ProfileJSON), &profile)
-
-	var answers map[string]string
-	json.Unmarshal([]byte(p.AnswersJSON), &answers)
-
-	var questions []Question
-	json.Unmarshal([]byte(p.Questions), &questions)
+	profile := *p.Profile
+	answers := p.Answers
+	if answers == nil {
+		answers = map[string]string{}
+	}
+	questions := p.Questions
 
 	type QAPair struct {
 		Question string
@@ -558,7 +554,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			if seen[key] || seen[rev] {
 				continue
 			}
-			s := pairScore(a, b)
+			s := h.agents.matcher.PairScore(a, b)
 			topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, s})
 			topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, s})
 		}
