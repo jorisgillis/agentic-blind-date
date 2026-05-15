@@ -220,12 +220,14 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		}
 
 		id := uuid.New().String()
-		if err := h.db.CreateParticipant(id, "", name); err != nil {
+		// For non-GitHub users, generate a unique handle to avoid UNIQUE constraint violation
+		handle = "no-github-" + id[:8]
+		if err := h.db.CreateParticipant(id, handle, name); err != nil {
 			http.Error(w, "registration failed", 500)
 			return
 		}
 
-		go h.agents.RunSetupWithExtraAnswers(id, "", languages, projectType, devEnvironment, weirdestBug, keyboard, keyboardOther, devEnvOther)
+		go h.agents.RunSetupWithExtraAnswers(id, handle, languages, projectType, devEnvironment, weirdestBug, keyboard, keyboardOther, devEnvOther)
 		setParticipantCookie(w, id)
 		http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 		return
