@@ -16,28 +16,28 @@ type GitHubClient struct {
 }
 
 type GitHubProfile struct {
-	Login            string     `json:"login"`
-	Name             string     `json:"name"`
-	Bio              string     `json:"bio"`
-	Company          string     `json:"company"`
-	Location         string     `json:"location"`
-	PublicRepos      int        `json:"public_repos"`
-	Followers        int        `json:"followers"`
-	AccountAgeDays   int        `json:"account_age_days"`
-	TotalStars       int        `json:"total_stars"`
-	Languages        []string   `json:"languages"`
-	TopTopics        []string   `json:"top_topics"`
-	HasProfileReadme bool       `json:"has_profile_readme"`
-	TopRepos         []RepoInfo `json:"top_repos"`
+	Login            string        `json:"login"`
+	Name             string        `json:"name"`
+	Bio              string        `json:"bio"`
+	Company          string        `json:"company"`
+	Location         string        `json:"location"`
+	PublicRepos      int           `json:"public_repos"`
+	Followers        int           `json:"followers"`
+	AccountAgeDays   int           `json:"account_age_days"`
+	TotalStars       int           `json:"total_stars"`
+	Languages        []string      `json:"languages"`
+	TopTopics        []string      `json:"top_topics"`
+	HasProfileReadme bool          `json:"has_profile_readme"`
+	TopRepos         []RepoInfo    `json:"top_repos"`
 	ExtraAnswers     *ExtraAnswers `json:"extra_answers,omitempty"`
 }
 
 type ExtraAnswers struct {
-	Languages       []string `json:"languages"`
-	ProjectType     string   `json:"project_type"`
-	DevEnvironment  []string `json:"dev_environment"`
-	WeirdestBug     string   `json:"weirdest_bug"`
-	Keyboard        string   `json:"keyboard"`
+	Languages      []string `json:"languages"`
+	ProjectType    string   `json:"project_type"`
+	DevEnvironment []string `json:"dev_environment"`
+	WeirdestBug    string   `json:"weirdest_bug"`
+	Keyboard       string   `json:"keyboard"`
 }
 
 type RepoInfo struct {

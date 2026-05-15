@@ -16,10 +16,10 @@ type MistralClient struct {
 }
 
 type mistralReq struct {
-	Model       string          `json:"model"`
-	Messages    []mistralMsg    `json:"messages"`
-	Temperature float64         `json:"temperature"`
-	MaxTokens   int             `json:"max_tokens"`
+	Model       string       `json:"model"`
+	Messages    []mistralMsg `json:"messages"`
+	Temperature float64      `json:"temperature"`
+	MaxTokens   int          `json:"max_tokens"`
 }
 
 type mistralMsg struct {

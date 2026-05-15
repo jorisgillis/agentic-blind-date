@@ -108,13 +108,13 @@ func TestJoinWithoutGitHub(t *testing.T) {
 
 	languages, _ := json.Marshal([]string{"Go", "Python"})
 	resp := post(t, srv, "/user/join", url.Values{
-		"name":           {"Non GitHub User"},
-		"no_github":     {"on"},
-		"languages":      {string(languages)},
-		"project_type":   {"Web"},
+		"name":            {"Non GitHub User"},
+		"no_github":       {"on"},
+		"languages":       {string(languages)},
+		"project_type":    {"Web"},
 		"dev_environment": {`["IDE","VIM"]`},
-		"weirdest_bug":   {"A race condition on Tuesdays"},
-		"keyboard":       {"Mechanical"},
+		"weirdest_bug":    {"A race condition on Tuesdays"},
+		"keyboard":        {"Mechanical"},
 	})
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("POST /user/join without GitHub: want 303, got %d", resp.StatusCode)
@@ -193,15 +193,15 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	// This test verifies that buildGraphPayload includes top-3 connections per participant
 	// We can't easily test the full graph without setting up participants with proper data,
 	// but we can verify the constant is set to 3
-	
+
 	// Create a handler with empty database
 	db, _ := initDB(":memory:")
 	defer db.Close()
 	h := newHandler(db, &GitHubClient{}, &MistralClient{})
-	
+
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()
-	
+
 	// Verify structure
 	if payload["nodes"] == nil {
 		t.Error("payload should have nodes")

@@ -10,9 +10,9 @@ func makeParticipant(id string, langs []string, answers map[string]string) *Part
 	profileJSON, _ := json.Marshal(profile)
 	answersJSON, _ := json.Marshal(answers)
 	return &Participant{
-		ID:          id,
+		ID:           id,
 		GitHubHandle: id,
-		PersonaName: "The " + id,
+		PersonaName:  "The " + id,
 		ProfileJSON:  string(profileJSON),
 		AnswersJSON:  string(answersJSON),
 	}
@@ -23,9 +23,9 @@ func makeParticipantWithTopics(id string, langs []string, topics []string, answe
 	profileJSON, _ := json.Marshal(profile)
 	answersJSON, _ := json.Marshal(answers)
 	return &Participant{
-		ID:          id,
+		ID:           id,
 		GitHubHandle: id,
-		PersonaName: "The " + id,
+		PersonaName:  "The " + id,
 		ProfileJSON:  string(profileJSON),
 		AnswersJSON:  string(answersJSON),
 	}
@@ -39,9 +39,9 @@ func makeParticipantWithProjectType(id string, langs []string, projectType strin
 	profileJSON, _ := json.Marshal(profile)
 	answersJSON, _ := json.Marshal(answers)
 	return &Participant{
-		ID:          id,
+		ID:           id,
 		GitHubHandle: id,
-		PersonaName: "The " + id,
+		PersonaName:  "The " + id,
 		ProfileJSON:  string(profileJSON),
 		AnswersJSON:  string(answersJSON),
 	}
@@ -55,9 +55,9 @@ func makeParticipantWithDevEnv(id string, langs []string, devEnv []string, answe
 	profileJSON, _ := json.Marshal(profile)
 	answersJSON, _ := json.Marshal(answers)
 	return &Participant{
-		ID:          id,
+		ID:           id,
 		GitHubHandle: id,
-		PersonaName: "The " + id,
+		PersonaName:  "The " + id,
 		ProfileJSON:  string(profileJSON),
 		AnswersJSON:  string(answersJSON),
 	}
@@ -182,20 +182,20 @@ func TestPairScore_devEnvironments(t *testing.T) {
 func TestFallbackQuestions(t *testing.T) {
 	// This test verifies that GitHub users with LLM failures get ExtraQuestions as fallback
 	// We can't easily test this without mocking the LLM, but we can verify the structure
-	
+
 	// Verify ExtraQuestions has the expected questions
 	expectedCount := 5
 	if len(ExtraQuestions) != expectedCount {
 		t.Errorf("expected %d ExtraQuestions, got %d", expectedCount, len(ExtraQuestions))
 	}
-	
+
 	// Verify ExtraQuestions covers the key categories
 	foundLanguages := false
 	foundProjectType := false
 	foundDevEnv := false
 	foundWeirdestBug := false
 	foundKeyboard := false
-	
+
 	for _, q := range ExtraQuestions {
 		switch q.ID {
 		case "extra_0":
@@ -210,7 +210,7 @@ func TestFallbackQuestions(t *testing.T) {
 			foundKeyboard = true
 		}
 	}
-	
+
 	if !foundLanguages {
 		t.Error("ExtraQuestions missing languages question (extra_0)")
 	}

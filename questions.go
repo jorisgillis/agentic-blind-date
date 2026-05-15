@@ -1,9 +1,9 @@
 package main
 
 type Question struct {
-	ID           string
-	Text         string
-	Options      []string // nil = free text input
+	ID            string
+	Text          string
+	Options       []string // nil = free text input
 	MaxSelections int      // 0 or 1 = single select, >1 = multiselect
 }
 
@@ -41,14 +41,16 @@ var FixedQuestions = []Question{
 }
 
 var TotalFixedQuestions = len(FixedQuestions)
+
 const TotalCustomQuestions = 3
+
 var TotalQuestions = TotalFixedQuestions + TotalCustomQuestions
 
 var ExtraQuestions = []Question{
 	{
-		ID:           "extra_0",
-		Text:         "What are your top 3 programming languages?",
-		Options:      []string{"Go", "Python", "JavaScript", "TypeScript", "Java", "C#", "C++", "PHP", "Rust", "Swift"},
+		ID:            "extra_0",
+		Text:          "What are your top 3 programming languages?",
+		Options:       []string{"Go", "Python", "JavaScript", "TypeScript", "Java", "C#", "C++", "PHP", "Rust", "Swift"},
 		MaxSelections: 3,
 	},
 	{

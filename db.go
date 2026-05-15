@@ -16,26 +16,26 @@ var tailwindColors = []string{
 var personaSymbols = []string{"🦊", "🦁", "🐯", "🐺", "🦝", "🦔", "🐙", "🦈", "🦅", "🐸"}
 
 type Participant struct {
-	ID              string
-	GitHubHandle    string
-	Name            string
-	PersonaName     string
-	PersonaColor    string
-	PersonaSymbol   string
-	PersonaTagline  string
-	ProfileJSON     string
-	Questions       string
-	AnswersJSON     string
-	ExtraAnswers    string
+	ID             string
+	GitHubHandle   string
+	Name           string
+	PersonaName    string
+	PersonaColor   string
+	PersonaSymbol  string
+	PersonaTagline string
+	ProfileJSON    string
+	Questions      string
+	AnswersJSON    string
+	ExtraAnswers   string
 	Interests      string
-	PipelineStep    string
-	MatchedWith     string
-	CompatScore     int
-	CompatReason    string
-	RedFlags        string
-	GreenFlags      string
-	Icebreakers     string
-	CreatedAt       time.Time
+	PipelineStep   string
+	MatchedWith    string
+	CompatScore    int
+	CompatReason   string
+	RedFlags       string
+	GreenFlags     string
+	Icebreakers    string
+	CreatedAt      time.Time
 }
 
 type DB struct {
@@ -303,7 +303,7 @@ func (db *DB) GetAllByStep(step string) ([]*Participant, error) {
 
 func (db *DB) GetReadyUnmatched() ([]*Participant, error) {
 	// Get participants who are ready and not yet matched
-	rows, err := db.db.Query(selectParticipant+` WHERE pipeline_step = 'ready' AND (matched_with = '' OR matched_with IS NULL) ORDER BY created_at`)
+	rows, err := db.db.Query(selectParticipant + ` WHERE pipeline_step = 'ready' AND (matched_with = '' OR matched_with IS NULL) ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +387,7 @@ func (db *DB) GetLLMCache(pairKey string) (*LLMCacheEntry, bool) {
 		`SELECT score, reason, red_flags, green_flags, icebreakers FROM llm_cache WHERE pair_key = ?`,
 		pairKey,
 	).Scan(&entry.Score, &entry.Reason, &entry.RedFlags, &entry.GreenFlags, &entry.Icebreakers)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, false

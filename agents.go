@@ -11,12 +11,12 @@ import (
 )
 
 type AgentPipeline struct {
-	db      *DB
-	github  *GitHubClient
-	mistral *MistralClient
-	matchMu sync.Mutex // Serializes matching operations to prevent race conditions
+	db       *DB
+	github   *GitHubClient
+	mistral  *MistralClient
+	matchMu  sync.Mutex              // Serializes matching operations to prevent race conditions
 	llmCache map[string]*matchResult // In-memory cache for LLM match scores
-	cacheMu sync.Mutex // Protects llmCache
+	cacheMu  sync.Mutex              // Protects llmCache
 }
 
 type personaResult struct {
@@ -37,7 +37,7 @@ type CompleteProfile struct {
 	GitHubProfile    *GitHubProfile
 	ExtraAnswers     *ExtraAnswers
 	InterviewAnswers map[string]string
-	Interests       map[string]interface{}
+	Interests        map[string]interface{}
 }
 
 // RunSetup fetches GitHub profile, creates persona, generates custom questions.
@@ -47,7 +47,16 @@ func (a *AgentPipeline) RunSetup(participantID, githubHandle string) {
 }
 
 // RunSetupWithExtraAnswers handles both GitHub and non-GitHub participants.
-func (a *AgentPipeline) RunSetupWithExtraAnswers(participantID, githubHandle, languages, projectType, devEnvironment, weirdestBug, keyboard, keyboardOther, devEnvOther string) {
+func (a *AgentPipeline) RunSetupWithExtraAnswers(
+	participantID,
+	githubHandle,
+	languages,
+	projectType,
+	devEnvironment,
+	weirdestBug,
+	keyboard,
+	keyboardOther,
+	devEnvOther string) {
 	var profile *GitHubProfile
 	var isGitHubUser bool
 
@@ -161,7 +170,7 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 	}
 
 	completeProfile := a.buildCompleteProfile(&profile, extraAnswers, answers)
-	
+
 	persona, err := a.generatePersonaFromCompleteProfile(completeProfile)
 	if err != nil {
 		log.Printf("Persona generation error: %v", err)
@@ -183,20 +192,20 @@ func (a *AgentPipeline) buildCompleteProfile(profile *GitHubProfile, extraAnswer
 		ExtraAnswers:     extraAnswers,
 		InterviewAnswers: interviewAnswers,
 	})
-	
+
 	return &CompleteProfile{
 		GitHubProfile:    profile,
 		ExtraAnswers:     extraAnswers,
 		InterviewAnswers: interviewAnswers,
-		Interests:       interests,
+		Interests:        interests,
 	}
 }
 
 func (a *AgentPipeline) computeInterestsFromCompleteProfile(profile *CompleteProfile) map[string]interface{} {
 	interests := map[string]interface{}{
 		"languages": []string{},
-		"tools":    []string{},
-		"domains":  []string{},
+		"tools":     []string{},
+		"domains":   []string{},
 	}
 
 	if profile.GitHubProfile != nil {
@@ -241,7 +250,7 @@ Respond with ONLY a valid JSON object — no markdown, no backticks:
 
 func (a *AgentPipeline) buildPersonaPrompt(profile *CompleteProfile) string {
 	var parts []string
-	
+
 	if profile.GitHubProfile != nil && profile.GitHubProfile.Login != "" {
 		parts = append(parts, fmt.Sprintf("GitHub: @%s", profile.GitHubProfile.Login))
 		parts = append(parts, profile.GitHubProfile.Summary())
@@ -263,12 +272,12 @@ func (a *AgentPipeline) buildPersonaPrompt(profile *CompleteProfile) string {
 			parts = append(parts, "Keyboard: "+ea.Keyboard)
 		}
 	}
-	
+
 	parts = append(parts, "\nInterview answers:")
 	for qid, answer := range profile.InterviewAnswers {
 		parts = append(parts, fmt.Sprintf("Q[%s]: %s", qid, answer))
 	}
-	
+
 	return strings.Join(parts, "\n")
 }
 
@@ -335,8 +344,8 @@ func (a *AgentPipeline) generateFallbackPersona(profile *GitHubProfile, isGitHub
 func (a *AgentPipeline) computeInterests(profile *GitHubProfile) map[string]interface{} {
 	interests := map[string]interface{}{
 		"languages": []string{},
-		"tools":    []string{},
-		"domains":  []string{},
+		"tools":     []string{},
+		"domains":   []string{},
 	}
 
 	if profile.ExtraAnswers != nil {
@@ -405,9 +414,9 @@ func (a *AgentPipeline) getCachedMatchResult(p1, p2 *Participant) *matchResult {
 	if a.llmCache == nil {
 		a.llmCache = make(map[string]*matchResult)
 	}
-	
+
 	key := pairKey(p1, p2)
-	
+
 	// Check in-memory cache first
 	a.cacheMu.Lock()
 	if cached, exists := a.llmCache[key]; exists {
@@ -415,7 +424,7 @@ func (a *AgentPipeline) getCachedMatchResult(p1, p2 *Participant) *matchResult {
 		return cached
 	}
 	a.cacheMu.Unlock()
-	
+
 	// Check SQLite cache
 	if a.db != nil {
 		cacheEntry, exists := a.db.GetLLMCache(key)
@@ -434,7 +443,7 @@ func (a *AgentPipeline) getCachedMatchResult(p1, p2 *Participant) *matchResult {
 			return result
 		}
 	}
-	
+
 	return nil
 }
 
@@ -444,14 +453,14 @@ func (a *AgentPipeline) cacheMatchResult(p1, p2 *Participant, result *matchResul
 	if a.llmCache == nil {
 		a.llmCache = make(map[string]*matchResult)
 	}
-	
+
 	key := pairKey(p1, p2)
-	
+
 	// Store in in-memory cache
 	a.cacheMu.Lock()
 	a.llmCache[key] = result
 	a.cacheMu.Unlock()
-	
+
 	// Store in SQLite cache (best-effort)
 	if a.db != nil {
 		redFlags := strings.Join(result.RedFlags, ",")
@@ -467,7 +476,7 @@ func (a *AgentPipeline) clearLLMCache() {
 	a.cacheMu.Lock()
 	a.llmCache = make(map[string]*matchResult)
 	a.cacheMu.Unlock()
-	
+
 	// Clear SQLite cache
 	if a.db != nil {
 		a.db.ClearLLMCache()

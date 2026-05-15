@@ -378,7 +378,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 
 	var answers map[string]string
 	json.Unmarshal([]byte(p.AnswersJSON), &answers)
-	
+
 	var questions []Question
 	json.Unmarshal([]byte(p.Questions), &questions)
 
