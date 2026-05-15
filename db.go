@@ -273,6 +273,7 @@ func (db *DB) UpdatePipelineStep(id, step string) error {
 }
 
 func (db *DB) UpdateProfile(id string, profile *GitHubProfile, personaName, personaTagline string, questions []Question) error {
+	log.Printf("[DEBUG] UpdateProfile: Marshaling %d questions for participant %s", len(questions), id)
 	profileJSON, err := json.Marshal(profile)
 	if err != nil {
 		return err
@@ -281,6 +282,7 @@ func (db *DB) UpdateProfile(id string, profile *GitHubProfile, personaName, pers
 	if err != nil {
 		return err
 	}
+	log.Printf("[DEBUG] UpdateProfile: questionsJSON = %s", string(questionsJSON))
 	_, err = db.db.Exec(`
 		UPDATE participants SET profile_json = ?, persona_name = ?, persona_tagline = ?, questions = ?
 		WHERE id = ?`, string(profileJSON), personaName, personaTagline, string(questionsJSON), id)

@@ -129,6 +129,10 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 		questions = append(ExtraQuestions, a.filterFixedQuestions()...)
 	}
 
+	log.Printf("[DEBUG] RunSetup: About to update profile with %d questions for participant %s", len(questions), participantID)
+	for i, q := range questions {
+		log.Printf("[DEBUG] Question %d: ID=%s, Text=%s, Options=%v", i, q.ID, q.Text, q.Options)
+	}
 	a.db.UpdateProfile(participantID, profile, "", "", questions)
 
 	if !isGitHubUser && profile.ExtraAnswers != nil {
