@@ -312,10 +312,6 @@ func (h *Handler) buildQuestionData(p *Participant) *QuestionData {
 	}
 
 	questions := p.Questions
-	log.Printf("[DEBUG] buildQuestionData: participant %s has %d questions", p.ID, len(questions))
-	for i, q := range questions {
-		log.Printf("[DEBUG] Question %d: ID=%s, Text=%s, Options=%v", i, q.ID, q.Text, q.Options)
-	}
 
 	idx := len(answers)
 	if idx >= len(questions) {
@@ -323,7 +319,6 @@ func (h *Handler) buildQuestionData(p *Participant) *QuestionData {
 	}
 
 	q := questions[idx]
-	log.Printf("[DEBUG] Returning question %d: ID=%s, Options=%v", idx, q.ID, q.Options)
 
 	return &QuestionData{
 		ParticipantID: p.ID,

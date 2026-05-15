@@ -119,20 +119,14 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 		if err != nil {
 			log.Printf("Custom questions error: %v", err)
 			// Use ExtraQuestions as fallback for consistency with non-GitHub users
-			customQs = make([]string, len(ExtraQuestions))
-			for i, q := range ExtraQuestions {
-				customQs[i] = q.Text
-			}
+			questions = append(FixedQuestions, ExtraQuestions...)
+		} else {
+			questions = append(FixedQuestions, a.stringsToQuestions(customQs, "custom")...)
 		}
-		questions = append(FixedQuestions, a.stringsToQuestions(customQs, "custom")...)
 	} else {
 		questions = append(ExtraQuestions, a.filterFixedQuestions()...)
 	}
 
-	log.Printf("[DEBUG] RunSetup: About to update profile with %d questions for participant %s", len(questions), participantID)
-	for i, q := range questions {
-		log.Printf("[DEBUG] Question %d: ID=%s, Text=%s, Options=%v", i, q.ID, q.Text, q.Options)
-	}
 	a.db.UpdateProfile(participantID, profile, "", "", questions)
 
 	if !isGitHubUser && profile.ExtraAnswers != nil {
