@@ -63,7 +63,13 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 	if languages == "" && projectType == "" {
 		isGitHubUser = true
 		a.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle))
-		profile, _ = a.github.FetchProfile(githubHandle)
+		var err error
+		profile, err = a.github.FetchProfile(githubHandle)
+		if err != nil {
+			log.Printf("Failed to fetch GitHub profile for @%s: %v", githubHandle, err)
+			// Continue with minimal profile
+			profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
+		}
 		if profile == nil {
 			profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
 		}
@@ -126,13 +132,25 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 		questions = append(ExtraQuestions, a.filterFixedQuestions()...)
 	}
 
-	questionsJSON, _ := json.Marshal(questions)
-	profileJSON, _ := json.Marshal(profile)
+	questionsJSON, err := json.Marshal(questions)
+	if err != nil {
+		log.Printf("Failed to marshal questions for %s: %v", participantID, err)
+		return
+	}
+	profileJSON, err := json.Marshal(profile)
+	if err != nil {
+		log.Printf("Failed to marshal profile for %s: %v", participantID, err)
+		return
+	}
 
 	a.db.UpdateProfile(participantID, string(profileJSON), "", "", string(questionsJSON))
 
 	if !isGitHubUser {
-		extraAnswersJSON, _ := json.Marshal(profile.ExtraAnswers)
+		extraAnswersJSON, err := json.Marshal(profile.ExtraAnswers)
+		if err != nil {
+			log.Printf("Failed to marshal extra answers for %s: %v", participantID, err)
+			return
+		}
 		a.db.UpdateExtraAnswers(participantID, string(extraAnswersJSON))
 	}
 
@@ -178,7 +196,11 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 	}
 
 	interests := a.computeInterestsFromCompleteProfile(completeProfile)
-	interestsJSON, _ := json.Marshal(interests)
+	interestsJSON, err := json.Marshal(interests)
+	if err != nil {
+		log.Printf("Failed to marshal interests for %s: %v", participantID, err)
+		return
+	}
 
 	a.db.UpdateProfile(participantID, string(p.ProfileJSON), persona.Name, persona.Tagline, p.Questions)
 	a.db.UpdateInterests(participantID, string(interestsJSON))
@@ -603,9 +625,21 @@ func (a *AgentPipeline) RunMatching() error {
 			log.Printf("Warning: no cached result for final pair %s:%s", p1.ID, p2.ID)
 			result = defaultMatchResult()
 		}
-		redJSON, _ := json.Marshal(result.RedFlags)
-		greenJSON, _ := json.Marshal(result.GreenFlags)
-		iceJSON, _ := json.Marshal(result.Icebreakers)
+		redJSON, err := json.Marshal(result.RedFlags)
+		if err != nil {
+			log.Printf("Failed to marshal red flags: %v", err)
+			continue
+		}
+		greenJSON, err := json.Marshal(result.GreenFlags)
+		if err != nil {
+			log.Printf("Failed to marshal green flags: %v", err)
+			continue
+		}
+		iceJSON, err := json.Marshal(result.Icebreakers)
+		if err != nil {
+			log.Printf("Failed to marshal icebreakers: %v", err)
+			continue
+		}
 		a.db.SetMatched(p1.ID, p2.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
 		a.db.SetMatched(p2.ID, p1.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
 		a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", p1.PersonaName, p2.PersonaName, result.Score))
@@ -1023,9 +1057,21 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 		}
 
 		// Store results for both participants
-		redJSON, _ := json.Marshal(result.RedFlags)
-		greenJSON, _ := json.Marshal(result.GreenFlags)
-		iceJSON, _ := json.Marshal(result.Icebreakers)
+		redJSON, err := json.Marshal(result.RedFlags)
+		if err != nil {
+			log.Printf("Failed to marshal red flags: %v", err)
+			return nil
+		}
+		greenJSON, err := json.Marshal(result.GreenFlags)
+		if err != nil {
+			log.Printf("Failed to marshal green flags: %v", err)
+			return nil
+		}
+		iceJSON, err := json.Marshal(result.Icebreakers)
+		if err != nil {
+			log.Printf("Failed to marshal icebreakers: %v", err)
+			return nil
+		}
 
 		a.db.SetMatched(newParticipant.ID, bestMatch.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
 		a.db.SetMatched(bestMatch.ID, newParticipant.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))

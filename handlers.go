@@ -434,7 +434,12 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 
 	var match *Participant
 	if p.MatchedWith != "" {
-		match, _ = h.db.GetParticipant(p.MatchedWith)
+		var err error
+		match, err = h.db.GetParticipant(p.MatchedWith)
+		if err != nil {
+			log.Printf("Failed to get match participant %s: %v", p.MatchedWith, err)
+			// Continue without match data
+		}
 	}
 
 	var redFlags, greenFlags, icebreakers []string
