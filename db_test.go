@@ -281,3 +281,163 @@ func TestLLMCache(t *testing.T) {
 		t.Error("expected cache miss after clear")
 	}
 }
+
+func TestUnmatchAll(t *testing.T) {
+	db := testDB(t)
+
+	// Create participants
+	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-2", "user2", "User 2")
+	db.CreateParticipant("id-3", "user3", "User 3")
+
+	// Match them
+	db.SetMatched("id-1", "id-2", 0, "", "", "", "")
+	db.SetMatched("id-3", "", 0, "", "", "", "")
+
+	// Unmatch all
+	db.UnmatchAll()
+
+	// Verify all are unmatched
+	p1, _ := db.GetParticipant("id-1")
+	p2, _ := db.GetParticipant("id-2")
+	p3, _ := db.GetParticipant("id-3")
+
+	if p1.MatchedWith != "" {
+		t.Errorf("expected p1 to be unmatched, got %s", p1.MatchedWith)
+	}
+	if p2.MatchedWith != "" {
+		t.Errorf("expected p2 to be unmatched, got %s", p2.MatchedWith)
+	}
+	if p3.MatchedWith != "" {
+		t.Errorf("expected p3 to be unmatched, got %s", p3.MatchedWith)
+	}
+}
+
+func TestDeleteParticipant(t *testing.T) {
+	db := testDB(t)
+
+	// Create participant
+	db.CreateParticipant("id-to-delete", "user", "User")
+
+	// Verify it exists
+	_, err := db.GetParticipant("id-to-delete")
+	if err != nil {
+		t.Fatalf("expected participant to exist: %v", err)
+	}
+
+	// Delete it
+	db.DeleteParticipant("id-to-delete")
+
+	// Verify it's gone
+	_, err = db.GetParticipant("id-to-delete")
+	if err == nil {
+		t.Error("expected participant to be deleted")
+	}
+}
+
+func TestUpdateExtraAnswers(t *testing.T) {
+	db := testDB(t)
+	db.CreateParticipant("id-1", "user1", "User 1")
+
+	extraAnswers := &ExtraAnswers{
+		Languages:       []string{"Go", "Python"},
+		ProjectType:    "Backend Services",
+		DevEnvironment: []string{"VIM"},
+		WeirdestBug:    "Segfault in production",
+		Keyboard:       "Mechanical",
+	}
+
+	db.UpdateExtraAnswers("id-1", extraAnswers)
+
+	p, _ := db.GetParticipant("id-1")
+	if p.Extra == nil {
+		t.Fatal("expected Extra to be set")
+	}
+	if len(p.Extra.Languages) != 2 {
+		t.Errorf("expected 2 languages, got %d", len(p.Extra.Languages))
+	}
+}
+
+func TestUpdateInterests(t *testing.T) {
+	db := testDB(t)
+	db.CreateParticipant("id-1", "user1", "User 1")
+
+	interests := map[string]interface{}{
+		"languages": []string{"Go", "Python"},
+		"tools":     []string{"Docker"},
+	}
+
+	db.UpdateInterests("id-1", interests)
+
+	p, _ := db.GetParticipant("id-1")
+	if p.Interests == nil {
+		t.Fatal("expected Interests to be set")
+	}
+	if len(p.Interests) != 2 {
+		t.Errorf("expected 2 interest categories, got %d", len(p.Interests))
+	}
+}
+
+func TestGetReadyUnmatched(t *testing.T) {
+	db := testDB(t)
+
+	// Create participants with different states
+	db.CreateParticipant("id-1", "user1", "User 1")
+	db.UpdatePipelineStep("id-1", "ready")
+
+	db.CreateParticipant("id-2", "user2", "User 2")
+	db.UpdatePipelineStep("id-2", "ready")
+	db.SetMatched("id-2", "id-3", 0, "", "", "", "")
+
+	db.CreateParticipant("id-3", "user3", "User 3")
+	db.UpdatePipelineStep("id-3", "interviewing")
+
+	db.CreateParticipant("id-4", "user4", "User 4")
+	db.UpdatePipelineStep("id-4", "ready")
+
+	readyUnmatched, err := db.GetReadyUnmatched()
+	if err != nil {
+		t.Fatalf("GetReadyUnmatched: %v", err)
+	}
+
+	// Should only return id-1 and id-4
+	if len(readyUnmatched) != 2 {
+		t.Errorf("expected 2 ready unmatched participants, got %d", len(readyUnmatched))
+	}
+
+	ids := make(map[string]bool)
+	for _, p := range readyUnmatched {
+		ids[p.ID] = true
+	}
+	if !ids["id-1"] || !ids["id-4"] {
+		t.Error("expected id-1 and id-4 in results")
+	}
+}
+
+func TestUnmatchParticipant(t *testing.T) {
+	db := testDB(t)
+
+	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-2", "user2", "User 2")
+	db.SetMatched("id-1", "id-2", 0, "", "", "", "")
+
+	// Verify they are matched
+	p1, _ := db.GetParticipant("id-1")
+	if p1.MatchedWith != "id-2" {
+		t.Fatalf("expected id-1 to be matched with id-2, got %s", p1.MatchedWith)
+	}
+
+	// Unmatch id-1
+	db.UnmatchParticipant("id-1")
+
+	// Verify both are unmatched
+	p1, _ = db.GetParticipant("id-1")
+	p2, _ := db.GetParticipant("id-2")
+
+	if p1.MatchedWith != "" {
+		t.Errorf("expected id-1 to be unmatched, got %s", p1.MatchedWith)
+	}
+	if p2.MatchedWith != "" {
+		t.Errorf("expected id-2 to be unmatched, got %s", p2.MatchedWith)
+	}
+}

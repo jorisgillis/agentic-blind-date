@@ -30,10 +30,8 @@ The automated process that each participant goes through:
 The current stage of a participant in the pipeline. Valid values:
 - `fetching_github`
 - `interviewing`
-- `generating_persona`
+- `creating_persona`
 - `ready`
-
-Note: `creating_persona` is an alias for `generating_persona` used in some templates.
 
 ### Match
 A pairing between two participants based on compatibility. Contains:
@@ -129,6 +127,13 @@ Data fetched from a participant's GitHub account, including:
 - Top Topics: extracted from repository topics
 - Top Repos: up to 5 most-starred repositories
 - Has Profile README: whether user has a profile README
+
+### Non-GitHub User
+A participant who registers without a GitHub account. These users go through a modified onboarding flow:
+- **Handle**: Automatically generated as `"no-github-{uuid-prefix}"` to ensure uniqueness
+- **Pipeline**: Starts at `interviewing` (skips `fetching_github`)
+- **Questions**: Answers ExtraQuestions instead of FixedQuestions + CustomQuestions
+- **Profile Data**: ExtraAnswers are used to capture their technical profile (languages, project types, etc.)
 
 ### Interests
 Computed attributes that categorize a participant's technical profile:

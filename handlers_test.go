@@ -19,7 +19,11 @@ func testServer(t *testing.T) (*httptest.Server, *DB) {
 	// Pin to one connection so all goroutines share the same in-memory database.
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	h := NewHandler(db, NewGitHubClient(""), NewMistralClient("", "", &http.Client{}))
+	github := NewGitHubClient("")
+	mistral := NewMistralClient("", "", &http.Client{})
+	matcher := NewMatcher(github, mistral)
+	agents := NewAgentPipeline(db, github, mistral, matcher)
+	h := NewHandler(db, github, mistral, agents)
 	srv := httptest.NewServer(buildMux(h))
 	t.Cleanup(srv.Close)
 	return srv, db
@@ -197,7 +201,11 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	// Create a handler with empty database
 	db, _ := NewDB(":memory:")
 	defer db.Close()
-	h := NewHandler(db, NewGitHubClient(""), NewMistralClient("", "", &http.Client{}))
+	github := NewGitHubClient("")
+	mistral := NewMistralClient("", "", &http.Client{})
+	matcher := NewMatcher(github, mistral)
+	agents := NewAgentPipeline(db, github, mistral, matcher)
+	h := NewHandler(db, github, mistral, agents)
 
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()
@@ -214,5 +222,136 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	}
 	if payload["activity"] == nil {
 		t.Error("payload should have activity")
+	}
+}
+
+func TestComputeBadges(t *testing.T) {
+	// Test GitHub Dinosaur badge (10+ years)
+	p := GitHubProfile{AccountAgeDays: 3650}
+	badges := computeBadges(p)
+	if len(badges) != 1 || badges[0].Label != "GitHub Dinosaur" {
+		t.Errorf("expected GitHub Dinosaur badge for 10+ years, got %v", badges)
+	}
+
+	// Test GitHub Celebrity badge (100+ stars)
+	p = GitHubProfile{TotalStars: 100}
+	badges = computeBadges(p)
+	if len(badges) != 1 || badges[0].Label != "GitHub Celebrity" {
+		t.Errorf("expected GitHub Celebrity badge for 100+ stars, got %v", badges)
+	}
+
+	// Test The Hoarder badge (50+ repos)
+	p = GitHubProfile{PublicRepos: 50}
+	badges = computeBadges(p)
+	if len(badges) != 1 || badges[0].Label != "The Hoarder" {
+		t.Errorf("expected The Hoarder badge for 50+ repos, got %v", badges)
+	}
+
+	// Test Polyglot badge (5+ languages)
+	p = GitHubProfile{Languages: []string{"Go", "Python", "JavaScript", "TypeScript", "Java"}}
+	badges = computeBadges(p)
+	if len(badges) != 1 || badges[0].Label != "Polyglot" {
+		t.Errorf("expected Polyglot badge for 5+ languages, got %v", badges)
+	}
+
+	// Test Storyteller badge (has profile README)
+	p = GitHubProfile{HasProfileReadme: true}
+	badges = computeBadges(p)
+	if len(badges) != 1 || badges[0].Label != "Storyteller" {
+		t.Errorf("expected Storyteller badge for profile README, got %v", badges)
+	}
+
+	// Test Fresh Blood badge (0 < age < 180 days)
+	p = GitHubProfile{AccountAgeDays: 90}
+	badges = computeBadges(p)
+	if len(badges) != 1 || badges[0].Label != "Fresh Blood" {
+		t.Errorf("expected Fresh Blood badge for new account, got %v", badges)
+	}
+
+	// Test Lurker badge (100+ followers, < 5 repos)
+	p = GitHubProfile{Followers: 100, PublicRepos: 4}
+	badges = computeBadges(p)
+	if len(badges) != 1 || badges[0].Label != "Lurker" {
+		t.Errorf("expected Lurker badge, got %v", badges)
+	}
+
+	// Test Focused badge (exactly 1 language)
+	p = GitHubProfile{Languages: []string{"Go"}}
+	badges = computeBadges(p)
+	if len(badges) != 1 || badges[0].Label != "Focused" {
+		t.Errorf("expected Focused badge for single language, got %v", badges)
+	}
+
+	// Test multiple badges
+	p = GitHubProfile{
+		AccountAgeDays: 3650,
+		TotalStars:    100,
+		PublicRepos:   50,
+		Languages:     []string{"Go", "Python", "JavaScript", "TypeScript", "Java"},
+	}
+	badges = computeBadges(p)
+	if len(badges) != 4 {
+		t.Errorf("expected 4 badges, got %d", len(badges))
+	}
+
+	// Test no badges
+	p = GitHubProfile{}
+	badges = computeBadges(p)
+	if len(badges) != 0 {
+		t.Errorf("expected no badges for empty profile, got %v", badges)
+	}
+}
+
+func TestBuildQuestionData(t *testing.T) {
+	// Setup
+	db, _ := NewDB(":memory:")
+	defer db.Close()
+	github := NewGitHubClient("")
+	mistral := NewMistralClient("", "", &http.Client{})
+	matcher := NewMatcher(github, mistral)
+	agents := NewAgentPipeline(db, github, mistral, matcher)
+	h := NewHandler(db, github, mistral, agents)
+
+	// Test with no answers and questions
+	p := &Participant{ID: "test-1", Questions: FixedQuestions}
+	data := h.buildQuestionData(p)
+	if data == nil {
+		t.Fatal("expected non-nil QuestionData")
+	}
+	if data.ParticipantID != "test-1" {
+		t.Errorf("expected ParticipantID test-1, got %s", data.ParticipantID)
+	}
+	if data.Index != 0 {
+		t.Errorf("expected Index 0, got %d", data.Index)
+	}
+	if data.Total != len(FixedQuestions) {
+		t.Errorf("expected Total %d, got %d", len(FixedQuestions), data.Total)
+	}
+	if data.Question.ID != "fixed_0" {
+		t.Errorf("expected first question fixed_0, got %s", data.Question.ID)
+	}
+
+	// Test with some answers
+	p.Answers = map[string]string{"fixed_0": "Tabs"}
+	data = h.buildQuestionData(p)
+	if data.Index != 1 {
+		t.Errorf("expected Index 1, got %d", data.Index)
+	}
+	if data.Question.ID != "fixed_1" {
+		t.Errorf("expected second question fixed_1, got %s", data.Question.ID)
+	}
+
+	// Test with all answers
+	p.Answers = map[string]string{
+		"fixed_0": "Tabs",
+		"fixed_1": "Go",
+		"fixed_2": "Only if tests pass",
+		"fixed_3": "Monolith, always",
+		"fixed_4": "fix stuff",
+		"fixed_5": "Claude",
+	}
+	data = h.buildQuestionData(p)
+	if data != nil {
+		t.Error("expected nil when all questions answered")
 	}
 }

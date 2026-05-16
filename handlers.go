@@ -75,10 +75,8 @@ type Handler struct {
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-// It initializes the Matcher and AgentPipeline with the provided database, GitHub, and Mistral clients.
-func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient) *Handler {
-	matcher := NewMatcher(github, mistral)
-	agents := &AgentPipeline{db: db, github: github, mistral: mistral, matcher: matcher}
+// It initializes the templates with the provided database, GitHub, Mistral clients, and AgentPipeline.
+func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient, agents *AgentPipeline) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -301,16 +299,33 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 
 	answer := strings.TrimSpace(r.FormValue("answer"))
 
+	questions := p.Questions
+	currentIndex := len(p.Answers)
+	if currentIndex >= len(questions) {
+		http.Error(w, "No more questions to answer", 400)
+		return
+	}
+
+	currentQuestion := questions[currentIndex]
+
+	if currentQuestion.MaxSelections > 1 {
+		var selected []string
+		if err := json.Unmarshal([]byte(answer), &selected); err != nil {
+			http.Error(w, "Invalid answer format for multi-select question", 400)
+			return
+		}
+		if len(selected) > currentQuestion.MaxSelections {
+			http.Error(w, fmt.Sprintf("Too many selections. Maximum %d allowed.", currentQuestion.MaxSelections), 400)
+			return
+		}
+	}
+
 	answers := p.Answers
 	if answers == nil {
 		answers = map[string]string{}
 	}
 
-	questions := p.Questions
-
-	currentIndex := len(answers)
 	if currentIndex < len(questions) {
-		currentQuestion := questions[currentIndex]
 		answers[currentQuestion.ID] = answer
 	}
 

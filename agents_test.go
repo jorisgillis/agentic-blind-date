@@ -480,3 +480,43 @@ func TestBuildPersonaPrompt(t *testing.T) {
 		t.Error("prompt should contain interview answers")
 	}
 }
+
+func TestBuildCompleteProfile(t *testing.T) {
+	// Create a minimal AgentPipeline (we don't need the clients for this test)
+	ap := &AgentPipeline{}
+
+	profile := &GitHubProfile{
+		Login:    "testuser",
+		Languages: []string{"Go", "Python"},
+	}
+
+	interviewAnswers := map[string]string{
+		"fixed_0": "Tabs",
+		"fixed_1": "Go",
+	}
+
+	completeProfile := ap.buildCompleteProfile(profile, nil, interviewAnswers)
+
+	if completeProfile.GitHubProfile != profile {
+		t.Error("GitHubProfile not set correctly")
+	}
+
+	if len(completeProfile.InterviewAnswers) != len(interviewAnswers) {
+		t.Error("InterviewAnswers length mismatch")
+	}
+	for k, v := range interviewAnswers {
+		if completeProfile.InterviewAnswers[k] != v {
+			t.Errorf("InterviewAnswers[%s] = %s, want %s", k, completeProfile.InterviewAnswers[k], v)
+		}
+	}
+
+	if completeProfile.Interests == nil {
+		t.Error("Interests should not be nil")
+	}
+
+	// Check that interests were computed from GitHubProfile
+	if langs, ok := completeProfile.Interests["languages"].([]string); !ok || len(langs) != 2 {
+		t.Errorf("expected languages in interests, got %v", completeProfile.Interests["languages"])
+	}
+}
+

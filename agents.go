@@ -23,6 +23,17 @@ type AgentPipeline struct {
 	cacheMu  sync.Mutex              // Protects llmCache
 }
 
+// NewAgentPipeline creates a new AgentPipeline with the given dependencies.
+func NewAgentPipeline(db *DB, github *GitHubClient, mistral *MistralClient, matcher *Matcher) *AgentPipeline {
+	return &AgentPipeline{
+		db:      db,
+		github:  github,
+		mistral: mistral,
+		matcher: matcher,
+		llmCache: make(map[string]*matchResult),
+	}
+}
+
 type personaResult struct {
 	Name    string `json:"name"`
 	Tagline string `json:"tagline"`
@@ -126,6 +137,8 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 		log.Printf("RunFinalSetup: profile is nil for participant %s", participantID)
 		return
 	}
+
+	a.db.UpdatePipelineStep(participantID, "creating_persona")
 
 	profile := *p.Profile
 	answers := p.Answers

@@ -44,7 +44,7 @@ func NewMatcher(github *GitHubClient, mistral *MistralClient) *Matcher
 func NewAgentPipeline(db *DB, github *GitHubClient, mistral *MistralClient, matcher *Matcher) *AgentPipeline
 
 // HTTP handlers
-func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient) *Handler
+func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient, agents *AgentPipeline) *Handler
 ```
 
 #### Composition Root
@@ -70,7 +70,7 @@ func main() {
     // Initialize application components
     matcher := NewMatcher(github, mistral)
     agents := NewAgentPipeline(db, github, mistral, matcher)
-    h := NewHandler(db, github, mistral)
+    h := NewHandler(db, github, mistral, agents)
 
     // Start server
     log.Fatal(http.ListenAndServe(addr, buildMux(h)))
