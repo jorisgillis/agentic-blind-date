@@ -542,3 +542,135 @@ func TestSseRedirect(t *testing.T) {
 		t.Error("expected data: http://example.com in body")
 	}
 }
+
+func TestSubmitAnswer_ParticipantNotFound(t *testing.T) {
+	srv, _ := testServer(t)
+
+	// Submit answer for non-existent participant
+	resp, err := srv.Client().Post(srv.URL+"/user/answer/nonexistent", "application/x-www-form-urlencoded",
+		strings.NewReader("answer=Test"))
+	if err != nil {
+		t.Fatalf("POST /user/answer/nonexistent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 404 {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestSubmitAnswer_WrongPipelineStep(t *testing.T) {
+	srv, db := testServer(t)
+
+	// Create a participant NOT in interviewing state
+	db.CreateParticipant("id-1", "user1", "User 1")
+	db.UpdatePipelineStep("id-1", "ready")
+
+	// Submit answer
+	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
+		strings.NewReader("answer=Test"))
+	if err != nil {
+		t.Fatalf("POST /user/answer/id-1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Check for HX-Redirect header
+	if resp.Header.Get("HX-Redirect") == "" {
+		t.Error("expected HX-Redirect header to be set")
+	}
+}
+
+func TestSubmitAnswer_NoMoreQuestions(t *testing.T) {
+	srv, db := testServer(t)
+
+	// Create a participant with only 2 questions and both answered
+	db.CreateParticipant("id-1", "user1", "User 1")
+	p, _ := db.GetParticipant("id-1")
+	p.Questions = []Question{
+		{ID: "q0", Text: "Q1?"},
+		{ID: "q1", Text: "Q2?"},
+	}
+	p.Answers = map[string]string{
+		"q0": "A1",
+		"q1": "A2",
+	}
+	p.PipelineStep = "interviewing"
+	questionsJSON, _ := json.Marshal(p.Questions)
+	answersJSON, _ := json.Marshal(p.Answers)
+	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
+		string(questionsJSON), string(answersJSON), "interviewing", "id-1")
+
+	// Submit another answer (should fail)
+	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
+		strings.NewReader("answer=Extra"))
+	if err != nil {
+		t.Fatalf("POST /user/answer/id-1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 400 {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestSubmitAnswer_MultiSelectInvalidJSON(t *testing.T) {
+	srv, db := testServer(t)
+
+	// Create a participant with multi-select questions
+	db.CreateParticipant("id-1", "user1", "User 1")
+	p, _ := db.GetParticipant("id-1")
+	p.Questions = []Question{
+		{ID: "q1", Text: "Select languages", MaxSelections: 3, Mode: MultiSelect},
+	}
+	p.Answers = map[string]string{}
+	p.PipelineStep = "interviewing"
+	questionsJSON, _ := json.Marshal(p.Questions)
+	answersJSON, _ := json.Marshal(map[string]string{})
+	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
+		string(questionsJSON), string(answersJSON), "interviewing", "id-1")
+
+	// Submit invalid JSON for multi-select
+	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
+		strings.NewReader("answer=not valid json"))
+	if err != nil {
+		t.Fatalf("POST /user/answer/id-1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 400 {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
+	srv, db := testServer(t)
+
+	// Create a participant with multi-select questions (max 2 selections)
+	db.CreateParticipant("id-1", "user1", "User 1")
+	p, _ := db.GetParticipant("id-1")
+	p.Questions = []Question{
+		{ID: "q1", Text: "Select languages", MaxSelections: 2, Mode: MultiSelect},
+	}
+	p.Answers = map[string]string{}
+	p.PipelineStep = "interviewing"
+	questionsJSON, _ := json.Marshal(p.Questions)
+	answersJSON, _ := json.Marshal(map[string]string{})
+	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
+		string(questionsJSON), string(answersJSON), "interviewing", "id-1")
+
+	// Submit too many selections
+	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
+		strings.NewReader("answer=[\"Go\",\"Python\",\"Java\"]"))
+	if err != nil {
+		t.Fatalf("POST /user/answer/id-1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 400 {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
