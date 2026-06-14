@@ -655,3 +655,65 @@ func TestFmtInterests(t *testing.T) {
 }
 
 
+
+func TestBuildPersonaPromptWithExtraAnswers(t *testing.T) {
+	pipeline := &AgentPipeline{}
+
+	profile := &CompleteProfile{
+		ExtraAnswers: &ExtraAnswers{
+			Languages:       []string{"Go", "Python"},
+			ProjectType:    "Backend Services",
+			DevEnvironment: []string{"VIM"},
+			WeirdestBug:    "Segfault in production",
+			Keyboard:       "Mechanical",
+		},
+		InterviewAnswers: map[string]string{
+			"extra_0": `["Go","Python"]`,
+		},
+	}
+
+	prompt := pipeline.buildPersonaPrompt(profile)
+
+	if !strings.Contains(prompt, "Languages: Go, Python") {
+		t.Error("prompt should contain languages")
+	}
+	if !strings.Contains(prompt, "Project type: Backend Services") {
+		t.Error("prompt should contain project type")
+	}
+	if !strings.Contains(prompt, "Dev environment: VIM") {
+		t.Error("prompt should contain dev environment")
+	}
+	if !strings.Contains(prompt, "Weirdest bug: Segfault in production") {
+		t.Error("prompt should contain weirdest bug")
+	}
+	if !strings.Contains(prompt, "Keyboard: Mechanical") {
+		t.Error("prompt should contain keyboard")
+	}
+	if !strings.Contains(prompt, "Q[extra_0]:") {
+		t.Error("prompt should contain interview answers")
+	}
+}
+
+func TestComputeInterestsFromCompleteProfileWithExtraAnswers(t *testing.T) {
+	pipeline := &AgentPipeline{}
+
+	profile := &CompleteProfile{
+		ExtraAnswers: &ExtraAnswers{
+			Languages:       []string{"Go", "Python"},
+			DevEnvironment: []string{"VIM", "VSCode"},
+			ProjectType:    "Backend Services",
+		},
+	}
+
+	interests := pipeline.computeInterestsFromCompleteProfile(profile)
+
+	if langs, ok := interests["languages"].([]string); !ok || len(langs) != 2 {
+		t.Errorf("expected 2 languages from ExtraAnswers, got %v", langs)
+	}
+	if tools, ok := interests["tools"].([]string); !ok || len(tools) != 2 {
+		t.Errorf("expected 2 tools from ExtraAnswers, got %v", tools)
+	}
+	if domains, ok := interests["domains"].([]string); !ok || len(domains) != 1 {
+		t.Errorf("expected 1 domain from ExtraAnswers, got %v", domains)
+	}
+}
