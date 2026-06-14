@@ -772,3 +772,51 @@ func TestGenerateFallbackPersona_NonGitHubUser_NoLanguages(t *testing.T) {
 		t.Errorf("expected tagline 'Ships things without GitHub.', got %s", result.Tagline)
 	}
 }
+
+func TestExtractJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "bare JSON",
+			input:    `{"name": "test"}`,
+			expected: `{"name": "test"}`,
+		},
+		{
+			name:     "markdown wrapped",
+			input:    "```json\n{\"name\": \"test\"}\n```",
+			expected: `{"name": "test"}`,
+		},
+		{
+			name:     "trailing garbage",
+			input:    `{"name": "test"} some extra text`,
+			expected: `{"name": "test"}`,
+		},
+		{
+			name:     "no JSON",
+			input:    "just plain text",
+			expected: "just plain text",
+		},
+		{
+			name:     "unclosed brace",
+			input:    `{"name": "test"`,
+			expected: `{"name": "test"`,
+		},
+		{
+			name:     "nested JSON",
+			input:    `text {"outer": {"inner": "value"}} more text`,
+			expected: `{"outer": {"inner": "value"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractJSON(tt.input)
+			if result != tt.expected {
+				t.Errorf("extractJSON(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
