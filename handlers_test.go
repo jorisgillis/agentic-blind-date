@@ -500,3 +500,45 @@ func TestAdmin(t *testing.T) {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 }
+
+// flusherRecorder is a ResponseRecorder that implements http.Flusher
+type flusherRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (f *flusherRecorder) Flush() {
+	// No-op for testing
+}
+
+func TestSseHeaders(t *testing.T) {
+	w := &flusherRecorder{httptest.NewRecorder()}
+	
+	result := sseHeaders(w)
+	if !result {
+		t.Error("expected sseHeaders to return true for Flusher")
+	}
+	
+	if w.Header().Get("Content-Type") != "text/event-stream" {
+		t.Error("expected Content-Type to be text/event-stream")
+	}
+	if w.Header().Get("Cache-Control") != "no-cache" {
+		t.Error("expected Cache-Control to be no-cache")
+	}
+	if w.Header().Get("Connection") != "keep-alive" {
+		t.Error("expected Connection to be keep-alive")
+	}
+}
+
+func TestSseRedirect(t *testing.T) {
+	w := &flusherRecorder{httptest.NewRecorder()}
+	
+	sseRedirect(w, "http://example.com")
+	
+	body := w.Body.String()
+	if !strings.Contains(body, "event: redirect") {
+		t.Error("expected event: redirect in body")
+	}
+	if !strings.Contains(body, "data: http://example.com") {
+		t.Error("expected data: http://example.com in body")
+	}
+}
