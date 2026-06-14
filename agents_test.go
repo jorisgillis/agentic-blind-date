@@ -520,3 +520,138 @@ func TestBuildCompleteProfile(t *testing.T) {
 	}
 }
 
+func TestGenerateFallbackPersonaFromCompleteProfile(t *testing.T) {
+	ap := &AgentPipeline{}
+
+	// Test with GitHub profile
+	profile := &CompleteProfile{
+		GitHubProfile: &GitHubProfile{Login: "testuser"},
+	}
+	result := ap.generateFallbackPersonaFromCompleteProfile(profile)
+	if result.Name != "The Testuser" {
+		t.Errorf("expected 'The Testuser', got '%s'", result.Name)
+	}
+	if result.Tagline != "Mysterious coder. Ships things." {
+		t.Errorf("expected tagline for GitHub user, got '%s'", result.Tagline)
+	}
+
+	// Test with ExtraAnswers
+	profile = &CompleteProfile{
+		ExtraAnswers: &ExtraAnswers{
+			Languages: []string{"Go", "Python"},
+		},
+	}
+	result = ap.generateFallbackPersonaFromCompleteProfile(profile)
+	if result.Name != "The Go Developer" {
+		t.Errorf("expected 'The Go Developer', got '%s'", result.Name)
+	}
+	if result.Tagline != "Ships things." {
+		t.Errorf("expected tagline, got '%s'", result.Tagline)
+	}
+
+	// Test with InterviewAnswers
+	profile = &CompleteProfile{
+		InterviewAnswers: map[string]string{
+			"fixed_1": "JavaScript",
+		},
+	}
+	result = ap.generateFallbackPersonaFromCompleteProfile(profile)
+	if result.Name != "The JavaScript Developer" {
+		t.Errorf("expected 'The JavaScript Developer', got '%s'", result.Name)
+	}
+
+	// Test with no data (fallback to Mysterious Coder)
+	profile = &CompleteProfile{}
+	result = ap.generateFallbackPersonaFromCompleteProfile(profile)
+	if result.Name != "The Mysterious Coder" {
+		t.Errorf("expected 'The Mysterious Coder', got '%s'", result.Name)
+	}
+}
+
+func TestComputeInterests(t *testing.T) {
+	ap := &AgentPipeline{}
+
+	// Test with GitHub profile (no ExtraAnswers)
+	profile := &GitHubProfile{
+		Languages: []string{"Go", "Python"},
+		TopTopics: []string{"web", "api"},
+	}
+	interests := ap.computeInterests(profile)
+
+	if langs, ok := interests["languages"].([]string); !ok || len(langs) != 2 {
+		t.Errorf("expected 2 languages from GitHub profile, got %v", langs)
+	}
+	if tools, ok := interests["tools"].([]string); !ok || len(tools) != 2 {
+		t.Errorf("expected 2 tools from GitHub profile, got %v", tools)
+	}
+
+	// Test with ExtraAnswers
+	profile = &GitHubProfile{
+		ExtraAnswers: &ExtraAnswers{
+			Languages:       []string{"Go", "Python"},
+			DevEnvironment: []string{"VIM", "VSCode"},
+			ProjectType:    "Backend Services",
+		},
+	}
+	interests = ap.computeInterests(profile)
+
+	if langs, ok := interests["languages"].([]string); !ok || len(langs) != 2 {
+		t.Errorf("expected 2 languages from ExtraAnswers, got %v", langs)
+	}
+	if tools, ok := interests["tools"].([]string); !ok || len(tools) != 2 {
+		t.Errorf("expected 2 tools from ExtraAnswers, got %v", tools)
+	}
+	if domains, ok := interests["domains"].([]string); !ok || len(domains) != 1 {
+		t.Errorf("expected 1 domain from ExtraAnswers, got %v", domains)
+	}
+}
+
+func TestFmtInterests(t *testing.T) {
+	// Test empty interests
+	if result := fmtInterests(nil); result != "" {
+		t.Errorf("expected empty string for nil, got %s", result)
+	}
+
+	if result := fmtInterests(map[string]interface{}{}); result != "" {
+		t.Errorf("expected empty string for empty map, got %s", result)
+	}
+
+	// Test with languages
+	interests := map[string]interface{}{
+		"languages": []string{"Go", "Python"},
+	}
+	result := fmtInterests(interests)
+	if result != "languages: Go, Python" {
+		t.Errorf("expected 'languages: Go, Python', got %s", result)
+	}
+
+	// Test with multiple categories
+	interests = map[string]interface{}{
+		"languages": []string{"Go", "Python"},
+		"tools":    []string{"Docker"},
+	}
+	result = fmtInterests(interests)
+	if result != "languages: Go, Python; tools: Docker" && result != "tools: Docker; languages: Go, Python" {
+		t.Errorf("expected both categories, got %s", result)
+	}
+
+	// Test with empty slice
+	interests = map[string]interface{}{
+		"languages": []string{},
+	}
+	result = fmtInterests(interests)
+	if result != "" {
+		t.Errorf("expected empty string for empty slice, got %s", result)
+	}
+
+	// Test with non-slice value (should be skipped)
+	interests = map[string]interface{}{
+		"languages": "Go", // Not a slice
+	}
+	result = fmtInterests(interests)
+	if result != "" {
+		t.Errorf("expected empty string for non-slice value, got %s", result)
+	}
+}
+
+

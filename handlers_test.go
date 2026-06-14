@@ -355,3 +355,148 @@ func TestBuildQuestionData(t *testing.T) {
 		t.Error("expected nil when all questions answered")
 	}
 }
+
+func TestDataParticipants(t *testing.T) {
+	srv, db := testServer(t)
+
+	// Create some participants
+	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-2", "user2", "User 2")
+
+	// Call DataParticipants endpoint
+	resp, err := srv.Client().Get(srv.URL + "/data/participants")
+	if err != nil {
+		t.Fatalf("GET /data/participants: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestDataParticipant(t *testing.T) {
+	srv, db := testServer(t)
+
+	// Create a participant
+	db.CreateParticipant("id-1", "user1", "User 1")
+
+	// Call DataParticipant endpoint by ID
+	resp, err := srv.Client().Get(srv.URL + "/data/participant/id-1")
+	if err != nil {
+		t.Fatalf("GET /data/participant/id-1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Call DataParticipant endpoint by handle
+	resp, err = srv.Client().Get(srv.URL + "/data/participant/user1")
+	if err != nil {
+		t.Fatalf("GET /data/participant/user1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Call with non-existent ID
+	resp, err = srv.Client().Get(srv.URL + "/data/participant/nonexistent")
+	if err != nil {
+		t.Fatalf("GET /data/participant/nonexistent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 404 {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestDataActivity(t *testing.T) {
+	srv, db := testServer(t)
+
+	// Add some activity
+	db.LogActivity("Test activity 1")
+	db.LogActivity("Test activity 2")
+
+	// Call DataActivity endpoint
+	resp, err := srv.Client().Get(srv.URL + "/data/activity")
+	if err != nil {
+		t.Fatalf("GET /data/activity: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestSubmitAnswer(t *testing.T) {
+	srv, db := testServer(t)
+
+	// Create a participant in interviewing state with questions
+	db.CreateParticipant("id-1", "user1", "User 1")
+	p, _ := db.GetParticipant("id-1")
+	p.Questions = FixedQuestions
+	p.Answers = map[string]string{}
+	p.PipelineStep = "interviewing"
+	// Need to update the participant in DB with questions
+	questionsJSON, _ := json.Marshal(FixedQuestions)
+	answersJSON, _ := json.Marshal(map[string]string{})
+	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
+		string(questionsJSON), string(answersJSON), "interviewing", "id-1")
+
+	// Submit a valid answer
+	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
+		strings.NewReader("answer=Tabs"))
+	if err != nil {
+		t.Fatalf("POST /user/answer/id-1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Verify answer was stored - need to reload from DB
+	p, _ = db.GetParticipant("id-1")
+	if p.Answers == nil {
+		t.Fatal("Answers is nil")
+	}
+	if p.Answers["fixed_0"] != "Tabs" {
+		t.Errorf("expected answer 'Tabs', got '%s'", p.Answers["fixed_0"])
+	}
+}
+
+func TestDataIndex(t *testing.T) {
+	srv, _ := testServer(t)
+
+	// Call DataIndex endpoint
+	resp, err := srv.Client().Get(srv.URL + "/data")
+	if err != nil {
+		t.Fatalf("GET /data: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdmin(t *testing.T) {
+	srv, _ := testServer(t)
+
+	// Call Admin endpoint
+	resp, err := srv.Client().Get(srv.URL + "/admin")
+	if err != nil {
+		t.Fatalf("GET /admin: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+}
