@@ -717,3 +717,58 @@ func TestComputeInterestsFromCompleteProfileWithExtraAnswers(t *testing.T) {
 		t.Errorf("expected 1 domain from ExtraAnswers, got %v", domains)
 	}
 }
+
+func TestGenerateFallbackPersona_GitHubUser(t *testing.T) {
+	pipeline := &AgentPipeline{}
+
+	profile := &GitHubProfile{
+		Login: "octocat",
+	}
+
+	result := pipeline.generateFallbackPersona(profile, true)
+
+	if result.Name != "The Octocat" {
+		t.Errorf("expected name 'The Octocat', got %s", result.Name)
+	}
+	if result.Tagline != "Mysterious coder. Ships things." {
+		t.Errorf("expected tagline 'Mysterious coder. Ships things.', got %s", result.Tagline)
+	}
+}
+
+func TestGenerateFallbackPersona_NonGitHubUser_WithLanguages(t *testing.T) {
+	pipeline := &AgentPipeline{}
+
+	profile := &GitHubProfile{
+		ExtraAnswers: &ExtraAnswers{
+			Languages: []string{"Go", "Python"},
+		},
+	}
+
+	result := pipeline.generateFallbackPersona(profile, false)
+
+	if result.Name != "The Go Developer" {
+		t.Errorf("expected name 'The Go Developer', got %s", result.Name)
+	}
+	if result.Tagline != "Ships things without GitHub." {
+		t.Errorf("expected tagline 'Ships things without GitHub.', got %s", result.Tagline)
+	}
+}
+
+func TestGenerateFallbackPersona_NonGitHubUser_NoLanguages(t *testing.T) {
+	pipeline := &AgentPipeline{}
+
+	profile := &GitHubProfile{
+		ExtraAnswers: &ExtraAnswers{
+			Languages: []string{},
+		},
+	}
+
+	result := pipeline.generateFallbackPersona(profile, false)
+
+	if result.Name != "The Mysterious Coder" {
+		t.Errorf("expected name 'The Mysterious Coder', got %s", result.Name)
+	}
+	if result.Tagline != "Ships things without GitHub." {
+		t.Errorf("expected tagline 'Ships things without GitHub.', got %s", result.Tagline)
+	}
+}
