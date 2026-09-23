@@ -192,7 +192,7 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	defer db.Close()
 	gh := newFakeGitHub()
 	llm := newFakeLLM()
-	iv := NewInterview(db)
+	iv := NewInterview(db, llm)
 	h := NewHandler(db, NewAgentPipeline(db, gh, llm, NewMatcher(gh, llm), iv), iv)
 
 	// Call buildGraphPayload with empty participants

@@ -44,7 +44,7 @@ func NewMatcher(github GitHubAPI, mistral LLM) *Matcher
 func NewAgentPipeline(db *DB, github GitHubAPI, mistral LLM, matcher *Matcher, interview *Interview) *AgentPipeline
 
 // HTTP handlers
-func NewInterview(db *DB) *Interview
+func NewInterview(db *DB, mistral LLM) *Interview
 func NewHandler(db *DB, agents *AgentPipeline, interview *Interview) *Handler
 ```
 
@@ -70,7 +70,7 @@ func main() {
 
     // Initialize application components
     matcher := NewMatcher(github, mistral)
-    interview := NewInterview(db)
+    interview := NewInterview(db, mistral)
     agents := NewAgentPipeline(db, github, mistral, matcher, interview)
     h := NewHandler(db, agents, interview)
 

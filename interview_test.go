@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -38,7 +39,7 @@ func reload(t *testing.T, db *DB, id string) *Participant {
 
 func TestInterview_AnsweringEveryQuestionInOrderCompletesIt(t *testing.T) {
 	db := newTestDB(t)
-	iv := NewInterview(db)
+	iv := NewInterview(db, newFakeLLM())
 	p := participantInInterview(t, db, testQuestions)
 
 	answers := []string{"Tabs", `["Go","Rust"]`, "A race condition on Tuesdays"}
@@ -73,7 +74,7 @@ func TestInterview_AnsweringEveryQuestionInOrderCompletesIt(t *testing.T) {
 
 func TestInterview_RejectsMalformedMultiSelectAnswer(t *testing.T) {
 	db := newTestDB(t)
-	iv := NewInterview(db)
+	iv := NewInterview(db, newFakeLLM())
 	p := participantInInterview(t, db, testQuestions)
 	iv.Submit(p, "Tabs")
 	p = reload(t, db, p.ID)
@@ -91,7 +92,7 @@ func TestInterview_RejectsMalformedMultiSelectAnswer(t *testing.T) {
 
 func TestInterview_RejectsTooManySelections(t *testing.T) {
 	db := newTestDB(t)
-	iv := NewInterview(db)
+	iv := NewInterview(db, newFakeLLM())
 	p := participantInInterview(t, db, testQuestions)
 	iv.Submit(p, "Tabs")
 	p = reload(t, db, p.ID)
@@ -101,5 +102,72 @@ func TestInterview_RejectsTooManySelections(t *testing.T) {
 	var invalid *InvalidAnswerError
 	if !errors.As(err, &invalid) || invalid.Error() != "Too many selections. Maximum 3 allowed." {
 		t.Fatalf("want too-many-selections error, got %v", err)
+	}
+}
+
+func startedQuestions(t *testing.T, llm *fakeLLM, githubUser bool) []Question {
+	t.Helper()
+	db := newTestDB(t)
+	if err := db.CreateParticipant("p-1", "someone", "Someone"); err != nil {
+		t.Fatal(err)
+	}
+	iv := NewInterview(db, llm)
+	if err := iv.Start("p-1", &GitHubProfile{Login: "someone"}, githubUser); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	p := reload(t, db, "p-1")
+	if p.PipelineStep != "interviewing" {
+		t.Errorf("step after Start: want interviewing, got %s", p.PipelineStep)
+	}
+	return p.Questions
+}
+
+func questionIDs(qs []Question) []string {
+	var ids []string
+	for _, q := range qs {
+		ids = append(ids, q.ID)
+	}
+	return ids
+}
+
+func TestInterviewStart_GitHubUserGetsFixedPlusCustomQuestions(t *testing.T) {
+	llm := newFakeLLM().on("interviewer", `{"questions": ["Why Go?", "Favourite repo?", "Tabs?"]}`)
+
+	qs := startedQuestions(t, llm, true)
+
+	want := []string{"fixed_0", "fixed_1", "fixed_2", "fixed_3", "fixed_4", "fixed_5", "custom_0", "custom_1", "custom_2"}
+	if got := questionIDs(qs); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("question IDs:\n got %v\nwant %v", got, want)
+	}
+	if qs[6].Text != "Why Go?" {
+		t.Errorf("first Custom Question text: got %q", qs[6].Text)
+	}
+}
+
+func TestInterviewStart_GitHubUserFallsBackToExtraQuestionsWhenTheLLMFails(t *testing.T) {
+	llm := newFakeLLM().onErr("interviewer", fakeError("mistral HTTP 401"))
+
+	qs := startedQuestions(t, llm, true)
+
+	want := []string{"fixed_0", "fixed_1", "fixed_2", "fixed_3", "fixed_4", "fixed_5", "extra_0", "extra_1", "extra_2", "extra_3", "extra_4"}
+	if got := questionIDs(qs); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("question IDs:\n got %v\nwant %v", got, want)
+	}
+	if qs[6].MaxSelections != ExtraQuestions[0].MaxSelections || len(qs[6].Options) == 0 {
+		t.Errorf("fallback Extra Questions must keep their options and selection limits")
+	}
+}
+
+func TestInterviewStart_NonGitHubUserGetsExtraQuestionsAndFixedWithoutGoToLanguage(t *testing.T) {
+	llm := newFakeLLM()
+
+	qs := startedQuestions(t, llm, false)
+
+	want := []string{"extra_0", "extra_1", "extra_2", "extra_3", "extra_4", "fixed_0", "fixed_2", "fixed_3", "fixed_4", "fixed_5"}
+	if got := questionIDs(qs); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("question IDs:\n got %v\nwant %v", got, want)
+	}
+	if n := llm.callsMatching("interviewer"); n != 0 {
+		t.Errorf("Non-GitHub Users need no Custom Questions, but the LLM was asked %d times", n)
 	}
 }

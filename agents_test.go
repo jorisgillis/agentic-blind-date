@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -177,55 +176,6 @@ func TestPairScore_devEnvironments(t *testing.T) {
 	}
 }
 
-func TestFallbackQuestions(t *testing.T) {
-	// This test verifies that GitHub users with LLM failures get ExtraQuestions as fallback
-	// We can't easily test this without mocking the LLM, but we can verify the structure
-
-	// Verify ExtraQuestions has the expected questions
-	expectedCount := 5
-	if len(ExtraQuestions) != expectedCount {
-		t.Errorf("expected %d ExtraQuestions, got %d", expectedCount, len(ExtraQuestions))
-	}
-
-	// Verify ExtraQuestions covers the key categories
-	foundLanguages := false
-	foundProjectType := false
-	foundDevEnv := false
-	foundWeirdestBug := false
-	foundKeyboard := false
-
-	for _, q := range ExtraQuestions {
-		switch q.ID {
-		case "extra_0":
-			foundLanguages = true
-		case "extra_1":
-			foundProjectType = true
-		case "extra_2":
-			foundDevEnv = true
-		case "extra_3":
-			foundWeirdestBug = true
-		case "extra_4":
-			foundKeyboard = true
-		}
-	}
-
-	if !foundLanguages {
-		t.Error("ExtraQuestions missing languages question (extra_0)")
-	}
-	if !foundProjectType {
-		t.Error("ExtraQuestions missing project type question (extra_1)")
-	}
-	if !foundDevEnv {
-		t.Error("ExtraQuestions missing dev environment question (extra_2)")
-	}
-	if !foundWeirdestBug {
-		t.Error("ExtraQuestions missing weirdest bug question (extra_3)")
-	}
-	if !foundKeyboard {
-		t.Error("ExtraQuestions missing keyboard question (extra_4)")
-	}
-}
-
 func TestTop5Candidates(t *testing.T) {
 	matcher := &Matcher{}
 	// Make 7 participants; p0 shares languages with p1..p5 (+3 each)
@@ -364,59 +314,6 @@ func TestGreedyMatch_oddNumber(t *testing.T) {
 	// 5 participants → 2 pairs, 1 leftover (greedyMatch leaves odd one out)
 	if len(pairs) != 2 {
 		t.Errorf("expected 2 pairs for 5 participants, got %d", len(pairs))
-	}
-}
-
-func TestFilterFixedQuestions(t *testing.T) {
-	// filterFixedQuestions removes fixed_1 from FixedQuestions
-	pipeline := &AgentPipeline{}
-	filtered := pipeline.filterFixedQuestions()
-	
-	// Should have one less question than FixedQuestions
-	expectedLen := len(FixedQuestions) - 1
-	if len(filtered) != expectedLen {
-		t.Errorf("expected %d filtered questions, got %d", expectedLen, len(filtered))
-	}
-	
-	// Should not contain fixed_1
-	for _, q := range filtered {
-		if q.ID == "fixed_1" {
-			t.Error("filtered questions should not contain fixed_1")
-		}
-	}
-	
-	// Should contain all other questions
-	found := make(map[string]bool)
-	for _, q := range filtered {
-		found[q.ID] = true
-	}
-	for _, q := range FixedQuestions {
-		if q.ID != "fixed_1" && !found[q.ID] {
-			t.Errorf("expected to find question %s in filtered list", q.ID)
-		}
-	}
-}
-
-func TestStringsToQuestions(t *testing.T) {
-	pipeline := &AgentPipeline{}
-	
-	texts := []string{"Q1", "Q2", "Q3"}
-	questions := pipeline.stringsToQuestions(texts, "custom")
-	
-	if len(questions) != len(texts) {
-		t.Errorf("expected %d questions, got %d", len(texts), len(questions))
-	}
-	
-	for i, q := range questions {
-		if q.Text != texts[i] {
-			t.Errorf("question %d: expected text %q, got %q", i, texts[i], q.Text)
-		}
-		if q.ID != fmt.Sprintf("custom_%d", i) {
-			t.Errorf("question %d: expected ID %q, got %q", i, fmt.Sprintf("custom_%d", i), q.ID)
-		}
-		if q.Options != nil {
-			t.Errorf("question %d: expected nil options, got %v", i, q.Options)
-		}
 	}
 }
 

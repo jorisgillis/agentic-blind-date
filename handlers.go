@@ -186,7 +186,7 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Non-GitHub users will get ExtraQuestions during interview
-		go h.agents.RunSetupWithExtraAnswers(id, handle, "", "", "", "", "", "", "")
+		go h.agents.RunSetup(id, handle)
 		setParticipantCookie(w, id)
 		http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 		return

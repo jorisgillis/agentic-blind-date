@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -50,70 +49,27 @@ type CompleteProfile struct {
 	Interests        map[string]interface{}
 }
 
-// RunSetup fetches GitHub profile, creates persona, generates custom questions.
+// RunSetup fetches the GitHub profile (GitHub users only) and starts the Interview.
 // Runs in a goroutine after participant registration.
 func (a *AgentPipeline) RunSetup(participantID, githubHandle string) {
-	a.RunSetupWithExtraAnswers(participantID, githubHandle, "", "", "", "", "", "", "")
-}
+	// Non-GitHub Users get a generated "no-github-" handle at registration.
+	isGitHubUser := !strings.HasPrefix(githubHandle, "no-github-")
 
-// RunSetupWithExtraAnswers handles both GitHub and non-GitHub participants.
-func (a *AgentPipeline) RunSetupWithExtraAnswers(
-	participantID,
-	githubHandle,
-	languages,
-	projectType,
-	devEnvironment,
-	weirdestBug,
-	keyboard,
-	keyboardOther,
-	devEnvOther string) {
-	var profile *GitHubProfile
-	var isGitHubUser bool
-
-	// Check if this is a non-GitHub user (handle starts with "no-github-")
-	isGitHubUser = !strings.HasPrefix(githubHandle, "no-github-")
-
+	profile := &GitHubProfile{Login: githubHandle, Name: githubHandle}
 	if isGitHubUser {
 		a.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle))
-		var err error
-		profile, err = a.github.FetchProfile(githubHandle)
+		fetched, err := a.github.FetchProfile(githubHandle)
 		if err != nil {
 			log.Printf("Failed to fetch GitHub profile for @%s: %v", githubHandle, err)
-			// Continue with minimal profile
-			profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
-		}
-		if profile == nil {
-			profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
+		} else if fetched != nil {
+			profile = fetched
 		}
 	} else {
 		a.db.LogActivity("📝 Processing non-GitHub user...")
-		// Non-GitHub users will answer ExtraQuestions during interview
-		profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
 	}
+	a.db.LogActivity("📝 Preparing interview questions...")
 
-	var activityMsg string
-	if isGitHubUser {
-		activityMsg = fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle)
-	} else {
-		activityMsg = "📝 Preparing interview questions..."
-	}
-	a.db.LogActivity(activityMsg)
-
-	var questions []Question
-	if isGitHubUser {
-		customQs, err := a.generateCustomQuestions(profile)
-		if err != nil {
-			log.Printf("Custom questions error: %v", err)
-			// Use ExtraQuestions as fallback for consistency with non-GitHub users
-			questions = append(FixedQuestions, ExtraQuestions...)
-		} else {
-			questions = append(FixedQuestions, a.stringsToQuestions(customQs, "custom")...)
-		}
-	} else {
-		questions = append(ExtraQuestions, a.filterFixedQuestions()...)
-	}
-
-	if err := a.interview.Start(participantID, profile, questions); err != nil {
+	if err := a.interview.Start(participantID, profile, isGitHubUser); err != nil {
 		log.Printf("Starting interview for %s failed: %v", participantID, err)
 		return
 	}
@@ -357,30 +313,6 @@ Respond with ONLY a valid JSON object — no markdown, no backticks:
 		return nil, fmt.Errorf("persona parse error: %v (raw: %s)", err, response)
 	}
 	return &result, nil
-}
-
-func (a *AgentPipeline) generateCustomQuestions(profile *GitHubProfile) ([]string, error) {
-	system := `You are an interviewer at a tech meetup blind date event.
-Generate 3 fun, opinionated questions tailored to this developer's GitHub profile.
-Questions should be conversational and tech-related.
-Respond with ONLY valid JSON — no markdown:
-{"questions": ["...", "...", "..."]}`
-
-	response, err := a.mistral.Chat(system, "Generate 3 personalized questions for:\n\n"+profile.Summary())
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Questions []string `json:"questions"`
-	}
-	if err := json.Unmarshal([]byte(extractJSON(response)), &result); err != nil {
-		return nil, fmt.Errorf("questions parse error: %v", err)
-	}
-	if len(result.Questions) == 0 {
-		return nil, fmt.Errorf("empty questions")
-	}
-	return result.Questions, nil
 }
 
 // getCachedMatchResult retrieves a cached match result or returns nil if not found
@@ -690,28 +622,6 @@ func fmtInterests(interests map[string]interface{}) string {
 		}
 	}
 	return strings.Join(parts, "; ")
-}
-
-func (a *AgentPipeline) stringsToQuestions(texts []string, prefix string) []Question {
-	var questions []Question
-	for i, text := range texts {
-		questions = append(questions, Question{
-			ID:      prefix + "_" + strconv.Itoa(i),
-			Text:    text,
-			Options: nil,
-		})
-	}
-	return questions
-}
-
-func (a *AgentPipeline) filterFixedQuestions() []Question {
-	var filtered []Question
-	for _, q := range FixedQuestions {
-		if q.ID != "fixed_1" {
-			filtered = append(filtered, q)
-		}
-	}
-	return filtered
 }
 
 func pairKey(a, b *Participant) string {
