@@ -230,10 +230,7 @@ func (a *AgentPipeline) generateFallbackPersonaFromCompleteProfile(profile *Comp
 	}
 }
 
-// RunMatching pairs all ready participants and generates match results via Mistral.
-// Phase 1: heuristic top-5 per participant → candidate pairs.
-// Phase 2: LLM-score every unique candidate pair (concurrency=2, cached).
-// Phase 3: greedy assignment from LLM scores.
+// RunMatching pairs all ready participants through the Matcher and stores the Matches.
 func (a *AgentPipeline) RunMatching() error {
 	a.matchMu.Lock()
 	defer a.matchMu.Unlock()
@@ -249,110 +246,24 @@ func (a *AgentPipeline) RunMatching() error {
 		return fmt.Errorf("need at least 2 ready participants, got %d", len(participants))
 	}
 
-	// Phase 1: heuristic top-5 narrows the candidate pool
-	candidatePairs := a.matcher.CollectCandidatePairs(participants)
-	a.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidate pairs...", len(candidatePairs)))
-
-	// Phase 2: LLM-score all candidate pairs, concurrency=2, with persistent caching
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 2)
-
-		for _, pair := range candidatePairs {
-			wg.Add(1)
-			go func(p1, p2 *Participant) {
-				defer wg.Done()
-
-				sem <- struct{}{}
-				result := a.score(p1, p2)
-				<-sem
-
-				a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", p1.PersonaName, p2.PersonaName, result.Score))
-			}(pair[0], pair[1])
-		}
-	wg.Wait()
-
-	// Phase 3: greedy assignment using LLM scores
-	type llmPair struct {
-		pair  [2]*Participant
-		score int
-	}
-	var scored []llmPair
-	for _, pair := range candidatePairs {
-		p1, p2 := pair[0], pair[1]
-		// Check persistent cache for this pair
-		if cached := a.score(p1, p2); cached != nil {
-			scored = append(scored, llmPair{pair, cached.Score})
-		} else {
-			// If not in persistent cache, it should have been scored in Phase 2
-			// This shouldn't happen, but handle it gracefully
-			log.Printf("Warning: pair %s:%s not scored in Phase 2", p1.ID, p2.ID)
-		}
-	}
-	sort.Slice(scored, func(a, b int) bool { return scored[a].score > scored[b].score })
-
-	paired := map[string]bool{}
-	var finalPairs [][2]*Participant
-	for _, lp := range scored {
-		p1, p2 := lp.pair[0], lp.pair[1]
-		if !paired[p1.ID] && !paired[p2.ID] {
-			finalPairs = append(finalPairs, lp.pair)
-			paired[p1.ID] = true
-			paired[p2.ID] = true
-		}
-	}
-
-	// Fallback: any participant not covered by top-5 overlap gets heuristic-paired
-	var unmatched []*Participant
-	for _, p := range participants {
-		if !paired[p.ID] {
-			unmatched = append(unmatched, p)
-		}
-	}
-	for _, fp := range a.matcher.GreedyMatch(unmatched) {
-		p1, p2 := fp[0], fp[1]
-		// Check persistent cache first
-		if cached := a.score(p1, p2); cached != nil {
-			// Use cached result
-			finalPairs = append(finalPairs, fp)
-		} else {
-			a.score(p1, p2)
-			finalPairs = append(finalPairs, fp)
-		}
-	}
-
-	// Store results for all final pairs
-	for _, pair := range finalPairs {
-		p1, p2 := pair[0], pair[1]
-		// Get the result from persistent cache
-		result := a.score(p1, p2)
-		if result == nil {
-			// Shouldn't happen, but fallback to default
-			log.Printf("Warning: no cached result for final pair %s:%s", p1.ID, p2.ID)
-			result = defaultMatchResult()
-		}
-		redJSON, err := json.Marshal(result.RedFlags)
-		if err != nil {
-			log.Printf("Failed to marshal red flags: %v", err)
-			continue
-		}
-		greenJSON, err := json.Marshal(result.GreenFlags)
-		if err != nil {
-			log.Printf("Failed to marshal green flags: %v", err)
-			continue
-		}
-		iceJSON, err := json.Marshal(result.Icebreakers)
-		if err != nil {
-			log.Printf("Failed to marshal icebreakers: %v", err)
-			continue
-		}
-		a.db.SetMatched(p1.ID, p2.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
-		a.db.SetMatched(p2.ID, p1.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
-		a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", p1.PersonaName, p2.PersonaName, result.Score))
+	for _, m := range a.matcher.MatchPool(participants) {
+		a.storeMatch(m)
 	}
 
 	a.db.SetPhase("revealed")
 	a.db.LogActivity("🎉 All matches revealed!")
 	return nil
+}
+
+// storeMatch records a Match on both Participants.
+func (a *AgentPipeline) storeMatch(m Match) {
+	result := m.Result
+	redJSON, _ := json.Marshal(nonNil(result.RedFlags))
+	greenJSON, _ := json.Marshal(nonNil(result.GreenFlags))
+	iceJSON, _ := json.Marshal(nonNil(result.Icebreakers))
+	a.db.SetMatched(m.A.ID, m.B.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
+	a.db.SetMatched(m.B.ID, m.A.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
+	a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", m.A.PersonaName, m.B.PersonaName, result.Score))
 }
 
 // RunContinuousMatching matches a single new ready participant against the existing pool of ready, unmatched participants.
@@ -400,7 +311,7 @@ func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error
 	}
 
 	// Phase 1: Get top-5 candidates from the pool for the new participant
-	candidates := a.matcher.Top5Candidates(newParticipant, pool)
+	candidates := a.matcher.topCandidates(newParticipant, pool)
 	if len(candidates) == 0 {
 		return fmt.Errorf("no candidates found for %s", newParticipant.PersonaName)
 	}

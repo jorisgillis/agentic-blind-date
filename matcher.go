@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -275,101 +276,137 @@ func (m *Matcher) PairScore(a, b *Participant) int {
 	return score
 }
 
-// Top5Candidates returns the top 5 most compatible candidates for a participant.
-func (m *Matcher) Top5Candidates(p *Participant, all []*Participant) []*Participant {
-	// Filter out self and already matched
-	var candidates []*Participant
+// Match is a Pair chosen by the Matcher, with its LLM assessment.
+type Match struct {
+	A, B   *Participant
+	Result *matchResult
+}
+
+// MatchPool pairs the Participants using the three-phase algorithm from ADR-0001:
+//  1. heuristic: each Participant's top-5 candidates by PairScore become candidate Pairs
+//  2. LLM: every candidate Pair is assessed (two at a time, cached)
+//  3. greedy: Pairs are taken by descending LLM score while both Participants are free
+//
+// Participants left over are paired by heuristic and assessed. Each Participant
+// ends up in at most one Match. When the LLM fails, the default assessment is used.
+func (m *Matcher) MatchPool(participants []*Participant) []Match {
+	if len(participants) < 2 {
+		return nil
+	}
+	candidates := m.candidatePairs(participants)
+	m.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidate pairs...", len(candidates)))
+	scored := m.assessAll(candidates)
+	sort.SliceStable(scored, func(i, j int) bool { return scored[i].Result.Score > scored[j].Result.Score })
+
+	var matches []Match
+	taken := map[string]bool{}
+	for _, s := range scored {
+		if !taken[s.A.ID] && !taken[s.B.ID] {
+			matches = append(matches, s)
+			taken[s.A.ID], taken[s.B.ID] = true, true
+		}
+	}
+
+	var leftover []*Participant
+	for _, p := range participants {
+		if !taken[p.ID] {
+			leftover = append(leftover, p)
+		}
+	}
+	return append(matches, m.assessAll(m.greedyMatch(leftover))...)
+}
+
+// assessAll assesses the Pairs, two LLM calls at a time, logging each to the activity ticker.
+func (m *Matcher) assessAll(pairs [][2]*Participant) []Match {
+	out := make([]Match, len(pairs))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 2)
+	for i, pair := range pairs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			result := m.assessOrDefault(pair[0], pair[1])
+			<-sem
+			out[i] = Match{A: pair[0], B: pair[1], Result: result}
+			m.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", pair[0].PersonaName, pair[1].PersonaName, result.Score))
+		}()
+	}
+	wg.Wait()
+	return out
+}
+
+func (m *Matcher) assessOrDefault(a, b *Participant) *matchResult {
+	result, err := m.ScorePair(a, b)
+	if err != nil {
+		log.Printf("Match scoring error for %s/%s: %v", a.GitHubHandle, b.GitHubHandle, err)
+		return defaultMatchResult()
+	}
+	return result
+}
+
+// topCandidates returns up to 5 unmatched Participants with the highest PairScore against p.
+func (m *Matcher) topCandidates(p *Participant, all []*Participant) []*Participant {
+	type scored struct {
+		p     *Participant
+		score int
+	}
+	var candidates []scored
 	for _, other := range all {
 		if other.ID == p.ID || other.MatchedWith != "" {
 			continue
 		}
-		candidates = append(candidates, other)
+		candidates = append(candidates, scored{other, m.PairScore(p, other)})
 	}
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
 
-	// Sort by pairScore descending
-	for i := range candidates {
-		for j := i + 1; j < len(candidates); j++ {
-			if m.PairScore(p, candidates[j]) > m.PairScore(p, candidates[i]) {
-				candidates[i], candidates[j] = candidates[j], candidates[i]
-			}
-		}
+	var out []*Participant
+	for i := 0; i < len(candidates) && i < 5; i++ {
+		out = append(out, candidates[i].p)
 	}
-
-	// Return top 5 (or fewer)
-	if len(candidates) > 5 {
-		return candidates[:5]
-	}
-	return candidates
+	return out
 }
 
-// CollectCandidatePairs creates pairs from participants who are ready for matching.
-func (m *Matcher) CollectCandidatePairs(participants []*Participant) [][2]*Participant {
+// candidatePairs collects each ready Participant's top candidates as unique Pairs.
+func (m *Matcher) candidatePairs(participants []*Participant) [][2]*Participant {
 	var pairs [][2]*Participant
-	for i, p := range participants {
+	seen := map[string]bool{}
+	for _, p := range participants {
 		if p.PipelineStep != "ready" {
 			continue
 		}
-		for _, candidate := range m.Top5Candidates(p, participants) {
-			// Only pair with those who come later in the list to avoid duplicates
-			if candidate.PipelineStep == "ready" {
-				found := false
-				for _, existing := range pairs {
-					if (existing[0].ID == p.ID && existing[1].ID == candidate.ID) ||
-						(existing[0].ID == candidate.ID && existing[1].ID == p.ID) {
-						found = true
-						break
-					}
-				}
-				if !found && i < len(participants)-1 {
-					pairs = append(pairs, [2]*Participant{p, candidate})
-				}
+		for _, candidate := range m.topCandidates(p, participants) {
+			if candidate.PipelineStep != "ready" || seen[pairKey(p, candidate)] {
+				continue
 			}
+			seen[pairKey(p, candidate)] = true
+			pairs = append(pairs, [2]*Participant{p, candidate})
 		}
 	}
 	return pairs
 }
 
-// GreedyMatch pairs participants by maximum language/answer overlap.
-// Returns a slice of participant pairs that have been matched.
-func (m *Matcher) GreedyMatch(participants []*Participant) [][2]*Participant {
-	// Make a copy to track matched participants
-	type participantState struct {
-		p      *Participant
-		matched bool
-	}
-	states := make([]participantState, len(participants))
-	for i, p := range participants {
-		states[i] = participantState{p: p, matched: false}
-	}
-
+// greedyMatch pairs participants by maximum heuristic PairScore.
+func (m *Matcher) greedyMatch(participants []*Participant) [][2]*Participant {
+	matched := make([]bool, len(participants))
 	var pairs [][2]*Participant
-
-	// Try to match each participant with their best available candidate
-	for i, state := range states {
-		if state.matched {
+	for i, p := range participants {
+		if matched[i] {
 			continue
 		}
-
-		// Find best unmatched candidate
-		bestScore := -1
-		bestIdx := -1
-		for j, other := range states {
-			if i == j || other.matched {
+		bestScore, bestIdx := -1, -1
+		for j, other := range participants {
+			if i == j || matched[j] {
 				continue
 			}
-			score := m.PairScore(state.p, other.p)
-			if score > bestScore {
-				bestScore = score
-				bestIdx = j
+			if score := m.PairScore(p, other); score > bestScore {
+				bestScore, bestIdx = score, j
 			}
 		}
-
 		if bestIdx >= 0 {
-			pairs = append(pairs, [2]*Participant{state.p, states[bestIdx].p})
-			states[i].matched = true
-			states[bestIdx].matched = true
+			pairs = append(pairs, [2]*Participant{p, participants[bestIdx]})
+			matched[i], matched[bestIdx] = true, true
 		}
 	}
-
 	return pairs
 }

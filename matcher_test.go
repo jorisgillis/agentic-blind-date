@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -150,5 +152,96 @@ func TestMatcherScorePair_RejectsRepliesWithoutAScore(t *testing.T) {
 
 	if _, err := m.ScorePair(dev("a", "A"), dev("b", "B")); err == nil {
 		t.Error("a reply without a score should be an error")
+	}
+}
+
+// scoreTable scripts the fake LLM to score Pairs by persona name, in either order.
+func scoreTable(scores map[[2]string]int) func(user string) (string, error) {
+	return func(user string) (string, error) {
+		name := func(n string) string {
+			rest := user[strings.Index(user, "DEVELOPER "+n+" (")+len("DEVELOPER "+n+" ("):]
+			return rest[:strings.Index(rest, ")")]
+		}
+		a, b := name("1"), name("2")
+		s, ok := scores[[2]string{a, b}]
+		if !ok {
+			s, ok = scores[[2]string{b, a}]
+		}
+		if !ok {
+			s = 50
+		}
+		return fmt.Sprintf(`{"score": %d, "reason": "%s and %s"}`, s, a, b), nil
+	}
+}
+
+func pairsOf(matches []Match) []string {
+	var out []string
+	for _, m := range matches {
+		a, b := m.A.PersonaName, m.B.PersonaName
+		if b < a {
+			a, b = b, a
+		}
+		out = append(out, fmt.Sprintf("%s-%s:%d", a, b, m.Result.Score))
+	}
+	sort.Strings(out)
+	return out
+}
+
+func readyDev(id string) *Participant {
+	p := dev(id, id, "Go")
+	p.PipelineStep = "ready"
+	return p
+}
+
+func TestMatcherMatchPool_AssignsGreedilyByLLMScore(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{
+		{"A", "C"}: 95, {"A", "B"}: 90, {"C", "D"}: 80, {"B", "D"}: 10,
+	}))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+
+	matches := m.MatchPool([]*Participant{readyDev("A"), readyDev("B"), readyDev("C"), readyDev("D")})
+
+	if got, want := strings.Join(pairsOf(matches), " "), "A-C:95 B-D:10"; got != want {
+		t.Errorf("matches: want %s, got %s", want, got)
+	}
+}
+
+func TestMatcherMatchPool_EachParticipantIsInAtMostOneMatch(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(nil))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	pool := []*Participant{readyDev("A"), readyDev("B"), readyDev("C"), readyDev("D"), readyDev("E")}
+
+	matches := m.MatchPool(pool)
+
+	if len(matches) != 2 {
+		t.Fatalf("5 Participants make 2 Matches, got %v", pairsOf(matches))
+	}
+	seen := map[string]bool{}
+	for _, match := range matches {
+		for _, p := range []*Participant{match.A, match.B} {
+			if seen[p.ID] {
+				t.Fatalf("%s is in more than one Match: %v", p.ID, pairsOf(matches))
+			}
+			seen[p.ID] = true
+		}
+	}
+}
+
+func TestMatcherMatchPool_UsesTheDefaultAssessmentWhenScoringFails(t *testing.T) {
+	llm := newFakeLLM().onErr("matchmaker", fakeError("mistral HTTP 500"))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+
+	matches := m.MatchPool([]*Participant{readyDev("A"), readyDev("B")})
+
+	if len(matches) != 1 || matches[0].Result.Score != defaultMatchResult().Score {
+		t.Errorf("want one Match with the default assessment, got %v", pairsOf(matches))
+	}
+}
+
+func TestMatcherMatchPool_NeedsTwoParticipants(t *testing.T) {
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), newFakeLLM())
+
+	if matches := m.MatchPool([]*Participant{readyDev("A")}); len(matches) != 0 {
+		t.Errorf("a lone Participant cannot be matched, got %v", pairsOf(matches))
 	}
 }

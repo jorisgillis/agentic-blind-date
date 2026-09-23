@@ -176,78 +176,6 @@ func TestPairScore_devEnvironments(t *testing.T) {
 	}
 }
 
-func TestTop5Candidates(t *testing.T) {
-	matcher := &Matcher{}
-	// Make 7 participants; p0 shares languages with p1..p5 (+3 each)
-	p0 := makeParticipant("p0", []string{"Go"}, nil)
-	var all []*Participant
-	all = append(all, p0)
-	for i := 1; i <= 6; i++ {
-		langs := []string{"Go"}
-		if i > 5 {
-			langs = []string{"Rust"} // p6 shares nothing
-		}
-		all = append(all, makeParticipant(string(rune('p'+i)), langs, nil))
-	}
-
-	top := matcher.Top5Candidates(p0, all)
-	if len(top) != 5 {
-		t.Errorf("expected 5 candidates, got %d", len(top))
-	}
-	// p6 (no shared language) must not be in the top 5
-	for _, c := range top {
-		if c.ID == string(rune('p'+6)) {
-			t.Error("p6 (no overlap) should not be in top 5")
-		}
-	}
-}
-
-func TestTop5Candidates_fewerThan5(t *testing.T) {
-	matcher := &Matcher{}
-	p0 := makeParticipant("p0", nil, nil)
-	others := []*Participant{
-		makeParticipant("p1", nil, nil),
-		makeParticipant("p2", nil, nil),
-	}
-	all := append([]*Participant{p0}, others...)
-	top := matcher.Top5Candidates(p0, all)
-	if len(top) != 2 {
-		t.Errorf("expected 2 candidates (n-1), got %d", len(top))
-	}
-}
-
-func TestCollectCandidatePairs(t *testing.T) {
-	matcher := &Matcher{}
-	var ps []*Participant
-	for i := 0; i < 6; i++ {
-		ps = append(ps, makeParticipant(string(rune('a'+i)), nil, nil))
-	}
-
-	pairs := matcher.CollectCandidatePairs(ps)
-
-	// Upper bound: N*5 = 30, but with dedup fewer
-	if len(pairs) > 6*5 {
-		t.Errorf("too many pairs: %d", len(pairs))
-	}
-
-	// Each pair must appear exactly once (no duplicates)
-	seen := map[string]bool{}
-	for _, p := range pairs {
-		k := pairKey(p[0], p[1])
-		if seen[k] {
-			t.Errorf("duplicate pair: %s", k)
-		}
-		seen[k] = true
-	}
-
-	// No self-pairs
-	for _, p := range pairs {
-		if p[0].ID == p[1].ID {
-			t.Error("self-pair found")
-		}
-	}
-}
-
 func TestExtractJSON_bareJSON(t *testing.T) {
 	input := `{"name": "foo"}`
 	got := extractJSON(input)
@@ -271,49 +199,6 @@ func TestExtractJSON_trailingGarbage(t *testing.T) {
 	want := `{"name": "foo"}`
 	if got != want {
 		t.Errorf("expected %q, got %q", want, got)
-	}
-}
-
-func TestGreedyMatch_allMatched(t *testing.T) {
-	matcher := &Matcher{}
-	var ps []*Participant
-	for i := 0; i < 6; i++ {
-		ps = append(ps, makeParticipant(string(rune('a'+i)), nil, nil))
-	}
-
-	pairs := matcher.GreedyMatch(ps)
-
-	if len(pairs) != 3 {
-		t.Errorf("expected 3 pairs for 6 participants, got %d", len(pairs))
-	}
-
-	seen := map[string]bool{}
-	for _, pair := range pairs {
-		for _, p := range pair {
-			if seen[p.ID] {
-				t.Errorf("participant %s appears more than once", p.ID)
-			}
-			seen[p.ID] = true
-		}
-	}
-
-	if len(seen) != 6 {
-		t.Errorf("expected all 6 participants matched, got %d", len(seen))
-	}
-}
-
-func TestGreedyMatch_oddNumber(t *testing.T) {
-	matcher := &Matcher{}
-	var ps []*Participant
-	for i := 0; i < 5; i++ {
-		ps = append(ps, makeParticipant(string(rune('a'+i)), nil, nil))
-	}
-
-	pairs := matcher.GreedyMatch(ps)
-
-	// 5 participants → 2 pairs, 1 leftover (greedyMatch leaves odd one out)
-	if len(pairs) != 2 {
-		t.Errorf("expected 2 pairs for 5 participants, got %d", len(pairs))
 	}
 }
 
