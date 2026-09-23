@@ -36,6 +36,18 @@ type InvalidAnswerError struct{ msg string }
 
 func (e *InvalidAnswerError) Error() string { return e.msg }
 
+// Start stores the Participant's profile and question set, and only then opens
+// the Interview. Until Start returns, the Participant is still being prepared.
+func (iv *Interview) Start(participantID string, profile *GitHubProfile, questions []Question) error {
+	if len(questions) == 0 {
+		return errors.New("cannot start an Interview without questions")
+	}
+	if err := iv.db.UpdateProfile(participantID, profile, "", "", questions); err != nil {
+		return err
+	}
+	return iv.db.UpdatePipelineStep(participantID, "interviewing")
+}
+
 // Next returns the first unanswered question, or nil when none remain.
 func (iv *Interview) Next(p *Participant) *QuestionData {
 	for i, q := range p.Questions {

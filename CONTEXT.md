@@ -21,7 +21,7 @@ The persona allows participants to be identifiable in the room without revealing
 
 ### Pipeline
 The automated process that each participant goes through:
-1. **Fetching GitHub**: Retrieve and parse GitHub profile data
+1. **Fetching GitHub**: Retrieve and parse GitHub profile data and prepare the question set. The Interview only starts (`interviewing`) once the question set is stored
 2. **Interviewing**: Participant answers questions (fixed + custom)
 3. **Generating Persona**: LLM creates the fun persona based on profile and answers
 4. **Ready**: Participant is ready for matching
@@ -133,7 +133,7 @@ Data fetched from a participant's GitHub account, including:
 ### Non-GitHub User
 A participant who registers without a GitHub account. These users go through a modified onboarding flow:
 - **Handle**: Automatically generated as `"no-github-{uuid-prefix}"` to ensure uniqueness
-- **Pipeline**: Starts at `interviewing` (skips `fetching_github`)
+- **Pipeline**: Skips the GitHub fetch; moves to `interviewing` as soon as their question set is stored
 - **Questions**: Answers ExtraQuestions instead of FixedQuestions + CustomQuestions
 - **Profile Data**: ExtraAnswers are used to capture their technical profile (languages, project types, etc.)
 

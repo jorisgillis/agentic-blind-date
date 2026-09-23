@@ -243,13 +243,12 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 	case "matched":
 		w.Header().Set("HX-Redirect", "/user/match/"+p.ID)
 	case "interviewing":
-		qd := h.interview.Next(p)
-		if qd == nil {
-			h.db.UpdatePipelineStep(p.ID, "ready")
-			w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
+		if qd := h.interview.Next(p); qd != nil {
+			h.render(w, "fragment-question.html", qd)
 			return
 		}
-		h.render(w, "fragment-question.html", qd)
+		// Every question is answered and the persona is being crafted: keep polling.
+		h.render(w, "fragment-pipeline-step.html", p)
 	default:
 		h.render(w, "fragment-pipeline-step.html", p)
 	}

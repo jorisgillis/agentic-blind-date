@@ -17,19 +17,21 @@ type AgentPipeline struct {
 	db      *DB
 	github  GitHubAPI
 	mistral LLM
-	matcher *Matcher
+	matcher   *Matcher
+	interview *Interview
 	matchMu sync.Mutex              // Serializes matching operations to prevent race conditions
 	llmCache map[string]*matchResult // In-memory cache for LLM match scores
 	cacheMu  sync.Mutex              // Protects llmCache
 }
 
 // NewAgentPipeline creates a new AgentPipeline with the given dependencies.
-func NewAgentPipeline(db *DB, github GitHubAPI, mistral LLM, matcher *Matcher) *AgentPipeline {
+func NewAgentPipeline(db *DB, github GitHubAPI, mistral LLM, matcher *Matcher, interview *Interview) *AgentPipeline {
 	return &AgentPipeline{
-		db:      db,
-		github:  github,
-		mistral: mistral,
-		matcher: matcher,
+		db:        db,
+		github:    github,
+		mistral:   mistral,
+		matcher:   matcher,
+		interview: interview,
 		llmCache: make(map[string]*matchResult),
 	}
 }
@@ -89,8 +91,6 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 		profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
 	}
 
-	a.db.UpdatePipelineStep(participantID, "interviewing")
-
 	var activityMsg string
 	if isGitHubUser {
 		activityMsg = fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle)
@@ -113,13 +113,10 @@ func (a *AgentPipeline) RunSetupWithExtraAnswers(
 		questions = append(ExtraQuestions, a.filterFixedQuestions()...)
 	}
 
-	a.db.UpdateProfile(participantID, profile, "", "", questions)
-
-	if !isGitHubUser && profile.ExtraAnswers != nil {
-		a.db.UpdateExtraAnswers(participantID, profile.ExtraAnswers)
+	if err := a.interview.Start(participantID, profile, questions); err != nil {
+		log.Printf("Starting interview for %s failed: %v", participantID, err)
+		return
 	}
-
-	a.db.UpdatePipelineStep(participantID, "interviewing")
 	a.db.LogActivity("✅ Ready for the interview!")
 }
 

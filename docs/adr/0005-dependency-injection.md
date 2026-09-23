@@ -41,7 +41,7 @@ func NewMistralClient(apiKey, model string, httpClient *http.Client) *MistralCli
 
 // Business logic: upstream services are accepted through the LLM and GitHubAPI seams
 func NewMatcher(github GitHubAPI, mistral LLM) *Matcher
-func NewAgentPipeline(db *DB, github GitHubAPI, mistral LLM, matcher *Matcher) *AgentPipeline
+func NewAgentPipeline(db *DB, github GitHubAPI, mistral LLM, matcher *Matcher, interview *Interview) *AgentPipeline
 
 // HTTP handlers
 func NewInterview(db *DB) *Interview
@@ -70,8 +70,9 @@ func main() {
 
     // Initialize application components
     matcher := NewMatcher(github, mistral)
-    agents := NewAgentPipeline(db, github, mistral, matcher)
-    h := NewHandler(db, agents, NewInterview(db))
+    interview := NewInterview(db)
+    agents := NewAgentPipeline(db, github, mistral, matcher, interview)
+    h := NewHandler(db, agents, interview)
 
     // Start server
     log.Fatal(http.ListenAndServe(addr, buildMux(h)))
