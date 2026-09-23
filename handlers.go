@@ -73,12 +73,13 @@ type Handler struct {
 	db        *DB
 	agents    *AgentPipeline
 	interview *Interview
+	matcher   *Matcher
 	tmpl      *template.Template
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-// It initializes the templates with the provided database, AgentPipeline and Interview module.
-func NewHandler(db *DB, agents *AgentPipeline, interview *Interview) *Handler {
+// It initializes the templates with the provided database, AgentPipeline, Interview module and Matcher.
+func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Matcher) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -117,7 +118,7 @@ func NewHandler(db *DB, agents *AgentPipeline, interview *Interview) *Handler {
 		},
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
-	return &Handler{db: db, agents: agents, interview: interview, tmpl: tmpl}
+	return &Handler{db: db, agents: agents, interview: interview, matcher: matcher, tmpl: tmpl}
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
@@ -402,7 +403,7 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.agents.generateMatch(me, other)
+	result, err := h.matcher.ScorePair(me, other)
 	if err != nil {
 		http.Error(w, "compatibility analysis failed: "+err.Error(), 500)
 		return
@@ -479,7 +480,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			if seen[key] || seen[rev] {
 				continue
 			}
-			s := h.agents.matcher.PairScore(a, b)
+			s := h.matcher.PairScore(a, b)
 			topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, s})
 			topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, s})
 		}
@@ -632,9 +633,7 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Clear LLM cache when resetting event
-	if h.agents != nil {
-		h.agents.clearLLMCache()
-	}
+	h.matcher.ClearCache()
 	h.db.SetPhase("onboarding")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }

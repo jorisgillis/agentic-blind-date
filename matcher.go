@@ -3,6 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
+	"sync"
 )
 
 // matchResult contains the LLM-generated compatibility assessment between two participants.
@@ -14,17 +17,25 @@ type matchResult struct {
 	Icebreakers []string `json:"icebreakers"`
 }
 
-// Matcher provides matching functionality for participants.
+// Matcher pairs Participants. It owns the heuristic Pair score, the LLM
+// compatibility assessment (prompt, parsing, validation) and the two-level
+// cache of assessments from ADR-0002.
 type Matcher struct {
+	db      *DB
 	github  GitHubAPI
 	mistral LLM
+
+	mu    sync.Mutex
+	cache map[string]*matchResult // in-memory level; the llm_cache table is the persistent level
 }
 
 // NewMatcher creates a new Matcher instance.
-func NewMatcher(github GitHubAPI, mistral LLM) *Matcher {
+func NewMatcher(db *DB, github GitHubAPI, mistral LLM) *Matcher {
 	return &Matcher{
+		db:      db,
 		github:  github,
 		mistral: mistral,
+		cache:   make(map[string]*matchResult),
 	}
 }
 
@@ -39,81 +50,155 @@ func defaultMatchResult() *matchResult {
 	}
 }
 
-// GenerateMatch generates a compatibility assessment between two participants using the LLM.
-func (m *Matcher) GenerateMatch(p1, p2 *Participant) (*matchResult, error) {
+// ScorePair returns the LLM compatibility assessment for a Pair, in either
+// order. Assessments are cached in memory and in the database; failures are
+// not cached, so the next call retries.
+func (m *Matcher) ScorePair(a, b *Participant) (*matchResult, error) {
+	key := pairKey(a, b)
+
+	m.mu.Lock()
+	cached, ok := m.cache[key]
+	m.mu.Unlock()
+	if ok {
+		return cached, nil
+	}
+	if cached, ok := m.db.GetLLMCache(key); ok {
+		m.remember(key, cached)
+		return cached, nil
+	}
+
+	result, err := m.assess(a, b)
+	if err != nil {
+		return nil, err
+	}
+	m.remember(key, result)
+	m.db.SetLLMCache(key, result)
+	return result, nil
+}
+
+// ClearCache forgets every cached assessment, in memory and in the database.
+func (m *Matcher) ClearCache() {
+	m.mu.Lock()
+	m.cache = make(map[string]*matchResult)
+	m.mu.Unlock()
+	m.db.ClearLLMCache()
+}
+
+func (m *Matcher) remember(key string, result *matchResult) {
+	m.mu.Lock()
+	m.cache[key] = result
+	m.mu.Unlock()
+}
+
+func pairKey(a, b *Participant) string {
+	if a.ID < b.ID {
+		return a.ID + ":" + b.ID
+	}
+	return b.ID + ":" + a.ID
+}
+
+func (m *Matcher) assess(p1, p2 *Participant) (*matchResult, error) {
 	system := `You are the matchmaker at a tech meetup blind date event.
 Analyze two developers' profiles and produce a fun, humorous compatibility assessment.
 Respond with ONLY valid JSON — no markdown:
 {"score": <0-100>, "reason": "<one funny sentence max 80 chars>", "red_flags": ["...", "..."], "green_flags": ["...", "..."], "icebreakers": ["<question one can ask the other>", "<question>", "<question>"]}`
 
-	p1Profile := p1.Profile
-	if p1Profile == nil {
-		p1Profile = &GitHubProfile{}
-	}
-	p2Profile := p2.Profile
-	if p2Profile == nil {
-		p2Profile = &GitHubProfile{}
-	}
-
-	p1Ans := p1.Answers
-	if p1Ans == nil {
-		p1Ans = map[string]string{}
-	}
-	p2Ans := p2.Answers
-	if p2Ans == nil {
-		p2Ans = map[string]string{}
-	}
-
-	p1Interests := p1.Interests
-	if p1Interests == nil {
-		p1Interests = map[string]interface{}{}
-	}
-	p2Interests := p2.Interests
-	if p2Interests == nil {
-		p2Interests = map[string]interface{}{}
-	}
-
-	followNote := ""
-	if m.github != nil && p1.GitHubHandle != "" && p2.GitHubHandle != "" {
-		aFollowsB, bFollowsA := m.github.CheckMutualFollow(p1.GitHubHandle, p2.GitHubHandle)
-		switch {
-		case aFollowsB && bFollowsA:
-			followNote = fmt.Sprintf("\nNote: %s and %s already follow each other on GitHub!", p1.PersonaName, p2.PersonaName)
-		case aFollowsB:
-			followNote = fmt.Sprintf("\nNote: %s already follows %s on GitHub.", p1.PersonaName, p2.PersonaName)
-		case bFollowsA:
-			followNote = fmt.Sprintf("\nNote: %s already follows %s on GitHub.", p2.PersonaName, p1.PersonaName)
-		}
-	}
-
-	interestsNote := ""
-	if p1Interests != nil || p2Interests != nil {
-		p1InterestsStr := fmtInterests(p1Interests)
-		p2InterestsStr := fmtInterests(p2Interests)
-		if p1InterestsStr != "" && p2InterestsStr != "" {
-			interestsNote = fmt.Sprintf("\nInterests: %s | %s", p1InterestsStr, p2InterestsStr)
-		} else if p1InterestsStr != "" {
-			interestsNote = fmt.Sprintf("\nInterests: %s", p1InterestsStr)
-		} else if p2InterestsStr != "" {
-			interestsNote = fmt.Sprintf("\nInterests: %s", p2InterestsStr)
-		}
-	}
-
-	user := fmt.Sprintf("Compare these two developers:\n\nDEVELOPER 1 (%s):\n%s\nInterview answers: %v%s\n\nDEVELOPER 2 (%s):\n%s\nInterview answers: %v%s",
-		p1.PersonaName, p1Profile.Summary(), p1Ans, interestsNote,
-		p2.PersonaName, p2Profile.Summary(), p2Ans, followNote,
-	)
+	user := "Compare these two developers:\n\n" +
+		describeDeveloper(1, p1) + "\n\n" + describeDeveloper(2, p2) + m.followNote(p1, p2)
 
 	response, err := m.mistral.Chat(system, user)
 	if err != nil {
 		return nil, err
 	}
 
-	var result matchResult
-	if err := json.Unmarshal([]byte(extractJSON(response)), &result); err != nil {
+	var reply struct {
+		Score       *int     `json:"score"`
+		Reason      string   `json:"reason"`
+		RedFlags    []string `json:"red_flags"`
+		GreenFlags  []string `json:"green_flags"`
+		Icebreakers []string `json:"icebreakers"`
+	}
+	if err := json.Unmarshal([]byte(extractJSON(response)), &reply); err != nil {
 		return nil, fmt.Errorf("match parse error: %v (raw: %s)", err, response)
 	}
-	return &result, nil
+	if reply.Score == nil {
+		return nil, fmt.Errorf("match reply has no score (raw: %s)", response)
+	}
+	return &matchResult{
+		Score:       min(max(*reply.Score, 0), 100),
+		Reason:      reply.Reason,
+		RedFlags:    nonNil(reply.RedFlags),
+		GreenFlags:  nonNil(reply.GreenFlags),
+		Icebreakers: nonNil(reply.Icebreakers),
+	}, nil
+}
+
+func describeDeveloper(n int, p *Participant) string {
+	profile := p.Profile
+	if profile == nil {
+		profile = &GitHubProfile{}
+	}
+	answers := p.Answers
+	if answers == nil {
+		answers = map[string]string{}
+	}
+	s := fmt.Sprintf("DEVELOPER %d (%s):\n%s\nInterview answers: %v", n, p.PersonaName, profile.Summary(), answers)
+	if interests := fmtInterests(p.Interests); interests != "" {
+		s += "\nInterests: " + interests
+	}
+	return s
+}
+
+func (m *Matcher) followNote(p1, p2 *Participant) string {
+	if m.github == nil || p1.GitHubHandle == "" || p2.GitHubHandle == "" {
+		return ""
+	}
+	aFollowsB, bFollowsA := m.github.CheckMutualFollow(p1.GitHubHandle, p2.GitHubHandle)
+	switch {
+	case aFollowsB && bFollowsA:
+		return fmt.Sprintf("\n\nNote: %s and %s already follow each other on GitHub!", p1.PersonaName, p2.PersonaName)
+	case aFollowsB:
+		return fmt.Sprintf("\n\nNote: %s already follows %s on GitHub.", p1.PersonaName, p2.PersonaName)
+	case bFollowsA:
+		return fmt.Sprintf("\n\nNote: %s already follows %s on GitHub.", p2.PersonaName, p1.PersonaName)
+	}
+	return ""
+}
+
+// fmtInterests renders Interests as "category: a, b; ...". Values may be
+// []string (freshly computed) or []any (decoded from the database).
+func fmtInterests(interests map[string]interface{}) string {
+	categories := make([]string, 0, len(interests))
+	for category := range interests {
+		categories = append(categories, category)
+	}
+	sort.Strings(categories)
+
+	var parts []string
+	for _, category := range categories {
+		var items []string
+		switch v := interests[category].(type) {
+		case []string:
+			items = v
+		case []any:
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					items = append(items, s)
+				}
+			}
+		}
+		if len(items) > 0 {
+			parts = append(parts, category+": "+strings.Join(items, ", "))
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // PairScore calculates a numeric compatibility score between two participants.

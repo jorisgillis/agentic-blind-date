@@ -416,36 +416,43 @@ func (db *DB) ReadyCount() int {
 
 // LLM Cache methods
 
-// LLMCacheEntry stores the cached result of an LLM match scoring operation.
-type LLMCacheEntry struct {
-	Score       int
-	Reason      string
-	RedFlags    string
-	GreenFlags  string
-	Icebreakers string
-}
-
-func (db *DB) GetLLMCache(pairKey string) (*LLMCacheEntry, bool) {
-	var entry LLMCacheEntry
+// GetLLMCache returns the cached assessment for a pair key. Rows that cannot be
+// decoded (such as the old comma-joined format) count as a miss.
+func (db *DB) GetLLMCache(pairKey string) (*matchResult, bool) {
+	var r matchResult
+	var red, green, ice string
 	err := db.db.QueryRow(
 		`SELECT score, reason, red_flags, green_flags, icebreakers FROM llm_cache WHERE pair_key = ?`,
 		pairKey,
-	).Scan(&entry.Score, &entry.Reason, &entry.RedFlags, &entry.GreenFlags, &entry.Icebreakers)
-
+	).Scan(&r.Score, &r.Reason, &red, &green, &ice)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, false
+		if err != sql.ErrNoRows {
+			log.Printf("LLM cache read error for %s: %v", pairKey, err)
 		}
-		log.Printf("LLM cache read error for %s: %v", pairKey, err)
 		return nil, false
 	}
-	return &entry, true
+	for _, f := range []struct {
+		raw string
+		dst *[]string
+	}{{red, &r.RedFlags}, {green, &r.GreenFlags}, {ice, &r.Icebreakers}} {
+		if err := json.Unmarshal([]byte(f.raw), f.dst); err != nil {
+			return nil, false
+		}
+		if *f.dst == nil {
+			*f.dst = []string{}
+		}
+	}
+	return &r, true
 }
 
-func (db *DB) SetLLMCache(pairKey string, score int, reason, redFlags, greenFlags, icebreakers string) {
+// SetLLMCache stores an assessment, with its lists JSON-encoded.
+func (db *DB) SetLLMCache(pairKey string, r *matchResult) {
+	red, _ := json.Marshal(nonNil(r.RedFlags))
+	green, _ := json.Marshal(nonNil(r.GreenFlags))
+	ice, _ := json.Marshal(nonNil(r.Icebreakers))
 	_, err := db.db.Exec(
 		`INSERT OR REPLACE INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES (?, ?, ?, ?, ?, ?)`,
-		pairKey, score, reason, redFlags, greenFlags, icebreakers,
+		pairKey, r.Score, r.Reason, string(red), string(green), string(ice),
 	)
 	if err != nil {
 		log.Printf("LLM cache write error for %s: %v", pairKey, err)

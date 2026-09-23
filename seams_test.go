@@ -164,3 +164,25 @@ func TestNonGitHubInterview_ProducesExtraAnswersThatDriveInterestsAndPersona(t *
 		t.Errorf("persona prompt leaks the generated handle:\n%s", call.User)
 	}
 }
+
+func TestExplore_RepeatViewsOfAPairAreServedFromTheCache(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 77, "reason": "Both love Go", "red_flags": [], "green_flags": ["Go"], "icebreakers": ["Why?"]}`)
+	srv, deps := newTestServer(t, llm, nil)
+	for _, id := range []string{"me", "other"} {
+		deps.db.CreateParticipant(id, id, id)
+	}
+
+	for i := 0; i < 2; i++ {
+		resp := get(t, srv, "/user/explore/me/other")
+		if resp.StatusCode != 200 {
+			t.Fatalf("view %d: status %d", i, resp.StatusCode)
+		}
+		if body := readBody(t, resp); !strings.Contains(body, "Both love Go") {
+			t.Fatalf("view %d: assessment not rendered", i)
+		}
+	}
+
+	if n := llm.callsMatching("matchmaker"); n != 1 {
+		t.Errorf("LLM calls for two views of the same Pair: want 1, got %d", n)
+	}
+}

@@ -60,11 +60,11 @@ func main() {
 		&http.Client{Timeout: 30 * time.Second},
 	)
 
-	matcher := NewMatcher(github, mistral)
+	matcher := NewMatcher(db, github, mistral)
 	interview := NewInterview(db, mistral)
 	agents := NewAgentPipeline(db, github, mistral, matcher, interview)
 
-	h := NewHandler(db, agents, interview)
+	h := NewHandler(db, agents, interview, matcher)
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)

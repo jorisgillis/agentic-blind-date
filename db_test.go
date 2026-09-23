@@ -240,45 +240,34 @@ func TestCounts(t *testing.T) {
 func TestLLMCache(t *testing.T) {
 	db := testDB(t)
 
-	// Test cache miss
-	entry, exists := db.GetLLMCache("a:b")
-	if exists {
+	if entry, exists := db.GetLLMCache("a:b"); exists || entry != nil {
 		t.Error("expected cache miss for non-existent key")
 	}
-	if entry != nil {
-		t.Error("expected nil entry for cache miss")
-	}
 
-	// Test cache set and get
-	db.SetLLMCache("a:b", 85, "Great match!", "red1,red2", "green1,green2", "ice1,ice2")
-	entry, exists = db.GetLLMCache("a:b")
+	db.SetLLMCache("a:b", &matchResult{Score: 85, Reason: "Great match!", RedFlags: []string{"tabs, obviously"}})
+	entry, exists := db.GetLLMCache("a:b")
 	if !exists {
-		t.Error("expected cache hit for existing key")
+		t.Fatal("expected cache hit for existing key")
 	}
-	if entry == nil {
-		t.Fatal("expected non-nil entry")
+	if entry.Score != 85 || entry.Reason != "Great match!" || len(entry.RedFlags) != 1 || entry.RedFlags[0] != "tabs, obviously" {
+		t.Errorf("round trip: got %+v", entry)
 	}
-	if entry.Score != 85 {
-		t.Errorf("Score: want 85, got %d", entry.Score)
-	}
-	if entry.Reason != "Great match!" {
-		t.Errorf("Reason: want 'Great match!', got %q", entry.Reason)
-	}
-	if entry.RedFlags != "red1,red2" {
-		t.Errorf("RedFlags: want 'red1,red2', got %q", entry.RedFlags)
-	}
-	if entry.GreenFlags != "green1,green2" {
-		t.Errorf("GreenFlags: want 'green1,green2', got %q", entry.GreenFlags)
-	}
-	if entry.Icebreakers != "ice1,ice2" {
-		t.Errorf("Icebreakers: want 'ice1,ice2', got %q", entry.Icebreakers)
+	if entry.GreenFlags == nil || entry.Icebreakers == nil {
+		t.Errorf("missing lists should come back empty, got %+v", entry)
 	}
 
-	// Test cache clear
 	db.ClearLLMCache()
-	entry, exists = db.GetLLMCache("a:b")
-	if exists {
+	if _, exists := db.GetLLMCache("a:b"); exists {
 		t.Error("expected cache miss after clear")
+	}
+}
+
+func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
+	db := testDB(t)
+	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 85, 'x', 'red1,red2', 'g', 'i')`)
+
+	if _, exists := db.GetLLMCache("a:b"); exists {
+		t.Error("an undecodable legacy row should be re-scored, not served")
 	}
 }
 
