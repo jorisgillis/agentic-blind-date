@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+// LLM sends a system and user prompt to a language model and returns its reply.
+// MistralClient is the production adapter; tests use an in-memory fake.
+type LLM interface {
+	Chat(system, user string) (string, error)
+}
+
 // MistralClient provides access to the Mistral AI API for LLM operations.
 type MistralClient struct {
 	apiKey     string

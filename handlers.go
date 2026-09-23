@@ -75,8 +75,8 @@ type Handler struct {
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-// It initializes the templates with the provided database, GitHub, Mistral clients, and AgentPipeline.
-func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient, agents *AgentPipeline) *Handler {
+// It initializes the templates with the provided database and AgentPipeline.
+func NewHandler(db *DB, agents *AgentPipeline) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },

@@ -15,8 +15,8 @@ import (
 // and match scoring using LLM.
 type AgentPipeline struct {
 	db      *DB
-	github  *GitHubClient
-	mistral *MistralClient
+	github  GitHubAPI
+	mistral LLM
 	matcher *Matcher
 	matchMu sync.Mutex              // Serializes matching operations to prevent race conditions
 	llmCache map[string]*matchResult // In-memory cache for LLM match scores
@@ -24,7 +24,7 @@ type AgentPipeline struct {
 }
 
 // NewAgentPipeline creates a new AgentPipeline with the given dependencies.
-func NewAgentPipeline(db *DB, github *GitHubClient, mistral *MistralClient, matcher *Matcher) *AgentPipeline {
+func NewAgentPipeline(db *DB, github GitHubAPI, mistral LLM, matcher *Matcher) *AgentPipeline {
 	return &AgentPipeline{
 		db:      db,
 		github:  github,

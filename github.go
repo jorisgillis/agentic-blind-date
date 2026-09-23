@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+// GitHubAPI fetches GitHub profile data and follow relationships.
+// GitHubClient is the production adapter; tests use an in-memory fake.
+type GitHubAPI interface {
+	FetchProfile(handle string) (*GitHubProfile, error)
+	CheckMutualFollow(handleA, handleB string) (bool, bool)
+}
+
 // GitHubClient provides access to the GitHub API for fetching user profiles and repositories.
 type GitHubClient struct {
 	token string

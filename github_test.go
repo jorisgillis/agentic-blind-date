@@ -47,14 +47,3 @@ func TestGitHubProfileSummary(t *testing.T) {
 		t.Error("expected non-empty summary for full profile")
 	}
 }
-
-func TestCheckMutualFollow(t *testing.T) {
-	// Create a client with empty token (will fail on actual HTTP calls)
-	client := NewGitHubClient("")
-
-	// Test with empty handles - returns (false, false)
-	aFollowsB, bFollowsA := client.CheckMutualFollow("", "")
-	if aFollowsB || bFollowsA {
-		t.Error("expected both to be false for empty handles")
-	}
-}

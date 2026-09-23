@@ -39,12 +39,12 @@ func NewDB(path string) (*DB, error)
 func NewGitHubClient(token string) *GitHubClient
 func NewMistralClient(apiKey, model string, httpClient *http.Client) *MistralClient
 
-// Business logic
-func NewMatcher(github *GitHubClient, mistral *MistralClient) *Matcher
-func NewAgentPipeline(db *DB, github *GitHubClient, mistral *MistralClient, matcher *Matcher) *AgentPipeline
+// Business logic: upstream services are accepted through the LLM and GitHubAPI seams
+func NewMatcher(github GitHubAPI, mistral LLM) *Matcher
+func NewAgentPipeline(db *DB, github GitHubAPI, mistral LLM, matcher *Matcher) *AgentPipeline
 
 // HTTP handlers
-func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient, agents *AgentPipeline) *Handler
+func NewHandler(db *DB, agents *AgentPipeline) *Handler
 ```
 
 #### Composition Root
@@ -70,12 +70,16 @@ func main() {
     // Initialize application components
     matcher := NewMatcher(github, mistral)
     agents := NewAgentPipeline(db, github, mistral, matcher)
-    h := NewHandler(db, github, mistral, agents)
+    h := NewHandler(db, agents)
 
     // Start server
     log.Fatal(http.ListenAndServe(addr, buildMux(h)))
 }
 ```
+
+#### Seams for upstream services
+
+`LLM` (one method: `Chat(system, user)`) and `GitHubAPI` (`FetchProfile`, `CheckMutualFollow`) are the only interfaces. Each has two adapters: the production client (`MistralClient`, `GitHubClient`) and an in-memory fake used by tests, so the test suite never reaches the real APIs.
 
 ## Consequences
 

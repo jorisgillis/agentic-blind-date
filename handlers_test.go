@@ -10,30 +10,18 @@ import (
 	"testing"
 )
 
-func testServer(t *testing.T) (*httptest.Server, *DB) {
+func testServer(t *testing.T) (*testSrv, *DB) {
 	t.Helper()
-	db, err := NewDB(":memory:")
-	if err != nil {
-		t.Fatalf("NewDB: %v", err)
-	}
-	// Pin to one connection so all goroutines share the same in-memory database.
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-	github := NewGitHubClient("")
-	mistral := NewMistralClient("", "", &http.Client{})
-	matcher := NewMatcher(github, mistral)
-	agents := NewAgentPipeline(db, github, mistral, matcher)
-	h := NewHandler(db, github, mistral, agents)
-	srv := httptest.NewServer(buildMux(h))
-	t.Cleanup(srv.Close)
-	return srv, db
+	srv, deps := newTestServer(t, nil, nil)
+	return srv, deps.db
 }
 
-func get(t *testing.T, srv *httptest.Server, path string) *http.Response {
+func get(t *testing.T, srv *testSrv, path string) *http.Response {
 	t.Helper()
-	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	client := srv.Client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
-	}}
+	}
 	resp, err := client.Get(srv.URL + path)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
@@ -42,11 +30,12 @@ func get(t *testing.T, srv *httptest.Server, path string) *http.Response {
 	return resp
 }
 
-func post(t *testing.T, srv *httptest.Server, path string, form url.Values) *http.Response {
+func post(t *testing.T, srv *testSrv, path string, form url.Values) *http.Response {
 	t.Helper()
-	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	client := srv.Client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
-	}}
+	}
 	resp, err := client.PostForm(srv.URL+path, form)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
@@ -201,11 +190,9 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	// Create a handler with empty database
 	db, _ := NewDB(":memory:")
 	defer db.Close()
-	github := NewGitHubClient("")
-	mistral := NewMistralClient("", "", &http.Client{})
-	matcher := NewMatcher(github, mistral)
-	agents := NewAgentPipeline(db, github, mistral, matcher)
-	h := NewHandler(db, github, mistral, agents)
+	gh := newFakeGitHub()
+	llm := newFakeLLM()
+	h := NewHandler(db, NewAgentPipeline(db, gh, llm, NewMatcher(gh, llm)))
 
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()
@@ -306,11 +293,9 @@ func TestBuildQuestionData(t *testing.T) {
 	// Setup
 	db, _ := NewDB(":memory:")
 	defer db.Close()
-	github := NewGitHubClient("")
-	mistral := NewMistralClient("", "", &http.Client{})
-	matcher := NewMatcher(github, mistral)
-	agents := NewAgentPipeline(db, github, mistral, matcher)
-	h := NewHandler(db, github, mistral, agents)
+	gh := newFakeGitHub()
+	llm := newFakeLLM()
+	h := NewHandler(db, NewAgentPipeline(db, gh, llm, NewMatcher(gh, llm)))
 
 	// Test with no answers and questions
 	p := &Participant{ID: "test-1", Questions: FixedQuestions}

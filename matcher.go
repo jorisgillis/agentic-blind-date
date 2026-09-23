@@ -16,12 +16,12 @@ type matchResult struct {
 
 // Matcher provides matching functionality for participants.
 type Matcher struct {
-	github  *GitHubClient
-	mistral *MistralClient
+	github  GitHubAPI
+	mistral LLM
 }
 
 // NewMatcher creates a new Matcher instance.
-func NewMatcher(github *GitHubClient, mistral *MistralClient) *Matcher {
+func NewMatcher(github GitHubAPI, mistral LLM) *Matcher {
 	return &Matcher{
 		github:  github,
 		mistral: mistral,
