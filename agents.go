@@ -55,8 +55,9 @@ func (a *AgentPipeline) RunSetup(participantID, githubHandle string) {
 	// Non-GitHub Users get a generated "no-github-" handle at registration.
 	isGitHubUser := !strings.HasPrefix(githubHandle, "no-github-")
 
-	profile := &GitHubProfile{Login: githubHandle, Name: githubHandle}
+	profile := &GitHubProfile{}
 	if isGitHubUser {
+		profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
 		a.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle))
 		fetched, err := a.github.FetchProfile(githubHandle)
 		if err != nil {
@@ -99,9 +100,7 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 		answers = map[string]string{}
 	}
 
-	extraAnswers := p.Extra
-
-	completeProfile := a.buildCompleteProfile(&profile, extraAnswers, answers)
+	completeProfile := a.buildCompleteProfile(&profile, profile.ExtraAnswers, answers)
 
 	persona, err := a.generatePersonaFromCompleteProfile(completeProfile)
 	if err != nil {
@@ -132,27 +131,26 @@ func (a *AgentPipeline) buildCompleteProfile(profile *GitHubProfile, extraAnswer
 	}
 }
 
+// computeInterestsFromCompleteProfile prefers GitHub data and fills the gaps
+// from ExtraAnswers, so both GitHub users and Non-GitHub Users get Interests.
 func (a *AgentPipeline) computeInterestsFromCompleteProfile(profile *CompleteProfile) map[string]interface{} {
-	interests := map[string]interface{}{
-		"languages": []string{},
-		"tools":     []string{},
-		"domains":   []string{},
+	languages, tools, domains := []string{}, []string{}, []string{}
+	if gp := profile.GitHubProfile; gp != nil {
+		languages = append(languages, gp.Languages...)
+		tools = append(tools, gp.TopTopics...)
 	}
-
-	if profile.GitHubProfile != nil {
-		gp := profile.GitHubProfile
-		interests["languages"] = gp.Languages
-		interests["tools"] = gp.TopTopics
-	} else if profile.ExtraAnswers != nil {
-		ea := profile.ExtraAnswers
-		interests["languages"] = ea.Languages
-		interests["tools"] = ea.DevEnvironment
+	if ea := profile.ExtraAnswers; ea != nil {
+		if len(languages) == 0 {
+			languages = append(languages, ea.Languages...)
+		}
+		if len(tools) == 0 {
+			tools = append(tools, ea.DevEnvironment...)
+		}
 		if ea.ProjectType != "" {
-			interests["domains"] = []string{ea.ProjectType}
+			domains = []string{ea.ProjectType}
 		}
 	}
-
-	return interests
+	return map[string]interface{}{"languages": languages, "tools": tools, "domains": domains}
 }
 
 func (a *AgentPipeline) generatePersonaFromCompleteProfile(profile *CompleteProfile) (*personaResult, error) {
@@ -181,27 +179,17 @@ Respond with ONLY a valid JSON object — no markdown, no backticks:
 
 func (a *AgentPipeline) buildPersonaPrompt(profile *CompleteProfile) string {
 	var parts []string
-
-	if profile.GitHubProfile != nil && profile.GitHubProfile.Login != "" {
-		parts = append(parts, fmt.Sprintf("GitHub: @%s", profile.GitHubProfile.Login))
-		parts = append(parts, profile.GitHubProfile.Summary())
-	} else if profile.ExtraAnswers != nil {
-		ea := profile.ExtraAnswers
-		if len(ea.Languages) > 0 {
-			parts = append(parts, "Languages: "+strings.Join(ea.Languages, ", "))
-		}
-		if ea.ProjectType != "" {
-			parts = append(parts, "Project type: "+ea.ProjectType)
-		}
-		if len(ea.DevEnvironment) > 0 {
-			parts = append(parts, "Dev environment: "+strings.Join(ea.DevEnvironment, ", "))
-		}
-		if ea.WeirdestBug != "" {
-			parts = append(parts, "Weirdest bug: "+ea.WeirdestBug)
-		}
-		if ea.Keyboard != "" {
-			parts = append(parts, "Keyboard: "+ea.Keyboard)
-		}
+	gp := profile.GitHubProfile
+	if gp == nil {
+		gp = &GitHubProfile{}
+	}
+	if profile.ExtraAnswers != nil && gp.ExtraAnswers == nil {
+		withExtra := *gp
+		withExtra.ExtraAnswers = profile.ExtraAnswers
+		gp = &withExtra
+	}
+	if summary := gp.Summary(); summary != "" {
+		parts = append(parts, summary)
 	}
 
 	parts = append(parts, "\nInterview answers:")
@@ -243,76 +231,6 @@ func (a *AgentPipeline) generateFallbackPersonaFromCompleteProfile(profile *Comp
 		Name:    name,
 		Tagline: "Ships things.",
 	}
-}
-
-func (a *AgentPipeline) generateFallbackPersona(profile *GitHubProfile, isGitHubUser bool) *personaResult {
-	toTitle := func(s string) string {
-		if s == "" {
-			return s
-		}
-		return strings.ToUpper(s[:1]) + s[1:]
-	}
-
-	if isGitHubUser {
-		return &personaResult{
-			Name:    "The " + toTitle(profile.Login),
-			Tagline: "Mysterious coder. Ships things.",
-		}
-	}
-
-	var name string
-	if len(profile.ExtraAnswers.Languages) > 0 {
-		name = "The " + toTitle(profile.ExtraAnswers.Languages[0]) + " Developer"
-	} else {
-		name = "The Mysterious Coder"
-	}
-	return &personaResult{
-		Name:    name,
-		Tagline: "Ships things without GitHub.",
-	}
-}
-
-func (a *AgentPipeline) computeInterests(profile *GitHubProfile) map[string]interface{} {
-	interests := map[string]interface{}{
-		"languages": []string{},
-		"tools":     []string{},
-		"domains":   []string{},
-	}
-
-	if profile.ExtraAnswers != nil {
-		ea := profile.ExtraAnswers
-		interests["languages"] = ea.Languages
-		interests["tools"] = ea.DevEnvironment
-		if ea.ProjectType != "" {
-			interests["domains"] = []string{ea.ProjectType}
-		}
-	} else {
-		interests["languages"] = profile.Languages
-		interests["tools"] = profile.TopTopics
-	}
-
-	return interests
-}
-
-func (a *AgentPipeline) generatePersona(profile *GitHubProfile) (*personaResult, error) {
-	if a.mistral == nil {
-		return nil, fmt.Errorf("mistral client not initialized")
-	}
-	system := `You are a fun tech personality generator for a programming meetup blind date event.
-Create a funny, tongue-in-cheek anonymous persona based on a GitHub profile.
-Respond with ONLY a valid JSON object — no markdown, no backticks:
-{"name": "The [Adjective] [Tech Noun]", "tagline": "<funny one-liner max 60 chars>"}`
-
-	response, err := a.mistral.Chat(system, "Create a persona for:\n\n"+profile.Summary())
-	if err != nil {
-		return nil, err
-	}
-
-	var result personaResult
-	if err := json.Unmarshal([]byte(extractJSON(response)), &result); err != nil {
-		return nil, fmt.Errorf("persona parse error: %v (raw: %s)", err, response)
-	}
-	return &result, nil
 }
 
 // getCachedMatchResult retrieves a cached match result or returns nil if not found

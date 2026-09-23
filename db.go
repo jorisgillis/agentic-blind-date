@@ -29,7 +29,6 @@ type Participant struct {
 	Profile        *GitHubProfile
 	Questions     []Question
 	Answers        map[string]string
-	Extra          *ExtraAnswers
 	Interests      map[string]interface{}
 	PipelineStep   string
 	MatchedWith    string
@@ -153,11 +152,11 @@ func (db *DB) DeleteParticipant(id string) error {
 
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {
 	p := &Participant{}
-	var profileJSON, questionsJSON, answersJSON, extraAnswersJSON, interestsJSON string
+	var profileJSON, questionsJSON, answersJSON, interestsJSON string
 	err := row.Scan(
 		&p.ID, &p.GitHubHandle, &p.Name,
 		&p.PersonaName, &p.PersonaColor, &p.PersonaSymbol, &p.PersonaTagline,
-		&profileJSON, &questionsJSON, &answersJSON, &extraAnswersJSON, &interestsJSON,
+		&profileJSON, &questionsJSON, &answersJSON, &interestsJSON,
 		&p.PipelineStep,
 		&p.MatchedWith, &p.CompatScore, &p.CompatReason,
 		&p.RedFlags, &p.GreenFlags, &p.Icebreakers, &p.CreatedAt,
@@ -181,11 +180,6 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 			return nil, err
 		}
 	}
-	if extraAnswersJSON != "" {
-		if err := json.Unmarshal([]byte(extraAnswersJSON), &p.Extra); err != nil {
-			return nil, err
-		}
-	}
 	if interestsJSON != "" {
 		if err := json.Unmarshal([]byte(interestsJSON), &p.Interests); err != nil {
 			return nil, err
@@ -198,7 +192,7 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 const selectParticipant = `
 	SELECT id, github_handle, name,
 	       persona_name, persona_color, persona_symbol, persona_tagline,
-	       profile_json, questions, answers_json, extra_answers, interests, pipeline_step,
+	       profile_json, questions, answers_json, interests, pipeline_step,
 	       COALESCE(matched_with, ''), compat_score, compat_reason,
 	       red_flags, green_flags, icebreakers, created_at
 	FROM participants`
@@ -284,15 +278,6 @@ func (db *DB) UpdateProfile(id string, profile *GitHubProfile, personaName, pers
 	_, err = db.db.Exec(`
 		UPDATE participants SET profile_json = ?, persona_name = ?, persona_tagline = ?, questions = ?
 		WHERE id = ?`, string(profileJSON), personaName, personaTagline, string(questionsJSON), id)
-	return err
-}
-
-func (db *DB) UpdateExtraAnswers(id string, extra *ExtraAnswers) error {
-	extraAnswersJSON, err := json.Marshal(extra)
-	if err != nil {
-		return err
-	}
-	_, err = db.db.Exec(`UPDATE participants SET extra_answers = ? WHERE id = ?`, string(extraAnswersJSON), id)
 	return err
 }
 

@@ -171,7 +171,8 @@ func (p *GitHubProfile) Summary() string {
 			}
 			parts = append(parts, line)
 		}
-	} else if p.ExtraAnswers != nil {
+	}
+	if p.ExtraAnswers != nil {
 		ea := p.ExtraAnswers
 		if len(ea.Languages) > 0 {
 			parts = append(parts, "Languages: "+strings.Join(ea.Languages, ", "))

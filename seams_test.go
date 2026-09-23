@@ -109,3 +109,58 @@ func answerAll(t *testing.T, srv *testSrv, p *Participant) {
 		}
 	}
 }
+
+func TestNonGitHubInterview_ProducesExtraAnswersThatDriveInterestsAndPersona(t *testing.T) {
+	llm := newFakeLLM().on("personality generator", `{"name": "The Rusty Gopher", "tagline": "Borrow-checks goroutines"}`)
+	srv, deps := newTestServer(t, llm, nil)
+
+	resp := post(t, srv, "/user/join", url.Values{"name": {"Ada"}, "no_github": {"on"}})
+	id := strings.TrimPrefix(resp.Header.Get("Location"), "/user/onboard/")
+	var p *Participant
+	eventually(t, "interview started", func() bool {
+		p = reload(t, deps.db, id)
+		return p.PipelineStep == "interviewing"
+	})
+
+	answers := map[string]string{
+		"extra_0": `["Go","Rust"]`,
+		"extra_1": "Backend Services",
+		"extra_2": "VIM",
+		"extra_3": "A race condition on Tuesdays",
+		"extra_4": "Mechanical",
+	}
+	for _, q := range p.Questions {
+		a, ok := answers[q.ID]
+		if !ok {
+			a = "whatever"
+		}
+		post(t, srv, "/user/answer/"+id, url.Values{"answer": {a}})
+	}
+	eventually(t, "participant ready", func() bool {
+		p = reload(t, deps.db, id)
+		return p.PipelineStep == "ready"
+	})
+
+	ea := p.Profile.ExtraAnswers
+	if ea == nil {
+		t.Fatal("ExtraAnswers not populated")
+	}
+	if strings.Join(ea.Languages, ",") != "Go,Rust" || ea.ProjectType != "Backend Services" ||
+		strings.Join(ea.DevEnvironment, ",") != "VIM" || ea.WeirdestBug != "A race condition on Tuesdays" || ea.Keyboard != "Mechanical" {
+		t.Errorf("ExtraAnswers: got %+v", ea)
+	}
+
+	langs, _ := p.Interests["languages"].([]any)
+	domains, _ := p.Interests["domains"].([]any)
+	if len(langs) != 2 || langs[0] != "Go" || len(domains) != 1 || domains[0] != "Backend Services" {
+		t.Errorf("Interests should reflect the Non-GitHub answers, got %v", p.Interests)
+	}
+
+	call, _ := llm.lastCallMatching("personality generator")
+	if !strings.Contains(call.User, "Languages: Go, Rust") {
+		t.Errorf("persona prompt should include the ExtraAnswers, got:\n%s", call.User)
+	}
+	if strings.Contains(call.User, "no-github-") {
+		t.Errorf("persona prompt leaks the generated handle:\n%s", call.User)
+	}
+}

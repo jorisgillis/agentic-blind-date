@@ -135,10 +135,10 @@ A participant who registers without a GitHub account. These users go through a m
 - **Handle**: Automatically generated as `"no-github-{uuid-prefix}"` to ensure uniqueness
 - **Pipeline**: Skips the GitHub fetch; moves to `interviewing` as soon as their question set is stored
 - **Questions**: Answers ExtraQuestions instead of FixedQuestions + CustomQuestions
-- **Profile Data**: ExtraAnswers are used to capture their technical profile (languages, project types, etc.)
+- **Profile Data**: When the Interview completes, the answers to the Extra Questions are turned into **ExtraAnswers** (languages, project type, dev environment, weirdest bug, keyboard) on their profile. This also happens for GitHub users who got the Extra Questions as a fallback
 
 ### Interests
-Computed attributes that categorize a participant's technical profile:
+Computed attributes that categorize a participant's technical profile. GitHub data is preferred; ExtraAnswers fill the gaps:
 - **Languages**: Programming languages used
 - **Tools**: Tools and technologies (from GitHub topics or manual input)
 - **Domains**: Areas of work (e.g., Web Development, Backend Services)

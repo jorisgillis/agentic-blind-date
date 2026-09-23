@@ -134,7 +134,58 @@ func (iv *Interview) Submit(p *Participant, raw string) (done bool, err error) {
 		return false, err
 	}
 	p.Answers = answers
-	return iv.Next(p) == nil, nil
+	if iv.Next(p) != nil {
+		return false, nil
+	}
+	if err := iv.complete(p); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// complete derives ExtraAnswers from the Extra Questions, when they were asked,
+// so profile readers (Summary, Interests, persona, Pair score) can use them.
+func (iv *Interview) complete(p *Participant) error {
+	extra := extraAnswersFrom(p.Answers)
+	if extra == nil {
+		return nil
+	}
+	profile := p.Profile
+	if profile == nil {
+		profile = &GitHubProfile{}
+	}
+	profile.ExtraAnswers = extra
+	p.Profile = profile
+	return iv.db.UpdateProfile(p.ID, profile, p.PersonaName, p.PersonaTagline, p.Questions)
+}
+
+// extraAnswersFrom maps answers to the Extra Questions onto ExtraAnswers.
+// It returns nil when none of the Extra Questions were answered.
+func extraAnswersFrom(answers map[string]string) *ExtraAnswers {
+	asked := false
+	for _, q := range ExtraQuestions {
+		if _, ok := answers[q.ID]; ok {
+			asked = true
+		}
+	}
+	if !asked {
+		return nil
+	}
+	var languages []string
+	if err := json.Unmarshal([]byte(answers["extra_0"]), &languages); err != nil && answers["extra_0"] != "" {
+		languages = []string{answers["extra_0"]}
+	}
+	var devEnv []string
+	if env := answers["extra_2"]; env != "" {
+		devEnv = []string{env}
+	}
+	return &ExtraAnswers{
+		Languages:      languages,
+		ProjectType:    answers["extra_1"],
+		DevEnvironment: devEnv,
+		WeirdestBug:    answers["extra_3"],
+		Keyboard:       answers["extra_4"],
+	}
 }
 
 func validateAnswer(q Question, answer string) error {

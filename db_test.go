@@ -335,29 +335,6 @@ func TestDeleteParticipant(t *testing.T) {
 	}
 }
 
-func TestUpdateExtraAnswers(t *testing.T) {
-	db := testDB(t)
-	db.CreateParticipant("id-1", "user1", "User 1")
-
-	extraAnswers := &ExtraAnswers{
-		Languages:       []string{"Go", "Python"},
-		ProjectType:    "Backend Services",
-		DevEnvironment: []string{"VIM"},
-		WeirdestBug:    "Segfault in production",
-		Keyboard:       "Mechanical",
-	}
-
-	db.UpdateExtraAnswers("id-1", extraAnswers)
-
-	p, _ := db.GetParticipant("id-1")
-	if p.Extra == nil {
-		t.Fatal("expected Extra to be set")
-	}
-	if len(p.Extra.Languages) != 2 {
-		t.Errorf("expected 2 languages, got %d", len(p.Extra.Languages))
-	}
-}
-
 func TestUpdateInterests(t *testing.T) {
 	db := testDB(t)
 	db.CreateParticipant("id-1", "user1", "User 1")
