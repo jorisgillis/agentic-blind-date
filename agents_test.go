@@ -509,3 +509,28 @@ func TestExtractJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *testing.T) {
+	db := newTestDB(t)
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70}))
+	gh := newFakeGitHub()
+	pipeline := NewAgentPipeline(db, gh, llm, NewMatcher(db, gh, llm), NewInterview(db, llm))
+	for _, id := range []string{"A", "B", "N"} {
+		db.CreateParticipant(id, id, id)
+		db.UpdateProfile(id, &GitHubProfile{Login: id}, id, "", nil)
+		db.UpdatePipelineStep(id, "ready")
+	}
+	db.SetMatched("A", "B", 40, "meh", "[]", "[]", "[]")
+	db.SetMatched("B", "A", 40, "meh", "[]", "[]", "[]")
+
+	if err := pipeline.RunContinuousMatching(reload(t, db, "N")); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, a := reload(t, db, "N"), reload(t, db, "A"); n.MatchedWith != "A" || a.MatchedWith != "N" || a.CompatScore != 70 {
+		t.Errorf("want N and A matched at 70, got N→%q A→%q (%d)", n.MatchedWith, a.MatchedWith, a.CompatScore)
+	}
+	if b := reload(t, db, "B"); b.MatchedWith != "" || b.PipelineStep != "ready" {
+		t.Errorf("displaced B should be ready and unmatched, got step %s matched with %q", b.PipelineStep, b.MatchedWith)
+	}
+}

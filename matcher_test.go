@@ -245,3 +245,53 @@ func TestMatcherMatchPool_NeedsTwoParticipants(t *testing.T) {
 		t.Errorf("a lone Participant cannot be matched, got %v", pairsOf(matches))
 	}
 }
+
+func matchedDev(id, partner string, score int) *Participant {
+	p := dev(id, id, "Go")
+	p.PipelineStep, p.MatchedWith, p.CompatScore = "matched", partner, score
+	return p
+}
+
+func TestMatcherMatchNewcomer_PairsWithTheBestScoringUnmatchedParticipant(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 30, {"N", "B"}: 80, {"N", "C"}: 99}))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+
+	match := m.MatchNewcomer(readyDev("N"), []*Participant{readyDev("A"), readyDev("B"), matchedDev("C", "D", 10)})
+
+	if match == nil || match.B.ID != "B" || match.Result.Score != 80 {
+		t.Fatalf("want N-B:80 (unmatched Participants come first), got %v", match)
+	}
+}
+
+func TestMatcherMatchNewcomer_TakesOverAMatchItBeats(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{
+		{"N", "A"}: 70, {"N", "B"}: 20, {"N", "C"}: 60, {"N", "D"}: 10,
+	}))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	pool := []*Participant{matchedDev("A", "B", 40), matchedDev("B", "A", 40), matchedDev("C", "D", 90), matchedDev("D", "C", 90)}
+
+	match := m.MatchNewcomer(readyDev("N"), pool)
+
+	if match == nil || match.B.ID != "A" || match.Result.Score != 70 {
+		t.Fatalf("want N-A:70 (beats A's current 40; C's 90 is not beaten), got %v", match)
+	}
+}
+
+func TestMatcherMatchNewcomer_StaysUnmatchedWhenItBeatsNoMatch(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 30, {"N", "B"}: 30}))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+
+	match := m.MatchNewcomer(readyDev("N"), []*Participant{matchedDev("A", "B", 90), matchedDev("B", "A", 90)})
+
+	if match != nil {
+		t.Errorf("want no Match, got %s-%s", match.A.ID, match.B.ID)
+	}
+}
+
+func TestMatcherMatchNewcomer_WithAnEmptyPool(t *testing.T) {
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), newFakeLLM())
+
+	if match := m.MatchNewcomer(readyDev("N"), nil); match != nil {
+		t.Errorf("want no Match, got %v", match)
+	}
+}

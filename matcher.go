@@ -316,6 +316,47 @@ func (m *Matcher) MatchPool(participants []*Participant) []Match {
 	return append(matches, m.assessAll(m.greedyMatch(leftover))...)
 }
 
+// MatchNewcomer finds a partner for a Participant who just became ready, among
+// the other ready or matched Participants. Unmatched Participants come first:
+// the best LLM-assessed of the newcomer's top candidates. When everyone is
+// matched, the newcomer takes over the Match of the candidate whose assessment
+// with the newcomer beats that candidate's current Match score, preferring the
+// highest assessment. The returned Match's B may still be matched (B.MatchedWith);
+// storing it breaks that Match. Returns nil when there is no suitable partner.
+func (m *Matcher) MatchNewcomer(newcomer *Participant, others []*Participant) *Match {
+	var unmatched, matched []*Participant
+	for _, p := range others {
+		switch {
+		case p.ID == newcomer.ID:
+		case p.MatchedWith == "":
+			unmatched = append(unmatched, p)
+		default:
+			matched = append(matched, p)
+		}
+	}
+	if len(unmatched) > 0 {
+		return m.bestFor(newcomer, unmatched, func(Match) bool { return true })
+	}
+	return m.bestFor(newcomer, matched, func(c Match) bool { return c.Result.Score > c.B.CompatScore })
+}
+
+// bestFor assesses the newcomer against their top candidates in pool and
+// returns the highest-scoring eligible Match, or nil.
+func (m *Matcher) bestFor(newcomer *Participant, pool []*Participant, eligible func(Match) bool) *Match {
+	var pairs [][2]*Participant
+	for _, c := range m.topCandidates(newcomer, pool) {
+		pairs = append(pairs, [2]*Participant{newcomer, c})
+	}
+	scored := m.assessAll(pairs)
+	sort.SliceStable(scored, func(i, j int) bool { return scored[i].Result.Score > scored[j].Result.Score })
+	for _, c := range scored {
+		if eligible(c) {
+			return &c
+		}
+	}
+	return nil
+}
+
 // assessAll assesses the Pairs, two LLM calls at a time, logging each to the activity ticker.
 func (m *Matcher) assessAll(pairs [][2]*Participant) []Match {
 	out := make([]Match, len(pairs))
@@ -345,7 +386,7 @@ func (m *Matcher) assessOrDefault(a, b *Participant) *matchResult {
 	return result
 }
 
-// topCandidates returns up to 5 unmatched Participants with the highest PairScore against p.
+// topCandidates returns up to 5 Participants from all with the highest PairScore against p.
 func (m *Matcher) topCandidates(p *Participant, all []*Participant) []*Participant {
 	type scored struct {
 		p     *Participant
@@ -353,10 +394,9 @@ func (m *Matcher) topCandidates(p *Participant, all []*Participant) []*Participa
 	}
 	var candidates []scored
 	for _, other := range all {
-		if other.ID == p.ID || other.MatchedWith != "" {
-			continue
+		if other.ID != p.ID {
+			candidates = append(candidates, scored{other, m.PairScore(p, other)})
 		}
-		candidates = append(candidates, scored{other, m.PairScore(p, other)})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
 

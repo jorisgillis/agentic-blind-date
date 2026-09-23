@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -266,173 +265,37 @@ func (a *AgentPipeline) storeMatch(m Match) {
 	a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", m.A.PersonaName, m.B.PersonaName, result.Score))
 }
 
-// RunContinuousMatching matches a single new ready participant against the existing pool of ready, unmatched participants.
-// Uses the same 3-phase algorithm: heuristic top-5, LLM scoring, greedy selection.
-func (a *AgentPipeline) RunContinuousMatching(newParticipant *Participant) error {
+// RunContinuousMatching matches a Participant who just became ready against the
+// other ready and matched Participants, breaking a weaker Match when needed.
+func (a *AgentPipeline) RunContinuousMatching(newcomer *Participant) error {
 	a.matchMu.Lock()
 	defer a.matchMu.Unlock()
 
-	a.db.LogActivity(fmt.Sprintf("🔮 Matching %s against existing pool...", newParticipant.PersonaName))
+	a.db.LogActivity(fmt.Sprintf("🔮 Matching %s against existing pool...", newcomer.PersonaName))
 
-	// Get all ready participants who haven't been matched yet (excluding the new one)
-	others, err := a.db.GetReadyUnmatched()
+	all, err := a.db.GetAllParticipants()
 	if err != nil {
-		return err
+		return fmt.Errorf("GetAllParticipants: %w", err)
 	}
-
-	// Filter out the new participant if somehow included
-	var pool []*Participant
-	for _, p := range others {
-		if p.ID != newParticipant.ID {
-			pool = append(pool, p)
-		}
-	}
-
-	breakingExistingMatch := false
-	if len(pool) == 0 {
-		// All existing participants are matched — consider breaking the weakest pair
-		allParticipants, err := a.db.GetAllParticipants()
-		if err != nil {
-			return fmt.Errorf("GetAllParticipants: %w", err)
-		}
-		var matched []*Participant
-		for _, p := range allParticipants {
-			if p.PipelineStep == "matched" && p.MatchedWith != "" && p.ID != newParticipant.ID {
-				matched = append(matched, p)
-			}
-		}
-		if len(matched) == 0 {
-			a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newParticipant.PersonaName))
-			return nil
-		}
-		a.db.LogActivity(fmt.Sprintf("🔄 All slots filled — evaluating if %s fits better somewhere...", newParticipant.PersonaName))
-		pool = matched
-		breakingExistingMatch = true
-	}
-
-	// Phase 1: Get top-5 candidates from the pool for the new participant
-	candidates := a.matcher.topCandidates(newParticipant, pool)
-	if len(candidates) == 0 {
-		return fmt.Errorf("no candidates found for %s", newParticipant.PersonaName)
-	}
-
-	a.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidates for %s...", len(candidates), newParticipant.PersonaName))
-
-	// Phase 2: LLM-score all candidate pairs
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 2)
-
-	for _, candidate := range candidates {
-		wg.Add(1)
-		go func(p1, p2 *Participant) {
-			defer wg.Done()
-
-			sem <- struct{}{}
-			result := a.score(p1, p2)
-			<-sem
-
-			a.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", p1.PersonaName, p2.PersonaName, result.Score))
-		}(newParticipant, candidate)
-	}
-	wg.Wait()
-
-	// Phase 3: Pick the best scoring candidate that is still unmatched
-	type scoredCandidate struct {
-		participant *Participant
-		score       int
-	}
-	var scored []scoredCandidate
-	for _, candidate := range candidates {
-		// Get the cached result for this pair
-		if cached := a.score(newParticipant, candidate); cached != nil {
-			scored = append(scored, scoredCandidate{candidate, cached.Score})
+	var others []*Participant
+	for _, p := range all {
+		if p.ID != newcomer.ID && (p.PipelineStep == "ready" || p.PipelineStep == "matched") {
+			others = append(others, p)
 		}
 	}
 
-	// Sort by score descending
-	sort.Slice(scored, func(a, b int) bool { return scored[a].score > scored[b].score })
-
-	// Find the best candidate — if breaking an existing match, any matched candidate is valid
-	var bestMatch *Participant
-	for _, sc := range scored {
-		candidate, err := a.db.GetParticipant(sc.participant.ID)
-		if err != nil {
-			continue
-		}
-		if breakingExistingMatch || (candidate.MatchedWith == "" && candidate.PipelineStep == "ready") {
-			bestMatch = candidate
-			break
-		}
+	m := a.matcher.MatchNewcomer(newcomer, others)
+	if m == nil {
+		a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newcomer.PersonaName))
+		return nil
 	}
-
-	if bestMatch == nil && !breakingExistingMatch {
-		// All candidates were already matched, try heuristic fallback
-		a.db.LogActivity(fmt.Sprintf("⚠️ All candidates for %s were already matched, trying fallback...", newParticipant.PersonaName))
-		for _, p := range pool {
-			candidate, err := a.db.GetParticipant(p.ID)
-			if err != nil {
-				continue
-			}
-			if candidate.MatchedWith == "" && candidate.PipelineStep == "ready" {
-				bestMatch = candidate
-				break
-			}
-		}
+	if former := m.B.MatchedWith; former != "" {
+		a.db.UnmatchParticipant(former)
+		a.db.UnmatchParticipant(m.B.ID)
+		a.db.LogActivity(fmt.Sprintf("🔄 Breaking %s's previous match to accommodate %s", m.B.PersonaName, newcomer.PersonaName))
 	}
-
-	if bestMatch != nil {
-		// If the best match was already paired, break that pair first
-		if bestMatch.MatchedWith != "" {
-			formerPartnerID := bestMatch.MatchedWith
-			a.db.UnmatchParticipant(bestMatch.ID)
-			a.db.UnmatchParticipant(formerPartnerID)
-			a.db.LogActivity(fmt.Sprintf("🔄 Breaking %s's previous match to accommodate %s", bestMatch.PersonaName, newParticipant.PersonaName))
-		}
-
-		// Get the match result (from persistent cache or generate)
-		result := a.score(newParticipant, bestMatch)
-		if result == nil {
-			// Shouldn't happen since we scored all candidates in Phase 2, but fallback
-			log.Printf("Warning: no cached result for best match %s:%s", newParticipant.ID, bestMatch.ID)
-			result = defaultMatchResult()
-		}
-
-		// Store results for both participants
-		redJSON, err := json.Marshal(result.RedFlags)
-		if err != nil {
-			log.Printf("Failed to marshal red flags: %v", err)
-			return nil
-		}
-		greenJSON, err := json.Marshal(result.GreenFlags)
-		if err != nil {
-			log.Printf("Failed to marshal green flags: %v", err)
-			return nil
-		}
-		iceJSON, err := json.Marshal(result.Icebreakers)
-		if err != nil {
-			log.Printf("Failed to marshal icebreakers: %v", err)
-			return nil
-		}
-
-		a.db.SetMatched(newParticipant.ID, bestMatch.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
-		a.db.SetMatched(bestMatch.ID, newParticipant.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
-
-		a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", newParticipant.PersonaName, bestMatch.PersonaName, result.Score))
-	} else {
-		a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newParticipant.PersonaName))
-	}
-
+	a.storeMatch(*m)
 	return nil
-}
-
-// score returns the Matcher's assessment of a Pair, or the default result when scoring fails.
-func (a *AgentPipeline) score(p1, p2 *Participant) *matchResult {
-	result, err := a.matcher.ScorePair(p1, p2)
-	if err != nil {
-		log.Printf("Match scoring error for %s/%s: %v", p1.GitHubHandle, p2.GitHubHandle, err)
-		return defaultMatchResult()
-	}
-	return result
 }
 
 func extractJSON(s string) string {

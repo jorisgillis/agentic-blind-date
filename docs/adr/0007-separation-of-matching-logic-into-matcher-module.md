@@ -32,14 +32,15 @@ func NewMatcher(db *DB, github GitHubAPI, mistral LLM) *Matcher
 ```
 
 ### Interface
-The Matcher is a deep module: callers see four operations, and the three-phase
+The Matcher is a deep module: callers see five operations, and the three-phase
 algorithm (ADR-0001), the Match prompt, reply validation and the two-level cache
 (ADR-0002) all sit behind them.
 
 1. **MatchPool(participants) []Match**: runs the three-phase algorithm and returns disjoint Matches
-2. **ScorePair(a, b) (*matchResult, error)**: the cached LLM assessment of one Pair (used by Explore)
-3. **PairScore(a, b) int**: the heuristic score (used by the Big Screen's top connections)
-4. **ClearCache()**: forgets every cached assessment (event reset)
+2. **MatchNewcomer(newcomer, others) *Match**: Continuous Matching; prefers unmatched Participants, otherwise takes over a Match the newcomer beats
+3. **ScorePair(a, b) (*matchResult, error)**: the cached LLM assessment of one Pair (used by Explore)
+4. **PairScore(a, b) int**: the heuristic score (used by the Big Screen's top connections)
+5. **ClearCache()**: forgets every cached assessment (event reset)
 
 Candidate selection and greedy assignment are internal (`topCandidates`,
 `candidatePairs`, `greedyMatch`) and are tested through `MatchPool`.
