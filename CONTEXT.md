@@ -99,6 +99,8 @@ The question-and-answer process where participants provide information about the
 - **Custom Questions**: LLM-generated questions tailored to GitHub profile (GitHub users only)
 - **Extra Questions**: Manual questions for non-GitHub users
 
+The **Interview module** owns a Participant's progress through the Interview: the next unanswered question, validating and recording answers (including multi-select), and signalling completion.
+
 ### Fixed Questions
 Standard questions that all participants answer:
 - Tabs or spaces?

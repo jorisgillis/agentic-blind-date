@@ -192,7 +192,7 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	defer db.Close()
 	gh := newFakeGitHub()
 	llm := newFakeLLM()
-	h := NewHandler(db, NewAgentPipeline(db, gh, llm, NewMatcher(gh, llm)))
+	h := NewHandler(db, NewAgentPipeline(db, gh, llm, NewMatcher(gh, llm)), NewInterview(db))
 
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()
@@ -286,58 +286,6 @@ func TestComputeBadges(t *testing.T) {
 	badges = computeBadges(p)
 	if len(badges) != 0 {
 		t.Errorf("expected no badges for empty profile, got %v", badges)
-	}
-}
-
-func TestBuildQuestionData(t *testing.T) {
-	// Setup
-	db, _ := NewDB(":memory:")
-	defer db.Close()
-	gh := newFakeGitHub()
-	llm := newFakeLLM()
-	h := NewHandler(db, NewAgentPipeline(db, gh, llm, NewMatcher(gh, llm)))
-
-	// Test with no answers and questions
-	p := &Participant{ID: "test-1", Questions: FixedQuestions}
-	data := h.buildQuestionData(p)
-	if data == nil {
-		t.Fatal("expected non-nil QuestionData")
-	}
-	if data.ParticipantID != "test-1" {
-		t.Errorf("expected ParticipantID test-1, got %s", data.ParticipantID)
-	}
-	if data.Index != 0 {
-		t.Errorf("expected Index 0, got %d", data.Index)
-	}
-	if data.Total != len(FixedQuestions) {
-		t.Errorf("expected Total %d, got %d", len(FixedQuestions), data.Total)
-	}
-	if data.Question.ID != "fixed_0" {
-		t.Errorf("expected first question fixed_0, got %s", data.Question.ID)
-	}
-
-	// Test with some answers
-	p.Answers = map[string]string{"fixed_0": "Tabs"}
-	data = h.buildQuestionData(p)
-	if data.Index != 1 {
-		t.Errorf("expected Index 1, got %d", data.Index)
-	}
-	if data.Question.ID != "fixed_1" {
-		t.Errorf("expected second question fixed_1, got %s", data.Question.ID)
-	}
-
-	// Test with all answers
-	p.Answers = map[string]string{
-		"fixed_0": "Tabs",
-		"fixed_1": "Go",
-		"fixed_2": "Only if tests pass",
-		"fixed_3": "Monolith, always",
-		"fixed_4": "fix stuff",
-		"fixed_5": "Claude",
-	}
-	data = h.buildQuestionData(p)
-	if data != nil {
-		t.Error("expected nil when all questions answered")
 	}
 }
 

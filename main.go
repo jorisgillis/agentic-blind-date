@@ -63,7 +63,7 @@ func main() {
 	matcher := NewMatcher(github, mistral)
 	agents := NewAgentPipeline(db, github, mistral, matcher)
 
-	h := NewHandler(db, agents)
+	h := NewHandler(db, agents, NewInterview(db))
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)

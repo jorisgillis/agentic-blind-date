@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -69,14 +70,15 @@ type graphEdge struct {
 
 // Handler handles HTTP requests for the web application.
 type Handler struct {
-	db     *DB
-	agents *AgentPipeline
-	tmpl   *template.Template
+	db        *DB
+	agents    *AgentPipeline
+	interview *Interview
+	tmpl      *template.Template
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-// It initializes the templates with the provided database and AgentPipeline.
-func NewHandler(db *DB, agents *AgentPipeline) *Handler {
+// It initializes the templates with the provided database, AgentPipeline and Interview module.
+func NewHandler(db *DB, agents *AgentPipeline, interview *Interview) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -115,7 +117,7 @@ func NewHandler(db *DB, agents *AgentPipeline) *Handler {
 		},
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
-	return &Handler{db: db, agents: agents, tmpl: tmpl}
+	return &Handler{db: db, agents: agents, interview: interview, tmpl: tmpl}
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
@@ -241,7 +243,7 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 	case "matched":
 		w.Header().Set("HX-Redirect", "/user/match/"+p.ID)
 	case "interviewing":
-		qd := h.buildQuestionData(p)
+		qd := h.interview.Next(p)
 		if qd == nil {
 			h.db.UpdatePipelineStep(p.ID, "ready")
 			w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
@@ -250,37 +252,6 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 		h.render(w, "fragment-question.html", qd)
 	default:
 		h.render(w, "fragment-pipeline-step.html", p)
-	}
-}
-
-// QuestionData contains the data needed to render a single interview question.
-type QuestionData struct {
-	ParticipantID string
-	Index         int
-	Total         int
-	Question      Question
-}
-
-func (h *Handler) buildQuestionData(p *Participant) *QuestionData {
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
-	}
-
-	questions := p.Questions
-
-	idx := len(answers)
-	if idx >= len(questions) {
-		return nil
-	}
-
-	q := questions[idx]
-
-	return &QuestionData{
-		ParticipantID: p.ID,
-		Index:         idx,
-		Total:         len(questions),
-		Question:      q,
 	}
 }
 
@@ -297,48 +268,24 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	answer := strings.TrimSpace(r.FormValue("answer"))
-
-	questions := p.Questions
-	currentIndex := len(p.Answers)
-	if currentIndex >= len(questions) {
-		http.Error(w, "No more questions to answer", 400)
+	done, err := h.interview.Submit(p, r.FormValue("answer"))
+	var invalid *InvalidAnswerError
+	switch {
+	case errors.Is(err, ErrInterviewOver), errors.As(err, &invalid):
+		http.Error(w, err.Error(), 400)
+		return
+	case err != nil:
+		http.Error(w, "saving answer failed", 500)
 		return
 	}
 
-	currentQuestion := questions[currentIndex]
-
-	if currentQuestion.MaxSelections > 1 {
-		var selected []string
-		if err := json.Unmarshal([]byte(answer), &selected); err != nil {
-			http.Error(w, "Invalid answer format for multi-select question", 400)
-			return
-		}
-		if len(selected) > currentQuestion.MaxSelections {
-			http.Error(w, fmt.Sprintf("Too many selections. Maximum %d allowed.", currentQuestion.MaxSelections), 400)
-			return
-		}
-	}
-
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
-	}
-
-	if currentIndex < len(questions) {
-		answers[currentQuestion.ID] = answer
-	}
-
-	h.db.UpdateAnswers(p.ID, answers)
-
-	if len(answers) >= len(questions) {
+	if done {
 		go h.agents.RunFinalSetup(p.ID)
 		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
 		return
 	}
 
-	p.Answers = answers
-	h.render(w, "fragment-question.html", h.buildQuestionData(p))
+	h.render(w, "fragment-question.html", h.interview.Next(p))
 }
 
 // GET /user/wait/{id}

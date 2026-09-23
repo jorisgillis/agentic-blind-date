@@ -198,7 +198,7 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	db := newTestDB(t)
 	matcher := NewMatcher(gh, llm)
 	agents := NewAgentPipeline(db, gh, llm, matcher)
-	h := NewHandler(db, agents)
+	h := NewHandler(db, agents, NewInterview(db))
 	return &testSrv{URL: "http://test", h: buildMux(h)}, &testDeps{db: db, llm: llm, github: gh, agents: agents}
 }
 
