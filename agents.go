@@ -110,6 +110,16 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 	a.db.UpdateInterests(participantID, interests)
 	a.db.UpdatePipelineStep(participantID, "ready")
 	a.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))
+
+	// Continuous Matching: every Participant who becomes ready is matched right away.
+	ready, err := a.db.GetParticipant(participantID)
+	if err != nil {
+		log.Printf("RunFinalSetup: reloading %s for matching: %v", participantID, err)
+		return
+	}
+	if err := a.RunContinuousMatching(ready); err != nil {
+		log.Printf("Continuous matching for %s failed: %v", participantID, err)
+	}
 }
 
 func (a *AgentPipeline) buildCompleteProfile(profile *GitHubProfile, extraAnswers *ExtraAnswers, interviewAnswers map[string]string) *CompleteProfile {

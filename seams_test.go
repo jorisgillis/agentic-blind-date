@@ -186,3 +186,36 @@ func TestExplore_RepeatViewsOfAPairAreServedFromTheCache(t *testing.T) {
 		t.Errorf("LLM calls for two views of the same Pair: want 1, got %d", n)
 	}
 }
+
+func TestOnboarding_SecondReadyParticipantIsMatchedWithoutAnAdminRematch(t *testing.T) {
+	gh := newFakeGitHub().
+		withProfile(&GitHubProfile{Login: "octo", Languages: []string{"Go"}}).
+		withProfile(&GitHubProfile{Login: "ferris", Languages: []string{"Rust"}})
+	llm := newFakeLLM().
+		on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`).
+		on("personality generator", `{"name": "The Persona", "tagline": "Ships"}`).
+		on("matchmaker", `{"score": 88, "reason": "Opposites attract", "red_flags": [], "green_flags": [], "icebreakers": []}`)
+	srv, deps := newTestServer(t, llm, gh)
+
+	onboard := func(handle string) *Participant {
+		post(t, srv, "/user/join", url.Values{"name": {handle}, "github": {handle}})
+		var p *Participant
+		eventually(t, handle+" interviewing", func() bool {
+			p, _ = deps.db.GetParticipantByHandle(handle)
+			return p != nil && p.PipelineStep == "interviewing"
+		})
+		answerAll(t, srv, p)
+		return p
+	}
+
+	first := onboard("octo")
+	eventually(t, "first participant ready", func() bool { return reload(t, deps.db, first.ID).PipelineStep == "ready" })
+	second := onboard("ferris")
+
+	eventually(t, "second participant matched with the first", func() bool {
+		return reload(t, deps.db, second.ID).MatchedWith == first.ID
+	})
+	if f := reload(t, deps.db, first.ID); f.MatchedWith != second.ID || f.CompatScore != 88 {
+		t.Errorf("first participant: matched with %q at %d", f.MatchedWith, f.CompatScore)
+	}
+}
