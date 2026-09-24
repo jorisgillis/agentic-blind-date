@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -372,6 +373,38 @@ func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain
 		if got := reload(t, db, id).MatchedWith; got != want {
 			t.Errorf("%s matched with %q, want %q", id, got, want)
 		}
+	}
+	assertInvariant(t, db)
+}
+
+// TestMatchNewcomer_APathologicalChainStopsAtTheBound covers #48: LLM scores
+// aren't perfectly consistent between calls, so a chain of take-overs isn't
+// guaranteed to end on its own. maxChain is shrunk to make the pathological
+// chain (every take-over beats the default score handed to unscripted pairs)
+// exceed the bound within a small, deterministic pool.
+func TestMatchNewcomer_APathologicalChainStopsAtTheBound(t *testing.T) {
+	old := maxChain
+	maxChain = 3
+	defer func() { maxChain = old }()
+
+	db := newTestDB(t)
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{
+		{"N", "A"}: 90, {"B", "C"}: 90, {"D", "E"}: 90, // each hop clears the default (50) and the prior score
+	}))
+	gh := newFakeGitHub()
+	rel := NewRelationships(db)
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
+	for _, id := range []string{"A", "B", "C", "D", "E", "F", "N"} {
+		seed(t, db, id, id, "ready")
+	}
+	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
+	rel.Pair(Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
+	rel.Pair(Match{A: reload(t, db, "E"), B: reload(t, db, "F"), Result: &matchResult{Score: 20}})
+
+	err := matchmaking.MatchNewcomer(reload(t, db, "N"))
+
+	if err == nil || !strings.Contains(err.Error(), "chain of take-overs longer than 3") {
+		t.Fatalf("want a chain-too-long error, got %v", err)
 	}
 	assertInvariant(t, db)
 }
