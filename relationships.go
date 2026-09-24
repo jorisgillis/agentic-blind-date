@@ -1,55 +1,46 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 )
 
 // Relationships owns Relationship State: who is matched with whom, and the
 // assessment of each Match. It enforces the Key Invariant: a Participant has
-// at most one partner. Every change is a single transaction.
+// at most one partner. Every change goes through the Participant store as a
+// single transaction.
 type Relationships struct {
-	db *DB
+	store *ParticipantStore
 }
 
 // NewRelationships creates the Relationship module.
 func NewRelationships(db *DB) *Relationships {
-	return &Relationships{db: db}
+	return &Relationships{store: NewParticipantStore(db)}
 }
 
-// Pair records a Match between m.A and m.B, with its assessment on both sides.
-// Any existing Match of either Participant is broken first; the partners left
-// behind are returned to the Pool and reported as displaced.
+func strPtr(s string) *string { return &s }
+
+// Pair records a Match between m.A and m.B, with its assessment on both
+// sides, in one transaction. Any existing Match of either Participant is
+// broken first; the partners left behind are returned to the Pool and
+// reported as displaced.
 func (r *Relationships) Pair(m Match) (displaced []string, err error) {
-	err = r.db.inTx(func(tx *sql.Tx) error {
-		sides := [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}}
-		for _, side := range sides {
-			former, err := partnerOf(tx, side[0])
-			if err != nil {
-				return err
-			}
-			if former != "" && former != side[1] {
-				if err := unpair(tx, former); err != nil {
-					return err
-				}
-				displaced = append(displaced, former)
-			}
+	sides := [][2]*Participant{{m.A, m.B}, {m.B, m.A}}
+	var changes []ParticipantChange
+	for _, side := range sides {
+		p, err := r.store.Get(side[0].ID)
+		if err != nil {
+			return nil, err
 		}
-		// Both Participants exist: partnerOf found them in this transaction.
-		red, green, ice := encodeAssessment(m.Result)
-		for _, side := range sides {
-			if _, err := tx.Exec(`
-				UPDATE participants SET matched_with = ?, compat_score = ?, compat_reason = ?,
-				    red_flags = ?, green_flags = ?, icebreakers = ?
-				WHERE id = ?`, side[1], m.Result.Score, m.Result.Reason, red, green, ice, side[0]); err != nil {
-				return err
-			}
+		if former := p.MatchedWith; former != "" && former != side[1].ID {
+			changes = append(changes, ParticipantChange{ID: former, MatchedWith: strPtr(""), Match: &matchResult{}})
+			displaced = append(displaced, former)
 		}
-		return nil
-	})
-	if err != nil {
+	}
+	for _, side := range sides {
+		changes = append(changes, ParticipantChange{ID: side[0].ID, MatchedWith: strPtr(side[1].ID), Match: m.Result})
+	}
+	if err := r.store.Change(changes...); err != nil {
 		return nil, err
 	}
 	return displaced, nil
@@ -58,14 +49,14 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 // PartnerOf returns a Participant's partner and the assessment of their Match,
 // or nils when they are unmatched. Lists that cannot be decoded come back empty.
 func (r *Relationships) PartnerOf(id string) (*Participant, *matchResult, error) {
-	p, err := r.db.GetParticipant(id)
+	p, err := r.store.Get(id)
 	if err != nil {
 		return nil, nil, err
 	}
 	if p.MatchedWith == "" {
 		return nil, nil, nil
 	}
-	partner, err := r.db.GetParticipant(p.MatchedWith)
+	partner, err := r.store.Get(p.MatchedWith)
 	if err != nil {
 		return nil, nil, fmt.Errorf("partner of %s: %w", id, err)
 	}
@@ -88,56 +79,32 @@ func decodeList(raw string) []string {
 
 // UnpairAll breaks every Match at once, returning everyone to the Pool.
 func (r *Relationships) UnpairAll() error {
-	_, err := r.db.db.Exec(`
-		UPDATE participants SET ` + clearMatch + `
-		WHERE COALESCE(matched_with, '') != ''`)
-	if err == nil {
-		r.db.changed()
-	}
-	return err
-}
-
-// Remove deletes a Participant. Their partner, if any, is returned to the Pool.
-func (r *Relationships) Remove(id string) error {
-	return r.db.inTx(func(tx *sql.Tx) error {
-		partner, err := partnerOf(tx, id)
-		if err != nil {
-			return err
-		}
-		if partner != "" {
-			if err := unpair(tx, partner); err != nil {
-				return err
-			}
-		}
-		_, err = tx.Exec(`DELETE FROM participants WHERE id = ?`, id)
+	all, err := r.store.All()
+	if err != nil {
 		return err
-	})
-}
-
-// ErrParticipantNotFound is returned when a change names a Participant who does not exist.
-var ErrParticipantNotFound = errors.New("participant not found")
-
-func partnerOf(tx *sql.Tx, id string) (string, error) {
-	var partner string
-	if err := tx.QueryRow(`SELECT COALESCE(matched_with, '') FROM participants WHERE id = ?`, id).Scan(&partner); err != nil {
-		return "", fmt.Errorf("%w: %s", ErrParticipantNotFound, id)
 	}
-	return partner, nil
+	var changes []ParticipantChange
+	for _, p := range all {
+		if p.MatchedWith != "" {
+			changes = append(changes, ParticipantChange{ID: p.ID, MatchedWith: strPtr(""), Match: &matchResult{}})
+		}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	return r.store.Change(changes...)
 }
 
-// clearMatch is the SET clause that returns a Participant to the Pool.
-const clearMatch = `matched_with = '', compat_score = 0, compat_reason = '',
-		    red_flags = '[]', green_flags = '[]', icebreakers = '[]'`
-
-// unpair returns a Participant to the Pool, clearing their Match and its assessment.
-func unpair(tx *sql.Tx, id string) error {
-	_, err := tx.Exec(`UPDATE participants SET `+clearMatch+` WHERE id = ?`, id)
-	return err
-}
-
-func encodeAssessment(r *matchResult) (red, green, ice string) {
-	redJSON, _ := json.Marshal(nonNil(r.RedFlags))
-	greenJSON, _ := json.Marshal(nonNil(r.GreenFlags))
-	iceJSON, _ := json.Marshal(nonNil(r.Icebreakers))
-	return string(redJSON), string(greenJSON), string(iceJSON)
+// Remove deletes a Participant. Their partner, if any, is returned to the
+// Pool, in the same transaction as the deletion.
+func (r *Relationships) Remove(id string) error {
+	p, err := r.store.Get(id)
+	if err != nil {
+		return err
+	}
+	changes := []ParticipantChange{{ID: id, Delete: true}}
+	if p.MatchedWith != "" {
+		changes = append(changes, ParticipantChange{ID: p.MatchedWith, MatchedWith: strPtr(""), Match: &matchResult{}})
+	}
+	return r.store.Change(changes...)
 }

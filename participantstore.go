@@ -30,6 +30,10 @@ func NewParticipantStore(db *DB) *ParticipantStore {
 	return &ParticipantStore{db: db}
 }
 
+// ErrParticipantNotFound is returned when a read or change names a
+// Participant who does not exist.
+var ErrParticipantNotFound = errors.New("participant not found")
+
 // Get reads one Participant by ID.
 func (s *ParticipantStore) Get(id string) (*Participant, error) {
 	p, err := s.db.GetParticipant(id)
@@ -57,12 +61,15 @@ func (s *ParticipantStore) Create(id, handle, name string, hasGitHub bool) error
 	return nil
 }
 
-// ParticipantChange sets one Participant's typed Interests and/or Match
-// assessment; a nil field is left as it is.
+// ParticipantChange changes one Participant: nil (or false, for Delete)
+// leaves that part alone. Delete removes the Participant outright; every
+// other field is ignored when it is set.
 type ParticipantChange struct {
-	ID        string
-	Interests *Interests
-	Match     *matchResult // the Participant's own side of their current Match
+	ID          string
+	Delete      bool
+	Interests   *Interests
+	Match       *matchResult // the Participant's own side of their current Match
+	MatchedWith *string      // who they're matched with now; "" clears it
 }
 
 // Change applies one or more Participant changes in a single transaction,
@@ -72,6 +79,12 @@ type ParticipantChange struct {
 func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 	return s.db.inTx(func(tx *sql.Tx) error {
 		for _, c := range changes {
+			if c.Delete {
+				if err := execFound(tx, c.ID, `DELETE FROM participants WHERE id = ?`, c.ID); err != nil {
+					return err
+				}
+				continue
+			}
 			if c.Interests != nil {
 				encoded, _ := json.Marshal(c.Interests) // plain data: cannot fail
 				if err := execFound(tx, c.ID, `UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
@@ -84,6 +97,11 @@ func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 					UPDATE participants SET compat_score = ?, compat_reason = ?,
 					    red_flags = ?, green_flags = ?, icebreakers = ?
 					WHERE id = ?`, c.Match.Score, c.Match.Reason, red, green, ice, c.ID); err != nil {
+					return err
+				}
+			}
+			if c.MatchedWith != nil {
+				if err := execFound(tx, c.ID, `UPDATE participants SET matched_with = ? WHERE id = ?`, *c.MatchedWith, c.ID); err != nil {
 					return err
 				}
 			}
@@ -116,8 +134,11 @@ func notFoundOr(err error, id string) error {
 
 // decodeMatchResult decodes a Match assessment's score, reason and three
 // flag/icebreaker lists. If any list is undecodable, the whole assessment is
-// invalid — one rule, shared by the Participant table and the LLM cache, so
-// a legacy or corrupt row is rejected outright rather than half-served.
+// invalid, so a legacy or corrupt row is rejected outright rather than
+// half-served — the rule the LLM cache uses, since a bad cache entry simply
+// means the pair gets re-scored. A Participant's own current Match is read
+// more leniently (decodeList, in relationships.go): once a Match is made,
+// one corrupted flag list shouldn't make the Match itself unreadable.
 func decodeMatchResult(score int, reason, red, green, ice string) (*matchResult, error) {
 	r := &matchResult{Score: score, Reason: reason}
 	for _, f := range []struct {
@@ -134,8 +155,8 @@ func decodeMatchResult(score int, reason, red, green, ice string) (*matchResult,
 	return r, nil
 }
 
-// encodeMatchResult encodes a Match assessment's three lists for storage,
-// shared by the Participant table and the LLM cache.
+// encodeMatchResult encodes a Match assessment's three lists for storage.
+// Shared by the Participant table (Change) and the LLM cache (SetLLMCache).
 func encodeMatchResult(r *matchResult) (red, green, ice string) {
 	encode := func(list []string) string {
 		b, _ := json.Marshal(nonNil(list)) // a []string always marshals

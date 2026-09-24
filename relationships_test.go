@@ -149,6 +149,26 @@ func TestRelationshipsUnpairAll_ReturnsEveryoneToThePool(t *testing.T) {
 	}
 }
 
+func TestRelationshipsUnpairAll_OverABrokenDatabaseIsAFailure(t *testing.T) {
+	db := newTestDB(t)
+	rel := NewRelationships(db)
+	breakDB(db)
+
+	if err := rel.UnpairAll(); err == nil {
+		t.Error("want a failure reading who is matched")
+	}
+}
+
+func TestRelationshipsUnpairAll_WithNobodyMatchedIsANoOp(t *testing.T) {
+	db := newTestDB(t)
+	readyParticipants(t, db, "A", "B")
+	rel := NewRelationships(db)
+
+	if err := rel.UnpairAll(); err != nil {
+		t.Errorf("nobody matched should just succeed, got %v", err)
+	}
+}
+
 func TestRematch_RunningAlongsideANewcomersMatchingKeepsTheKeyInvariant(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", `{"score": 70, "reason": "fine"}`)
 	_, deps := newTestServer(t, llm, nil)
