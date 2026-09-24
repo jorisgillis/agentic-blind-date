@@ -2,7 +2,7 @@
 label: wayfinder:prototype
 title: Which radically different UI idea should we spec
 status: open
-assignee:
+assignee: claude
 blocked_by: []
 ---
 
