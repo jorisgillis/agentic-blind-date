@@ -78,7 +78,7 @@ CREATE TABLE llm_cache (
 - Cache operations are **best-effort**
 - If cache read fails, proceed with LLM call
 - If cache write fails, continue (don't block matching)
-- If LLM call fails, use `defaultMatchResult()` as before
+- If LLM call fails, use `defaultMatchResult()` for that run, but **do not cache it**: a failed assessment is retried on the next call, so a transient outage never pins the default result to a Pair (decided 2026-09-24)
 
 ## Consequences
 
