@@ -363,43 +363,36 @@ func (db *DB) ReadyCount() int {
 
 // LLM Cache methods
 
-// GetLLMCache returns the cached assessment for a pair key. Rows that cannot be
-// decoded (such as the old comma-joined format) count as a miss.
+// GetLLMCache returns the cached assessment for a pair key. Rows that cannot
+// be decoded (such as the old comma-joined format) count as a miss, using
+// the same codec (and the same rule for undecodable data) as the
+// Participant store's Match assessment.
 func (db *DB) GetLLMCache(pairKey string) (*matchResult, bool) {
-	var r matchResult
-	var red, green, ice string
+	var score int
+	var reason, red, green, ice string
 	err := db.db.QueryRow(
 		`SELECT score, reason, red_flags, green_flags, icebreakers FROM llm_cache WHERE pair_key = ?`,
 		pairKey,
-	).Scan(&r.Score, &r.Reason, &red, &green, &ice)
+	).Scan(&score, &reason, &red, &green, &ice)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			log.Printf("LLM cache read error for %s: %v", pairKey, err)
 		}
 		return nil, false
 	}
-	for _, f := range []struct {
-		raw string
-		dst *[]string
-	}{{red, &r.RedFlags}, {green, &r.GreenFlags}, {ice, &r.Icebreakers}} {
-		if err := json.Unmarshal([]byte(f.raw), f.dst); err != nil {
-			return nil, false
-		}
-		if *f.dst == nil {
-			*f.dst = []string{}
-		}
+	r, err := decodeMatchResult(score, reason, red, green, ice)
+	if err != nil {
+		return nil, false
 	}
-	return &r, true
+	return r, true
 }
 
 // SetLLMCache stores an assessment, with its lists JSON-encoded.
 func (db *DB) SetLLMCache(pairKey string, r *matchResult) {
-	red, _ := json.Marshal(nonNil(r.RedFlags))
-	green, _ := json.Marshal(nonNil(r.GreenFlags))
-	ice, _ := json.Marshal(nonNil(r.Icebreakers))
+	red, green, ice := encodeMatchResult(r)
 	_, err := db.db.Exec(
 		`INSERT OR REPLACE INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES (?, ?, ?, ?, ?, ?)`,
-		pairKey, r.Score, r.Reason, string(red), string(green), string(ice),
+		pairKey, r.Score, r.Reason, red, green, ice,
 	)
 	if err != nil {
 		log.Printf("LLM cache write error for %s: %v", pairKey, err)
