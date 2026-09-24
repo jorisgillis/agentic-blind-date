@@ -201,6 +201,39 @@ func TestExplore_UnknownParticipantsAndFailedAssessments(t *testing.T) {
 	}
 }
 
+// TestExplore_OnlyBetweenTwoReadyParticipants covers #47: Explore works
+// between any two different ready Participants, but exploring yourself or a
+// Participant who isn't ready is refused without ever calling the LLM or GitHub.
+func TestExplore_OnlyBetweenTwoReadyParticipants(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
+	gh := newFakeGitHub()
+	srv, deps := newTestServer(t, llm, gh)
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+	seed(t, deps.db, "c", "C", "interviewing")
+
+	if resp := get(t, srv, "/user/explore/a/a"); resp.StatusCode != 400 {
+		t.Errorf("exploring yourself: want 400, got %d", resp.StatusCode)
+	}
+	if resp := get(t, srv, "/user/explore/a/c"); resp.StatusCode != 400 {
+		t.Errorf("other not ready: want 400, got %d", resp.StatusCode)
+	}
+	if resp := get(t, srv, "/user/explore/c/a"); resp.StatusCode != 400 {
+		t.Errorf("me not ready: want 400, got %d", resp.StatusCode)
+	}
+	if calls := llm.callsMatching("matchmaker"); calls != 0 {
+		t.Errorf("refused explores should not call the LLM, got %d calls", calls)
+	}
+	if lookups := gh.followLookups(); lookups != 0 {
+		t.Errorf("refused explores should not call GitHub, got %d lookups", lookups)
+	}
+
+	body := readBody(t, get(t, srv, "/user/explore/a/b"))
+	if !strings.Contains(body, "80%") {
+		t.Errorf("explore page: want the score, got %q", body)
+	}
+}
+
 func TestBigScreen_GraphHasMatchedAndPotentialEdges(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")

@@ -323,6 +323,10 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /user/explore/{myId}/{otherId}
+//
+// Explore is between two different ready Participants only (see CONTEXT.md):
+// an unknown Participant is 404, and exploring yourself or a Participant who
+// isn't ready is 400 — neither calls the LLM or GitHub.
 func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 	me, err := h.db.GetParticipant(r.PathValue("myId"))
 	if err != nil {
@@ -332,6 +336,14 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 	other, err := h.db.GetParticipant(r.PathValue("otherId"))
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if me.ID == other.ID {
+		http.Error(w, "cannot explore yourself", 400)
+		return
+	}
+	if me.PipelineStep != StepReady || other.PipelineStep != StepReady {
+		http.Error(w, "both participants must be ready", 400)
 		return
 	}
 
