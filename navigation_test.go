@@ -5,7 +5,7 @@ import "testing"
 func TestDestination_EveryParticipantHasOnePlaceToBe(t *testing.T) {
 	questions := []Question{{ID: "q1"}, {ID: "q2"}}
 	for name, tc := range map[string]struct {
-		step     string
+		step     Step
 		answers  map[string]string
 		matched  bool
 		revealed bool

@@ -229,7 +229,7 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("HX-Redirect", dest)
 		return
 	}
-	if qd := h.interview.Next(p); qd != nil && p.PipelineStep == "interviewing" {
+	if qd := h.interview.Next(p); qd != nil && p.PipelineStep == StepInterviewing {
 		h.render(w, "fragment-question.html", qd)
 		return
 	}
@@ -244,7 +244,7 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if p.PipelineStep != "interviewing" {
+	if p.PipelineStep != StepInterviewing {
 		w.Header().Set("HX-Redirect", h.destination(p))
 		return
 	}
@@ -413,7 +413,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			PersonaName: p.PersonaName,
 			Color:       p.PersonaColor,
 			Symbol:      p.PersonaSymbol,
-			Step:        p.PipelineStep,
+			Step:        string(p.PipelineStep),
 			Matched:     p.IsMatched(),
 			Handle:      p.DisplayHandle(),
 		})

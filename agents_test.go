@@ -308,7 +308,7 @@ func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThe
 		db.CreateParticipant(id, id, id, true)
 		db.SetProfile(id, &GitHubProfile{Login: id})
 		db.SetPersona(id, id, "")
-		db.UpdatePipelineStep(id, "ready")
+		forceStep(db, id, "ready")
 	}
 	NewRelationships(db).Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40, Reason: "meh"}})
 

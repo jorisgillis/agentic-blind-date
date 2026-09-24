@@ -417,11 +417,11 @@ func (m *Matcher) candidatePairs(participants []*Participant) [][2]*Participant 
 	var pairs [][2]*Participant
 	seen := map[string]bool{}
 	for _, p := range participants {
-		if p.PipelineStep != "ready" {
+		if p.PipelineStep != StepReady {
 			continue
 		}
 		for _, candidate := range m.topCandidates(p, participants) {
-			if candidate.PipelineStep != "ready" || seen[pairKey(p, candidate)] {
+			if candidate.PipelineStep != StepReady || seen[pairKey(p, candidate)] {
 				continue
 			}
 			seen[pairKey(p, candidate)] = true

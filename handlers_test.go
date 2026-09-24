@@ -500,7 +500,7 @@ func TestSubmitAnswer_WrongPipelineStep(t *testing.T) {
 
 	// Create a participant NOT in interviewing state
 	db.CreateParticipant("id-1", "user1", "User 1", true)
-	db.UpdatePipelineStep("id-1", "ready")
+	forceStep(db, "id-1", "ready")
 
 	// Submit answer
 	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",

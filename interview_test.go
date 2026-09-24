@@ -20,7 +20,7 @@ func participantInInterview(t *testing.T, db *DB, questions []Question) *Partici
 	if err := db.SetQuestions("p-1", questions); err != nil {
 		t.Fatal(err)
 	}
-	db.UpdatePipelineStep("p-1", "interviewing")
+	forceStep(db, "p-1", "interviewing")
 	p, err := db.GetParticipant("p-1")
 	if err != nil {
 		t.Fatal(err)

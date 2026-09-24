@@ -64,20 +64,6 @@ func TestCreateParticipant_duplicate(t *testing.T) {
 	}
 }
 
-func TestUpdatePipelineStep(t *testing.T) {
-	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "", true)
-
-	if err := db.UpdatePipelineStep("id-1", "interviewing"); err != nil {
-		t.Fatalf("UpdatePipelineStep: %v", err)
-	}
-
-	p, _ := db.GetParticipant("id-1")
-	if p.PipelineStep != "interviewing" {
-		t.Errorf("want interviewing, got %s", p.PipelineStep)
-	}
-}
-
 func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 	db := testDB(t)
 	db.CreateParticipant("id-1", "octocat", "", true)
@@ -121,7 +107,7 @@ func TestGetAllByStep(t *testing.T) {
 	db := testDB(t)
 	db.CreateParticipant("id-1", "alice", "", true)
 	db.CreateParticipant("id-2", "bob", "", true)
-	db.UpdatePipelineStep("id-1", "ready")
+	forceStep(db, "id-1", "ready")
 
 	ready, err := db.GetAllByStep("ready")
 	if err != nil {
@@ -194,8 +180,8 @@ func TestCounts(t *testing.T) {
 	db.CreateParticipant("id-1", "alice", "", true)
 	db.CreateParticipant("id-2", "bob", "", true)
 	db.CreateParticipant("id-3", "carol", "", true)
-	db.UpdatePipelineStep("id-1", "ready")
-	db.UpdatePipelineStep("id-2", "ready")
+	forceStep(db, "id-1", "ready")
+	forceStep(db, "id-2", "ready")
 	NewRelationships(db).Pair(Match{A: &Participant{ID: "id-1"}, B: &Participant{ID: "id-2"}, Result: &matchResult{}})
 
 	if n := db.ParticipantCount(); n != 3 {

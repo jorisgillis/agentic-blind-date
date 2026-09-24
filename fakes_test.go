@@ -204,6 +204,11 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	return &testSrv{URL: "http://test", h: buildMux(h)}, &testDeps{db: db, llm: llm, github: gh, agents: agents}
 }
 
+// forceStep puts a Participant at any Pipeline Step, bypassing the guarded transitions (test setup only).
+func forceStep(db *DB, id string, step Step) {
+	db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
+}
+
 // eventually polls cond until it holds or the deadline passes.
 func eventually(t *testing.T, what string, cond func() bool) {
 	t.Helper()

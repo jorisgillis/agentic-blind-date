@@ -79,14 +79,21 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 		return
 	}
 
-	a.db.UpdatePipelineStep(participantID, "creating_persona")
+	// Only one final setup per Participant: a second submit of the last answer stops here.
+	if err := a.db.AdvanceStep(participantID, StepCreatingPersona); err != nil {
+		log.Printf("RunFinalSetup: %v", err)
+		return
+	}
 
 	persona := a.personas.Create(p)
 	interests := interestsOf(p.Profile)
 
 	a.db.SetPersona(participantID, persona.Name, persona.Tagline)
 	a.db.UpdateInterests(participantID, interests)
-	a.db.UpdatePipelineStep(participantID, "ready")
+	if err := a.db.AdvanceStep(participantID, StepReady); err != nil {
+		log.Printf("RunFinalSetup: %v", err)
+		return
+	}
 	a.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))
 
 	// Continuous Matching: every Participant who becomes ready is matched right away.
@@ -131,7 +138,7 @@ func (a *AgentPipeline) Rematch() error {
 	}
 	a.db.LogActivity("🔮 The matchmaker agents are at work...")
 
-	participants, err := a.db.GetAllByStep("ready")
+	participants, err := a.db.GetAllByStep(StepReady)
 	if err != nil {
 		return err
 	}
@@ -197,7 +204,7 @@ func (a *AgentPipeline) matchOne(id string, inChain map[string]bool) ([]string, 
 		case p.ID == id:
 			newcomer = p
 		case inChain[p.ID]:
-		case p.PipelineStep == "ready":
+		case p.PipelineStep == StepReady:
 			others = append(others, p)
 		}
 	}

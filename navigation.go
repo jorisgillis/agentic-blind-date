@@ -10,11 +10,11 @@ package main
 //   - wait page: otherwise (persona being created, ready, or matched before the Reveal)
 func destination(p *Participant, revealed bool) string {
 	switch {
-	case p.PipelineStep == "fetching_github":
+	case p.PipelineStep == StepFetchingGitHub:
 		return "/user/onboard/" + p.ID
-	case p.PipelineStep == "interviewing" && hasOpenQuestions(p):
+	case p.PipelineStep == StepInterviewing && hasOpenQuestions(p):
 		return "/user/onboard/" + p.ID
-	case p.PipelineStep == "ready" && p.IsMatched() && revealed:
+	case p.PipelineStep == StepReady && p.IsMatched() && revealed:
 		return "/user/match/" + p.ID
 	default:
 		return "/user/wait/" + p.ID

@@ -29,7 +29,7 @@ The automated process that each participant goes through:
 4. **Ready**: Participant is ready for matching
 
 ### Pipeline Step
-The current stage of a participant in the pipeline. Valid values:
+The current stage of a participant in the pipeline. Steps only move forward, one at a time (only an event Reset starts over), so each step is entered at most once. Valid values:
 - `fetching_github`
 - `interviewing`
 - `creating_persona`

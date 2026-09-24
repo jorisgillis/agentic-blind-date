@@ -24,7 +24,7 @@ type Participant struct {
 	Questions      []Question
 	Answers        map[string]string
 	Interests      map[string]interface{}
-	PipelineStep   string
+	PipelineStep   Step
 	MatchedWith    string
 	CompatScore    int
 	CompatReason   string
@@ -246,12 +246,6 @@ func (db *DB) GetParticipantByHandle(handle string) (*Participant, error) {
 	return scanParticipant(row)
 }
 
-func (db *DB) UpdatePipelineStep(id, step string) error {
-	_, err := db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
-	return err
-}
-
-// SetProfile saves the Participant's profile (GitHub data and ExtraAnswers).
 func (db *DB) SetProfile(id string, profile *GitHubProfile) error {
 	profileJSON, err := json.Marshal(profile)
 	if err != nil {
@@ -299,7 +293,7 @@ func (db *DB) GetAllParticipants() ([]*Participant, error) {
 	return db.queryParticipants(`ORDER BY created_at`)
 }
 
-func (db *DB) GetAllByStep(step string) ([]*Participant, error) {
+func (db *DB) GetAllByStep(step Step) ([]*Participant, error) {
 	return db.queryParticipants(`WHERE pipeline_step = ? ORDER BY created_at`, step)
 }
 
@@ -365,7 +359,7 @@ func (db *DB) ParticipantCount() int {
 
 func (db *DB) ReadyCount() int {
 	var n int
-	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step = 'ready'`).Scan(&n)
+	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step = ?`, StepReady).Scan(&n)
 	return n
 }
 

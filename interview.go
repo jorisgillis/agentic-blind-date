@@ -55,7 +55,7 @@ func (iv *Interview) Start(p *Participant, profile *GitHubProfile) error {
 	if err := iv.db.SetQuestions(participantID, questions); err != nil {
 		return err
 	}
-	return iv.db.UpdatePipelineStep(participantID, "interviewing")
+	return iv.db.AdvanceStep(participantID, StepInterviewing)
 }
 
 func (iv *Interview) questionSet(profile *GitHubProfile, githubUser bool) []Question {

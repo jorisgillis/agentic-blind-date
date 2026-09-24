@@ -11,7 +11,7 @@ import (
 )
 
 // seed creates a Participant with a persona, profile and answers in the given pipeline step.
-func seed(t *testing.T, db *DB, id, persona, step string) *Participant {
+func seed(t *testing.T, db *DB, id, persona string, step Step) *Participant {
 	t.Helper()
 	if err := db.CreateParticipant(id, id, id, true); err != nil {
 		t.Fatal(err)
@@ -23,7 +23,7 @@ func seed(t *testing.T, db *DB, id, persona, step string) *Participant {
 	if step != "interviewing" && step != "fetching_github" {
 		db.UpdateAnswers(id, map[string]string{"fixed_0": "Tabs"})
 	}
-	db.UpdatePipelineStep(id, step)
+	forceStep(db, id, step)
 	return reload(t, db, id)
 }
 
@@ -380,12 +380,12 @@ func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
 	deps.db.SetProfile("ada", &GitHubProfile{})
 	deps.db.SetPersona("ada", "The Analyst", "Computes")
-	deps.db.UpdatePipelineStep("ada", "ready")
+	forceStep(deps.db, "ada", "ready")
 	seed(t, deps.db, "octo", "The Gopher", "ready")
 	pair(t, deps.db, "ada", "octo")
 	deps.db.CreateParticipant("zed", "no-github-5678efgh", "Zed", false)
 	deps.db.SetQuestions("zed", ExtraQuestions)
-	deps.db.UpdatePipelineStep("zed", "interviewing")
+	forceStep(deps.db, "zed", "interviewing")
 
 	for _, path := range []string{"/user/onboard/zed", "/user/match/ada", "/user/match/octo", "/data", "/bigscreen/graph-data"} {
 		resp := get(t, srv, path)
