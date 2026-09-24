@@ -320,8 +320,9 @@ func (m *Matcher) MatchPool(participants []*Participant) []Match {
 // the best LLM-assessed of the newcomer's top candidates. When everyone is
 // matched, the newcomer takes over the Match of the candidate whose assessment
 // with the newcomer beats that candidate's current Match score, preferring the
-// highest assessment. The returned Match's B may still be matched (B.MatchedWith);
-// storing it breaks that Match. Returns nil when there is no suitable partner.
+// highest assessment. The returned Match's B may still be matched; storing it
+// through the Relationship module breaks that Match. Returns nil when there is
+// no suitable partner.
 func (m *Matcher) MatchNewcomer(newcomer *Participant, others []*Participant) *Match {
 	var unmatched, matched []*Participant
 	for _, p := range others {

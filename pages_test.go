@@ -27,8 +27,10 @@ func seed(t *testing.T, db *DB, id, persona, step string) *Participant {
 
 func pair(t *testing.T, db *DB, a, b string) {
 	t.Helper()
-	db.SetMatched(a, b, 91, "Both love tabs", `["hogs the whiteboard"]`, `["tabs"]`, `["Why tabs?"]`)
-	db.SetMatched(b, a, 91, "Both love tabs", `["hogs the whiteboard"]`, `["tabs"]`, `["Why tabs?"]`)
+	result := &matchResult{Score: 91, Reason: "Both love tabs", RedFlags: []string{"hogs the whiteboard"}, GreenFlags: []string{"tabs"}, Icebreakers: []string{"Why tabs?"}}
+	if _, err := NewRelationships(db).Pair(Match{A: reload(t, db, a), B: reload(t, db, b), Result: result}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func withCookie(t *testing.T, srv *testSrv, path, id string) *http.Response {

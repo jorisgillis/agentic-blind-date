@@ -62,7 +62,8 @@ func main() {
 
 	matcher := NewMatcher(db, github, mistral)
 	interview := NewInterview(db, mistral)
-	agents := NewAgentPipeline(db, github, mistral, matcher, interview)
+	relations := NewRelationships(db)
+	agents := NewAgentPipeline(db, github, mistral, matcher, interview, relations)
 
 	h := NewHandler(db, agents, interview, matcher)
 

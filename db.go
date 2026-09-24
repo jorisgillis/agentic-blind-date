@@ -309,14 +309,6 @@ func (db *DB) UpdateAnswers(id string, answers map[string]string) error {
 	return err
 }
 
-func (db *DB) SetMatched(id, matchedWith string, score int, reason, redFlags, greenFlags, icebreakers string) error {
-	_, err := db.db.Exec(`
-		UPDATE participants SET matched_with = ?, compat_score = ?, compat_reason = ?,
-		    red_flags = ?, green_flags = ?, icebreakers = ?, pipeline_step = 'matched'
-		WHERE id = ?`, matchedWith, score, reason, redFlags, greenFlags, icebreakers, id)
-	return err
-}
-
 func (db *DB) GetAllParticipants() ([]*Participant, error) {
 	return db.queryParticipants(`ORDER BY created_at`)
 }
@@ -342,11 +334,6 @@ func (db *DB) queryParticipants(clause string, args ...any) ([]*Participant, err
 		out = append(out, p)
 	}
 	return out, rows.Err()
-}
-
-func (db *DB) UnmatchParticipant(id string) error {
-	_, err := db.db.Exec(`UPDATE participants SET matched_with='', compat_score=0, compat_reason='', pipeline_step='ready' WHERE id=?`, id)
-	return err
 }
 
 func (db *DB) GetPhase() (string, error) {

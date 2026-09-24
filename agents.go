@@ -17,17 +17,19 @@ type AgentPipeline struct {
 	llm       LLM
 	matcher   *Matcher
 	interview *Interview
+	relations *Relationships
 	matchMu   sync.Mutex // Serializes matching operations to prevent race conditions
 }
 
 // NewAgentPipeline creates a new AgentPipeline with the given dependencies.
-func NewAgentPipeline(db *DB, github GitHubAPI, llm LLM, matcher *Matcher, interview *Interview) *AgentPipeline {
+func NewAgentPipeline(db *DB, github GitHubAPI, llm LLM, matcher *Matcher, interview *Interview, relations *Relationships) *AgentPipeline {
 	return &AgentPipeline{
 		db:        db,
 		github:    github,
 		llm:       llm,
 		matcher:   matcher,
 		interview: interview,
+		relations: relations,
 	}
 }
 
@@ -250,7 +252,7 @@ func (a *AgentPipeline) RunMatching() error {
 	}
 
 	for _, m := range a.matcher.MatchPool(participants) {
-		if err := a.storeMatch(m); err != nil {
+		if _, err := a.storeMatch(m); err != nil {
 			return err
 		}
 	}
@@ -259,19 +261,15 @@ func (a *AgentPipeline) RunMatching() error {
 	return nil
 }
 
-// storeMatch records a Match on both Participants.
-func (a *AgentPipeline) storeMatch(m Match) error {
-	result := m.Result
-	redJSON, _ := json.Marshal(nonNil(result.RedFlags))
-	greenJSON, _ := json.Marshal(nonNil(result.GreenFlags))
-	iceJSON, _ := json.Marshal(nonNil(result.Icebreakers))
-	for _, side := range [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}} {
-		if err := a.db.SetMatched(side[0], side[1], result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON)); err != nil {
-			return fmt.Errorf("storing match %s ↔ %s: %w", m.A.ID, m.B.ID, err)
-		}
+// storeMatch records a Match through the Relationship module and returns the
+// Participants it displaced from earlier Matches.
+func (a *AgentPipeline) storeMatch(m Match) ([]string, error) {
+	displaced, err := a.relations.Pair(m)
+	if err != nil {
+		return nil, fmt.Errorf("storing match %s ↔ %s: %w", m.A.ID, m.B.ID, err)
 	}
-	a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", m.A.PersonaName, m.B.PersonaName, result.Score))
-	return nil
+	a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", m.A.PersonaName, m.B.PersonaName, m.Result.Score))
+	return displaced, nil
 }
 
 // RunContinuousMatching matches a Participant who just became ready against the
@@ -298,15 +296,14 @@ func (a *AgentPipeline) RunContinuousMatching(newcomer *Participant) error {
 		a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newcomer.PersonaName))
 		return nil
 	}
-	if former := m.B.MatchedWith; former != "" {
-		for _, id := range []string{former, m.B.ID} {
-			if err := a.db.UnmatchParticipant(id); err != nil {
-				return fmt.Errorf("breaking match of %s: %w", id, err)
-			}
-		}
-		a.db.LogActivity(fmt.Sprintf("🔄 Breaking %s's previous match to accommodate %s", m.B.PersonaName, newcomer.PersonaName))
+	displaced, err := a.storeMatch(*m)
+	if err != nil {
+		return err
 	}
-	return a.storeMatch(*m)
+	if len(displaced) > 0 {
+		a.db.LogActivity(fmt.Sprintf("🔄 %s took over %s's previous match", newcomer.PersonaName, m.B.PersonaName))
+	}
+	return nil
 }
 
 func extractJSON(s string) string {

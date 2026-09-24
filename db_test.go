@@ -117,31 +117,6 @@ func TestUpdateAnswers(t *testing.T) {
 	}
 }
 
-func TestSetMatched(t *testing.T) {
-	db := testDB(t)
-	db.CreateParticipant("id-1", "alice", "")
-	db.CreateParticipant("id-2", "bob", "")
-
-	err := db.SetMatched("id-1", "id-2", 87, "Great combo!", `["flag1"]`, `["flag2"]`, `["starter"]`)
-	if err != nil {
-		t.Fatalf("SetMatched: %v", err)
-	}
-
-	p, _ := db.GetParticipant("id-1")
-	if p.MatchedWith != "id-2" {
-		t.Errorf("MatchedWith: want id-2, got %s", p.MatchedWith)
-	}
-	if p.CompatScore != 87 {
-		t.Errorf("CompatScore: want 87, got %d", p.CompatScore)
-	}
-	if p.CompatReason != "Great combo!" {
-		t.Errorf("CompatReason: want 'Great combo!', got %s", p.CompatReason)
-	}
-	if p.PipelineStep != "matched" {
-		t.Errorf("PipelineStep: want matched, got %s", p.PipelineStep)
-	}
-}
-
 func TestGetAllByStep(t *testing.T) {
 	db := testDB(t)
 	db.CreateParticipant("id-1", "alice", "")
@@ -263,37 +238,6 @@ func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
 	}
 }
 
-func TestUnmatchAll(t *testing.T) {
-	db := testDB(t)
-
-	// Create participants
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.CreateParticipant("id-2", "user2", "User 2")
-	db.CreateParticipant("id-3", "user3", "User 3")
-
-	// Match them
-	db.SetMatched("id-1", "id-2", 0, "", "", "", "")
-	db.SetMatched("id-3", "", 0, "", "", "", "")
-
-	// Unmatch all
-	db.UnmatchAll()
-
-	// Verify all are unmatched
-	p1, _ := db.GetParticipant("id-1")
-	p2, _ := db.GetParticipant("id-2")
-	p3, _ := db.GetParticipant("id-3")
-
-	if p1.MatchedWith != "" {
-		t.Errorf("expected p1 to be unmatched, got %s", p1.MatchedWith)
-	}
-	if p2.MatchedWith != "" {
-		t.Errorf("expected p2 to be unmatched, got %s", p2.MatchedWith)
-	}
-	if p3.MatchedWith != "" {
-		t.Errorf("expected p3 to be unmatched, got %s", p3.MatchedWith)
-	}
-}
-
 func TestDeleteParticipant(t *testing.T) {
 	db := testDB(t)
 
@@ -333,34 +277,6 @@ func TestUpdateInterests(t *testing.T) {
 	}
 	if len(p.Interests) != 2 {
 		t.Errorf("expected 2 interest categories, got %d", len(p.Interests))
-	}
-}
-
-func TestUnmatchParticipant(t *testing.T) {
-	db := testDB(t)
-
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.CreateParticipant("id-2", "user2", "User 2")
-	db.SetMatched("id-1", "id-2", 0, "", "", "", "")
-
-	// Verify they are matched
-	p1, _ := db.GetParticipant("id-1")
-	if p1.MatchedWith != "id-2" {
-		t.Fatalf("expected id-1 to be matched with id-2, got %s", p1.MatchedWith)
-	}
-
-	// Unmatch id-1
-	db.UnmatchParticipant("id-1")
-
-	// Verify both are unmatched
-	p1, _ = db.GetParticipant("id-1")
-	p2, _ := db.GetParticipant("id-2")
-
-	if p1.MatchedWith != "" {
-		t.Errorf("expected id-1 to be unmatched, got %s", p1.MatchedWith)
-	}
-	if p2.MatchedWith != "" {
-		t.Errorf("expected id-2 to be unmatched, got %s", p2.MatchedWith)
 	}
 }
 

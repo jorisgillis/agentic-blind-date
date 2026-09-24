@@ -198,6 +198,8 @@ Responsible for event management. Includes:
 
 A participant can only be matched with one other participant at a time. When a new match is formed, any existing match for either participant is broken.
 
+The **Relationship module** owns Relationship State and enforces the Key Invariant: every change to who is matched with whom (pairing, taking over a Match, unpairing) goes through it as one transaction. A partner left behind by a take-over is returned to the Pool.
+
 ## Glossary
 
 | Term | Definition |

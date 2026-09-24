@@ -514,15 +514,14 @@ func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThe
 	db := newTestDB(t)
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70}))
 	gh := newFakeGitHub()
-	pipeline := NewAgentPipeline(db, gh, llm, NewMatcher(db, gh, llm), NewInterview(db, llm))
+	pipeline := NewAgentPipeline(db, gh, llm, NewMatcher(db, gh, llm), NewInterview(db, llm), NewRelationships(db))
 	for _, id := range []string{"A", "B", "N"} {
 		db.CreateParticipant(id, id, id)
 		db.SetProfile(id, &GitHubProfile{Login: id})
 		db.SetPersona(id, id, "")
 		db.UpdatePipelineStep(id, "ready")
 	}
-	db.SetMatched("A", "B", 40, "meh", "[]", "[]", "[]")
-	db.SetMatched("B", "A", 40, "meh", "[]", "[]", "[]")
+	NewRelationships(db).Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40, Reason: "meh"}})
 
 	if err := pipeline.RunContinuousMatching(reload(t, db, "N")); err != nil {
 		t.Fatal(err)
