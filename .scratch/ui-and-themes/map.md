@@ -23,7 +23,7 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
   - The first build ships three Themes.
   - UI concepts may go beyond the current stack (Go templates, HTMX, Tailwind via CDN). The chosen concept's spec records the stack decision.
   - Concepts are judged on these must-haves: fun and memorable, gets Participants to walk up to each other, and keeps anonymity until the Reveal. Tie-breakers: works on any phone in a noisy room, and buildable in a few days.
-- **Specs and build tickets on GitHub:** "Spec: Themes" (#36), with its build tickets #40–#44 (the token set, the three looks and the Tailwind build step are decided, so they are `ready-for-agent`).
+- **Specs and build tickets on GitHub:** "Spec: Themes" (#36), with its build tickets #40–#44 (the token set, the three looks and the Tailwind build step are decided, so they are `ready-for-agent`). "Spec: Game Show event format" (#75), with its 10 build tickets.
 - **Skills:** research, prototype, grilling + domain-modeling, tdd, codebase-design (for the spec's modules).
 
 ## Decisions so far
@@ -42,7 +42,7 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
 
 ## Not yet specified
 
-Nothing: every decision toward the destination is made. What remains is building ("Build the Themes", GitHub #40–#44) and publishing the Game Show spec from the resolution of "Spec the chosen UI concept".
+Nothing: every decision toward the destination is made. What remains is building ("Build the Themes", GitHub #40–#44) and building the Game Show from "Spec: Game Show event format" (#75). The map's destination is reached.
 
 ## Out of scope
 
