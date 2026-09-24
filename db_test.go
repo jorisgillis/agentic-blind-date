@@ -238,28 +238,6 @@ func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
 	}
 }
 
-func TestDeleteParticipant(t *testing.T) {
-	db := testDB(t)
-
-	// Create participant
-	db.CreateParticipant("id-to-delete", "user", "User")
-
-	// Verify it exists
-	_, err := db.GetParticipant("id-to-delete")
-	if err != nil {
-		t.Fatalf("expected participant to exist: %v", err)
-	}
-
-	// Delete it
-	db.DeleteParticipant("id-to-delete")
-
-	// Verify it's gone
-	_, err = db.GetParticipant("id-to-delete")
-	if err == nil {
-		t.Error("expected participant to be deleted")
-	}
-}
-
 func TestUpdateInterests(t *testing.T) {
 	db := testDB(t)
 	db.CreateParticipant("id-1", "user1", "User 1")

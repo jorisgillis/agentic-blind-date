@@ -46,7 +46,7 @@ func NewAgentPipeline(db *DB, github GitHubAPI, llm LLM, matcher *Matcher, inter
 
 // HTTP handlers
 func NewInterview(db *DB, llm LLM) *Interview
-func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Matcher) *Handler
+func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Matcher, relations *Relationships) *Handler
 ```
 
 #### Composition Root
@@ -74,7 +74,7 @@ func main() {
     interview := NewInterview(db, mistral)
     relations := NewRelationships(db)
     agents := NewAgentPipeline(db, github, mistral, matcher, interview, relations)
-    h := NewHandler(db, agents, interview, matcher)
+    h := NewHandler(db, agents, interview, matcher, relations)
 
     // Start server
     log.Fatal(http.ListenAndServe(addr, buildMux(h)))

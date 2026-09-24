@@ -111,3 +111,22 @@ func TestRelationshipsPair_AFailedPairLeavesNothingHalfWritten(t *testing.T) {
 	}
 	assertInvariant(t, db)
 }
+
+func TestRelationshipsRemove_FreesThePartner(t *testing.T) {
+	db := newTestDB(t)
+	ps := readyParticipants(t, db, "A", "B")
+	rel := NewRelationships(db)
+	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+
+	if err := rel.Remove("A"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.GetParticipant("A"); err == nil {
+		t.Error("A should be gone")
+	}
+	if b := reload(t, db, "B"); b.MatchedWith != "" || b.PipelineStep != "ready" {
+		t.Errorf("B should be back in the Pool, got step %s matched with %q", b.PipelineStep, b.MatchedWith)
+	}
+	assertInvariant(t, db)
+}

@@ -57,6 +57,29 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 	return displaced, tx.Commit()
 }
 
+// Remove deletes a Participant. Their partner, if any, is returned to the Pool.
+func (r *Relationships) Remove(id string) error {
+	tx, err := r.db.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	partner, err := partnerOf(tx, id)
+	if err != nil {
+		return err
+	}
+	if partner != "" {
+		if err := unpair(tx, partner); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM participants WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func partnerOf(tx *sql.Tx, id string) (string, error) {
 	var partner string
 	err := tx.QueryRow(`SELECT COALESCE(matched_with, '') FROM participants WHERE id = ?`, id).Scan(&partner)

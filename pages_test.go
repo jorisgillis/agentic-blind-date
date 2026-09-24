@@ -333,3 +333,29 @@ func TestScreenStream_PushesTheGraphRightAway(t *testing.T) {
 		t.Errorf("want an immediate graph event, got %q", body)
 	}
 }
+
+func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed")
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	seed(t, deps.db, "b", "The Crab", "ready")
+	pair(t, deps.db, "a", "b")
+
+	req, _ := http.NewRequest("DELETE", srv.URL+"/data/participant/a", nil)
+	if resp, err := srv.Client().Do(req); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("delete: %v %v", resp, err)
+	}
+
+	if loc := get(t, srv, "/user/match/b").Header.Get("Location"); loc != "/user/wait/b" {
+		t.Errorf("the partner's Match page should be gone, got redirect %q", loc)
+	}
+	var graph struct {
+		Edges []graphEdge `json:"edges"`
+	}
+	json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &graph)
+	for _, e := range graph.Edges {
+		if e.Source == "a" || e.Target == "a" {
+			t.Errorf("Big Screen still has an edge to the deleted Participant: %+v", e)
+		}
+	}
+}

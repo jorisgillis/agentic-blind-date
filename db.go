@@ -144,11 +144,6 @@ func (db *DB) UnmatchAll() error {
 	return err
 }
 
-func (db *DB) DeleteParticipant(id string) error {
-	_, err := db.db.Exec(`DELETE FROM participants WHERE id=?`, id)
-	return err
-}
-
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {
 	p := &Participant{}
 	var profileJSON, questionsJSON, answersJSON, interestsJSON string

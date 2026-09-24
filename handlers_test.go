@@ -194,7 +194,8 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	llm := newFakeLLM()
 	iv := NewInterview(db, llm)
 	m := NewMatcher(db, gh, llm)
-	h := NewHandler(db, NewAgentPipeline(db, gh, llm, m, iv, NewRelationships(db)), iv, m)
+	rel := NewRelationships(db)
+	h := NewHandler(db, NewAgentPipeline(db, gh, llm, m, iv, rel), iv, m, rel)
 
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()

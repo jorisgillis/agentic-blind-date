@@ -74,12 +74,13 @@ type Handler struct {
 	agents    *AgentPipeline
 	interview *Interview
 	matcher   *Matcher
+	relations *Relationships
 	tmpl      *template.Template
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-// It initializes the templates with the provided database, AgentPipeline, Interview module and Matcher.
-func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Matcher) *Handler {
+// It initializes the templates with the provided database, AgentPipeline, Interview module, Matcher and Relationship module.
+func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Matcher, relations *Relationships) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -118,7 +119,7 @@ func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Ma
 		},
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
-	return &Handler{db: db, agents: agents, interview: interview, matcher: matcher, tmpl: tmpl}
+	return &Handler{db: db, agents: agents, interview: interview, matcher: matcher, relations: relations, tmpl: tmpl}
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
@@ -674,7 +675,7 @@ func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 // DELETE /data/participant/{id}
 func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.db.DeleteParticipant(id); err != nil {
+	if err := h.relations.Remove(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
