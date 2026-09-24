@@ -92,6 +92,9 @@ The network visualization shown on the big screen, consisting of:
   - Matched edges: Actual matches (solid lines)
   - Potential edges: Top-3 heuristic connections (dashed lines)
 
+### Theme
+A named look for the application: colours, typography, shape, motion and sound. Each Participant chooses a Theme for their own phone, and the choice stays with that device. The admin chooses the Theme of the Big Screen. Persona colours are the same in every Theme, because they identify Participants in the room.
+
 ### Explore
 A Participant looking at their compatibility with another Participant who is not their Match. Any two different **ready** Participants may explore each other at any time. The page shows personas only, so before the Reveal it never reveals who either of them is.
 
