@@ -150,8 +150,10 @@ Social connection between participants on GitHub:
 - **No Follow**: No follow relationship
 
 ### Event State
-Global state of the application:
-- Currently always `matching` (simplified from previous onboarding/matching/revealed)
+Global state of the event, changed only by the admin:
+- **Before the Reveal** (`onboarding`): Participants register and Continuous Matching runs, but Matches stay hidden. Matched Participants wait on the wait page, and the Big Screen shows persona names only.
+- **Revealed** (`revealed`): the admin presses **Reveal** once everybody is seated. Every Match page opens and the Big Screen shows handles. Newcomers after the Reveal see their Match as soon as they are matched.
+- Rematching does not change the Event State; Reset returns it to before the Reveal.
 
 ### Relationship State
 The matching status of a participant:
