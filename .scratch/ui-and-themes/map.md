@@ -32,10 +32,10 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
 - [Which tokens make up a Theme, and where motion and sound happen](issues/02-theme-token-set.md): 12 colour roles; Persona-coloured pages keep their background; three font families with at most one self-hosted web font; four radii, a border width and a glow; motion tokens on eight moments; synthesised sound cues, opt-in on phones; 3:1 Persona contrast; the default Theme is today's look. (Grown to 14 roles by the next decision.)
 - [What the three Themes look, move and sound like](issues/03-three-theme-looks.md): Classic (today's look, the default), Neon and Paper, chosen from a five-variant prototype (branch `prototype/themes`). Two roles added: text on a Persona colour, and a Persona outline that lets light Themes pass the 3:1 rule.
 - [Do Themes ship with a Tailwind build step instead of the Play CDN](issues/07-tailwind-build-step.md): no build step. Tailwind v4's browser build is vendored and pinned, and all front-end assets are self-hosted in `static/`, with no unstyled flash (ADR-0009).
+- [Which radically different UI idea should we spec](issues/05-radical-ui-concepts.md): the Game Show flow. The Big Screen is the stage, phones are controllers, everyone answers rounds at once, and the Reveal is a show segment. It borrows the Swipe Deck's card animations (prototype on branch `prototype/ui-concepts`).
 
 ## Not yet specified
 
-- **What the chosen UI concept's spec will surface:** likely its stack consequence (for example a JS front end, WebSockets, a PWA), how it's adopted (replacing the current UI or running alongside behind a switch), accessibility, and how it uses the Theme tokens. These can't be phrased yet, because they depend on which concept wins.
 
 ## Out of scope
 
