@@ -19,6 +19,8 @@ A fun, anonymous identity generated for a participant. Consists of:
 
 The persona allows participants to be identifiable in the room without revealing their real identity.
 
+The **Persona module** is the only place a Persona is made. When the LLM fails it falls back to an anonymous Persona named after the Participant's main language ("The Go Developer"), never after their handle or name.
+
 ### Pipeline
 The automated process that each participant goes through:
 1. **Fetching GitHub**: Retrieve and parse GitHub profile data and prepare the question set. The Interview only starts (`interviewing`) once the question set is stored

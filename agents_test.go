@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -202,154 +201,6 @@ func TestExtractJSON_trailingGarbage(t *testing.T) {
 	}
 }
 
-func TestComputeInterestsFromCompleteProfile(t *testing.T) {
-	pipeline := &AgentPipeline{}
-	
-	// Test with GitHub profile
-	profile := &CompleteProfile{
-		GitHubProfile: &GitHubProfile{
-			Languages: []string{"Go", "Python"},
-			TopTopics: []string{"web", "api"},
-		},
-	}
-	
-	interests := pipeline.computeInterestsFromCompleteProfile(profile)
-	
-	if interests == nil {
-		t.Fatal("expected non-nil interests")
-	}
-	
-	// Check languages
-	if langs, ok := interests["languages"].([]string); !ok {
-		t.Errorf("expected languages to be []string, got %T", interests["languages"])
-	} else if len(langs) != 2 {
-		t.Errorf("expected 2 languages, got %d", len(langs))
-	}
-	
-	// Check tools (topics)
-	if tools, ok := interests["tools"].([]string); !ok {
-		t.Errorf("expected tools to be []string, got %T", interests["tools"])
-	} else if len(tools) != 2 {
-		t.Errorf("expected 2 tools, got %d", len(tools))
-	}
-}
-
-func TestBuildPersonaPrompt(t *testing.T) {
-	pipeline := &AgentPipeline{}
-	
-	profile := &CompleteProfile{
-		GitHubProfile: &GitHubProfile{
-			Login:   "testuser",
-			Name:    "Test User",
-			Bio:     "Test bio",
-			Company: "Test Co",
-		},
-		InterviewAnswers: map[string]string{
-			"q1": "answer1",
-			"q2": "answer2",
-		},
-	}
-	
-	prompt := pipeline.buildPersonaPrompt(profile)
-	
-	// Should contain GitHub info
-	if !strings.Contains(prompt, "@testuser") {
-		t.Error("prompt should contain GitHub handle")
-	}
-	
-	// Should contain interview answers
-	if !strings.Contains(prompt, "Q[q1]:") {
-		t.Error("prompt should contain interview answers")
-	}
-}
-
-func TestBuildCompleteProfile(t *testing.T) {
-	// Create a minimal AgentPipeline (we don't need the clients for this test)
-	ap := &AgentPipeline{}
-
-	profile := &GitHubProfile{
-		Login:    "testuser",
-		Languages: []string{"Go", "Python"},
-	}
-
-	interviewAnswers := map[string]string{
-		"fixed_0": "Tabs",
-		"fixed_1": "Go",
-	}
-
-	completeProfile := ap.buildCompleteProfile(profile, nil, interviewAnswers)
-
-	if completeProfile.GitHubProfile != profile {
-		t.Error("GitHubProfile not set correctly")
-	}
-
-	if len(completeProfile.InterviewAnswers) != len(interviewAnswers) {
-		t.Error("InterviewAnswers length mismatch")
-	}
-	for k, v := range interviewAnswers {
-		if completeProfile.InterviewAnswers[k] != v {
-			t.Errorf("InterviewAnswers[%s] = %s, want %s", k, completeProfile.InterviewAnswers[k], v)
-		}
-	}
-
-	if completeProfile.Interests == nil {
-		t.Error("Interests should not be nil")
-	}
-
-	// Check that interests were computed from GitHubProfile
-	if langs, ok := completeProfile.Interests["languages"].([]string); !ok || len(langs) != 2 {
-		t.Errorf("expected languages in interests, got %v", completeProfile.Interests["languages"])
-	}
-}
-
-func TestGenerateFallbackPersonaFromCompleteProfile(t *testing.T) {
-	ap := &AgentPipeline{}
-
-	// Test with GitHub profile
-	profile := &CompleteProfile{
-		GitHubProfile: &GitHubProfile{Login: "testuser"},
-	}
-	result := ap.generateFallbackPersonaFromCompleteProfile(profile)
-	if result.Name != "The Testuser" {
-		t.Errorf("expected 'The Testuser', got '%s'", result.Name)
-	}
-	if result.Tagline != "Mysterious coder. Ships things." {
-		t.Errorf("expected tagline for GitHub user, got '%s'", result.Tagline)
-	}
-
-	// Test with ExtraAnswers
-	profile = &CompleteProfile{
-		ExtraAnswers: &ExtraAnswers{
-			Languages: []string{"Go", "Python"},
-		},
-	}
-	result = ap.generateFallbackPersonaFromCompleteProfile(profile)
-	if result.Name != "The Go Developer" {
-		t.Errorf("expected 'The Go Developer', got '%s'", result.Name)
-	}
-	if result.Tagline != "Ships things." {
-		t.Errorf("expected tagline, got '%s'", result.Tagline)
-	}
-
-	// Test with InterviewAnswers
-	profile = &CompleteProfile{
-		InterviewAnswers: map[string]string{
-			"fixed_1": "JavaScript",
-		},
-	}
-	result = ap.generateFallbackPersonaFromCompleteProfile(profile)
-	if result.Name != "The JavaScript Developer" {
-		t.Errorf("expected 'The JavaScript Developer', got '%s'", result.Name)
-	}
-
-	// Test with no data (fallback to Mysterious Coder)
-	profile = &CompleteProfile{}
-	result = ap.generateFallbackPersonaFromCompleteProfile(profile)
-	if result.Name != "The Mysterious Coder" {
-		t.Errorf("expected 'The Mysterious Coder', got '%s'", result.Name)
-	}
-}
-
 func TestFmtInterests(t *testing.T) {
 	// Test empty interests
 	if result := fmtInterests(nil); result != "" {
@@ -399,68 +250,6 @@ func TestFmtInterests(t *testing.T) {
 }
 
 
-
-func TestBuildPersonaPromptWithExtraAnswers(t *testing.T) {
-	pipeline := &AgentPipeline{}
-
-	profile := &CompleteProfile{
-		ExtraAnswers: &ExtraAnswers{
-			Languages:       []string{"Go", "Python"},
-			ProjectType:    "Backend Services",
-			DevEnvironment: []string{"VIM"},
-			WeirdestBug:    "Segfault in production",
-			Keyboard:       "Mechanical",
-		},
-		InterviewAnswers: map[string]string{
-			"extra_0": `["Go","Python"]`,
-		},
-	}
-
-	prompt := pipeline.buildPersonaPrompt(profile)
-
-	if !strings.Contains(prompt, "Languages: Go, Python") {
-		t.Error("prompt should contain languages")
-	}
-	if !strings.Contains(prompt, "Project type: Backend Services") {
-		t.Error("prompt should contain project type")
-	}
-	if !strings.Contains(prompt, "Dev environment: VIM") {
-		t.Error("prompt should contain dev environment")
-	}
-	if !strings.Contains(prompt, "Weirdest bug: Segfault in production") {
-		t.Error("prompt should contain weirdest bug")
-	}
-	if !strings.Contains(prompt, "Keyboard: Mechanical") {
-		t.Error("prompt should contain keyboard")
-	}
-	if !strings.Contains(prompt, "Q[extra_0]:") {
-		t.Error("prompt should contain interview answers")
-	}
-}
-
-func TestComputeInterestsFromCompleteProfileWithExtraAnswers(t *testing.T) {
-	pipeline := &AgentPipeline{}
-
-	profile := &CompleteProfile{
-		ExtraAnswers: &ExtraAnswers{
-			Languages:       []string{"Go", "Python"},
-			DevEnvironment: []string{"VIM", "VSCode"},
-			ProjectType:    "Backend Services",
-		},
-	}
-
-	interests := pipeline.computeInterestsFromCompleteProfile(profile)
-
-	if langs, ok := interests["languages"].([]string); !ok || len(langs) != 2 {
-		t.Errorf("expected 2 languages from ExtraAnswers, got %v", langs)
-	}
-	if tools, ok := interests["tools"].([]string); !ok || len(tools) != 2 {
-		t.Errorf("expected 2 tools from ExtraAnswers, got %v", tools)
-	}
-	if domains, ok := interests["domains"].([]string); !ok || len(domains) != 1 {
-		t.Errorf("expected 1 domain from ExtraAnswers, got %v", domains)
-	}
-}
 
 func TestExtractJSON(t *testing.T) {
 	tests := []struct {
@@ -514,7 +303,7 @@ func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThe
 	db := newTestDB(t)
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70}))
 	gh := newFakeGitHub()
-	pipeline := NewAgentPipeline(db, gh, llm, NewMatcher(db, gh, llm), NewInterview(db, llm), NewRelationships(db))
+	pipeline := NewAgentPipeline(db, gh, NewMatcher(db, gh, llm), NewInterview(db, llm), NewRelationships(db), NewPersonas(llm))
 	for _, id := range []string{"A", "B", "N"} {
 		db.CreateParticipant(id, id, id, true)
 		db.SetProfile(id, &GitHubProfile{Login: id})
@@ -540,7 +329,7 @@ func TestRunContinuousMatching_ADisplacedPartnerIsRematchedRightAway(t *testing.
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70, {"B", "C"}: 60}))
 	gh := newFakeGitHub()
 	rel := NewRelationships(db)
-	pipeline := NewAgentPipeline(db, gh, llm, NewMatcher(db, gh, llm), NewInterview(db, llm), rel)
+	pipeline := NewAgentPipeline(db, gh, NewMatcher(db, gh, llm), NewInterview(db, llm), rel, NewPersonas(llm))
 	for _, id := range []string{"A", "B", "C", "D", "N"} {
 		seed(t, db, id, id, "ready")
 	}

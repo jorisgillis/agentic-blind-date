@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -14,36 +13,23 @@ import (
 type AgentPipeline struct {
 	db        *DB
 	github    GitHubAPI
-	llm       LLM
 	matcher   *Matcher
 	interview *Interview
 	relations *Relationships
+	personas  *Personas
 	matchMu   sync.Mutex // Serializes matching operations to prevent race conditions
 }
 
 // NewAgentPipeline creates a new AgentPipeline with the given dependencies.
-func NewAgentPipeline(db *DB, github GitHubAPI, llm LLM, matcher *Matcher, interview *Interview, relations *Relationships) *AgentPipeline {
+func NewAgentPipeline(db *DB, github GitHubAPI, matcher *Matcher, interview *Interview, relations *Relationships, personas *Personas) *AgentPipeline {
 	return &AgentPipeline{
 		db:        db,
 		github:    github,
-		llm:       llm,
 		matcher:   matcher,
 		interview: interview,
 		relations: relations,
+		personas:  personas,
 	}
-}
-
-type personaResult struct {
-	Name    string `json:"name"`
-	Tagline string `json:"tagline"`
-}
-
-// CompleteProfile combines all data about a participant for persona generation
-type CompleteProfile struct {
-	GitHubProfile    *GitHubProfile
-	ExtraAnswers     *ExtraAnswers
-	InterviewAnswers map[string]string
-	Interests        map[string]interface{}
 }
 
 // RunSetup fetches the GitHub profile (GitHub users only) and starts the Interview.
@@ -95,21 +81,8 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 
 	a.db.UpdatePipelineStep(participantID, "creating_persona")
 
-	profile := *p.Profile
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
-	}
-
-	completeProfile := a.buildCompleteProfile(&profile, profile.ExtraAnswers, answers)
-
-	persona, err := a.generatePersonaFromCompleteProfile(completeProfile)
-	if err != nil {
-		log.Printf("Persona generation error: %v", err)
-		persona = a.generateFallbackPersonaFromCompleteProfile(completeProfile)
-	}
-
-	interests := a.computeInterestsFromCompleteProfile(completeProfile)
+	persona := a.personas.Create(p)
+	interests := interestsOf(p.Profile)
 
 	a.db.SetPersona(participantID, persona.Name, persona.Tagline)
 	a.db.UpdateInterests(participantID, interests)
@@ -127,29 +100,12 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 	}
 }
 
-func (a *AgentPipeline) buildCompleteProfile(profile *GitHubProfile, extraAnswers *ExtraAnswers, interviewAnswers map[string]string) *CompleteProfile {
-	interests := a.computeInterestsFromCompleteProfile(&CompleteProfile{
-		GitHubProfile:    profile,
-		ExtraAnswers:     extraAnswers,
-		InterviewAnswers: interviewAnswers,
-	})
-
-	return &CompleteProfile{
-		GitHubProfile:    profile,
-		ExtraAnswers:     extraAnswers,
-		InterviewAnswers: interviewAnswers,
-		Interests:        interests,
-	}
-}
-
-// computeInterestsFromCompleteProfile prefers GitHub data and fills the gaps
-// from ExtraAnswers, so both GitHub users and Non-GitHub Users get Interests.
-func (a *AgentPipeline) computeInterestsFromCompleteProfile(profile *CompleteProfile) map[string]interface{} {
+// interestsOf computes a Participant's Interests, preferring GitHub data and
+// filling the gaps from ExtraAnswers, so Non-GitHub Users get Interests too.
+func interestsOf(profile *GitHubProfile) map[string]interface{} {
 	languages, tools, domains := []string{}, []string{}, []string{}
-	if gp := profile.GitHubProfile; gp != nil {
-		languages = append(languages, gp.Languages...)
-		tools = append(tools, gp.TopTopics...)
-	}
+	languages = append(languages, profile.Languages...)
+	tools = append(tools, profile.TopTopics...)
 	if ea := profile.ExtraAnswers; ea != nil {
 		if len(languages) == 0 {
 			languages = append(languages, ea.Languages...)
@@ -162,82 +118,6 @@ func (a *AgentPipeline) computeInterestsFromCompleteProfile(profile *CompletePro
 		}
 	}
 	return map[string]interface{}{"languages": languages, "tools": tools, "domains": domains}
-}
-
-func (a *AgentPipeline) generatePersonaFromCompleteProfile(profile *CompleteProfile) (*personaResult, error) {
-	system := `You are a fun tech personality generator for a programming meetup blind date event.
-Create a funny, tongue-in-cheek anonymous persona based on a developer's profile and interview answers.
-Respond with ONLY a valid JSON object — no markdown, no backticks:
-{"name": "The [Adjective] [Tech Noun]", "tagline": "<funny one-liner max 60 chars>"}`
-
-	prompt := a.buildPersonaPrompt(profile)
-
-	response, err := a.llm.Chat(system, prompt)
-	if err != nil {
-		return nil, err
-	}
-
-	var result personaResult
-	if err := json.Unmarshal([]byte(extractJSON(response)), &result); err != nil {
-		return nil, fmt.Errorf("persona parse error: %v (raw: %s)", err, response)
-	}
-	return &result, nil
-}
-
-func (a *AgentPipeline) buildPersonaPrompt(profile *CompleteProfile) string {
-	var parts []string
-	gp := profile.GitHubProfile
-	if gp == nil {
-		gp = &GitHubProfile{}
-	}
-	if profile.ExtraAnswers != nil && gp.ExtraAnswers == nil {
-		withExtra := *gp
-		withExtra.ExtraAnswers = profile.ExtraAnswers
-		gp = &withExtra
-	}
-	if summary := gp.Summary(); summary != "" {
-		parts = append(parts, summary)
-	}
-
-	parts = append(parts, "\nInterview answers:")
-	for qid, answer := range profile.InterviewAnswers {
-		parts = append(parts, fmt.Sprintf("Q[%s]: %s", qid, answer))
-	}
-
-	return strings.Join(parts, "\n")
-}
-
-func (a *AgentPipeline) generateFallbackPersonaFromCompleteProfile(profile *CompleteProfile) *personaResult {
-	toTitle := func(s string) string {
-		if s == "" {
-			return s
-		}
-		return strings.ToUpper(s[:1]) + s[1:]
-	}
-
-	if profile.GitHubProfile != nil && profile.GitHubProfile.Login != "" {
-		return &personaResult{
-			Name:    "The " + toTitle(profile.GitHubProfile.Login),
-			Tagline: "Mysterious coder. Ships things.",
-		}
-	}
-
-	var name string
-	if profile.ExtraAnswers != nil && len(profile.ExtraAnswers.Languages) > 0 {
-		name = "The " + toTitle(profile.ExtraAnswers.Languages[0]) + " Developer"
-	} else if profile.InterviewAnswers != nil {
-		if lang, ok := profile.InterviewAnswers["fixed_1"]; ok && lang != "" {
-			name = "The " + toTitle(lang) + " Developer"
-		} else {
-			name = "The Mysterious Coder"
-		}
-	} else {
-		name = "The Mysterious Coder"
-	}
-	return &personaResult{
-		Name:    name,
-		Tagline: "Ships things.",
-	}
 }
 
 // Rematch breaks every Match and pairs all ready Participants again, as one
