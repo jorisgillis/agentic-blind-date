@@ -23,7 +23,7 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
   - The first build ships three Themes.
   - UI concepts may go beyond the current stack (Go templates, HTMX, Tailwind via CDN). The chosen concept's spec records the stack decision.
   - Concepts are judged on these must-haves: fun and memorable, gets Participants to walk up to each other, and keeps anonymity until the Reveal. Tie-breakers: works on any phone in a noisy room, and buildable in a few days.
-- **Specs and build tickets on GitHub:** "Spec: Themes" (#36), with its build tickets #40–#44 (`needs-triage` until the token set, the three looks and the Tailwind build step are decided here). Once they are, relabel them `ready-for-agent`.
+- **Specs and build tickets on GitHub:** "Spec: Themes" (#36), with its build tickets #40–#44 (the token set, the three looks and the Tailwind build step are decided, so they are `ready-for-agent`).
 - **Skills:** research, prototype, grilling + domain-modeling, tdd, codebase-design (for the spec's modules).
 
 ## Decisions so far
@@ -31,6 +31,7 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
 - [How Themes can reach every page, and what browsers allow for motion and sound](issues/01-theme-delivery-and-browser-constraints.md): Themes are CSS variables under `<html data-theme>`, set before first paint and untouched by HTMX and SSE. Motion collapses under reduced motion. Sound needs one tap (or one click on the Big Screen) and must be optional.
 - [Which tokens make up a Theme, and where motion and sound happen](issues/02-theme-token-set.md): 12 colour roles; Persona-coloured pages keep their background; three font families with at most one self-hosted web font; four radii, a border width and a glow; motion tokens on eight moments; synthesised sound cues, opt-in on phones; 3:1 Persona contrast; the default Theme is today's look. (Grown to 14 roles by the next decision.)
 - [What the three Themes look, move and sound like](issues/03-three-theme-looks.md): Classic (today's look, the default), Neon and Paper, chosen from a five-variant prototype (branch `prototype/themes`). Two roles added: text on a Persona colour, and a Persona outline that lets light Themes pass the 3:1 rule.
+- [Do Themes ship with a Tailwind build step instead of the Play CDN](issues/07-tailwind-build-step.md): no build step. Tailwind v4's browser build is vendored and pinned, and all front-end assets are self-hosted in `static/`, with no unstyled flash (ADR-0009).
 
 ## Not yet specified
 
