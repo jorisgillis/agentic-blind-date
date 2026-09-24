@@ -2,7 +2,7 @@
 label: wayfinder:prototype
 title: What the three Themes look, move and sound like
 status: open
-assignee:
+assignee: claude
 blocked_by: [02-theme-token-set.md]
 ---
 
