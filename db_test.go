@@ -6,20 +6,8 @@ import (
 	"testing"
 )
 
-func testDB(t *testing.T) *DB {
-	t.Helper()
-	db, err := NewDB(":memory:")
-	if err != nil {
-		t.Fatalf("NewDB: %v", err)
-	}
-	// In-memory SQLite creates a new database per connection; pin to one connection.
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
 func TestCreateAndGetParticipant(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	if err := db.CreateParticipant("id-1", "octocat", "Octo Cat", true); err != nil {
 		t.Fatalf("CreateParticipant: %v", err)
@@ -45,7 +33,7 @@ func TestCreateAndGetParticipant(t *testing.T) {
 }
 
 func TestGetParticipantByHandle(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-2", "torvalds", "Linus", true)
 
 	p, err := db.GetParticipantByHandle("torvalds")
@@ -58,7 +46,7 @@ func TestGetParticipantByHandle(t *testing.T) {
 }
 
 func TestCreateParticipant_duplicate(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-1", "octocat", "", true)
 	err := db.CreateParticipant("id-2", "octocat", "", true)
 	if err == nil {
@@ -67,7 +55,7 @@ func TestCreateParticipant_duplicate(t *testing.T) {
 }
 
 func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-1", "octocat", "", true)
 
 	db.SetProfile("id-1", &GitHubProfile{Login: "octocat"})
@@ -88,7 +76,7 @@ func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 }
 
 func TestUpdateAnswers(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-1", "octocat", "", true)
 
 	answers := map[string]string{"0": "Tabs", "1": "Go"}
@@ -106,7 +94,7 @@ func TestUpdateAnswers(t *testing.T) {
 }
 
 func TestGetAllByStep(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-1", "alice", "", true)
 	db.CreateParticipant("id-2", "bob", "", true)
 	forceStep(db, "id-1", "ready")
@@ -126,7 +114,7 @@ func TestGetAllByStep(t *testing.T) {
 }
 
 func TestActivityLog(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	db.LogActivity("event one")
 	db.LogActivity("event two")
@@ -155,7 +143,7 @@ func TestActivityLog(t *testing.T) {
 }
 
 func TestCounts(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	if n := db.ParticipantCount(); n != 0 {
 		t.Errorf("initial count: want 0, got %d", n)
@@ -177,7 +165,7 @@ func TestCounts(t *testing.T) {
 }
 
 func TestLLMCache(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	if entry, exists := db.GetLLMCache("a:b"); exists || entry != nil {
 		t.Error("expected cache miss for non-existent key")
@@ -202,7 +190,7 @@ func TestLLMCache(t *testing.T) {
 }
 
 func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 85, 'x', 'red1,red2', 'g', 'i')`)
 
 	if _, exists := db.GetLLMCache("a:b"); exists {
@@ -211,7 +199,7 @@ func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
 }
 
 func TestUpdateInterests(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-1", "user1", "User 1", true)
 
 	interests := map[string]interface{}{
@@ -285,7 +273,7 @@ func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
 }
 
 func TestInTx_ReportsAFailedCommit(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	err := db.inTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`ROLLBACK`) // the transaction ends early, so the commit fails
@@ -311,7 +299,7 @@ func TestNewDB_ReportsADatabaseThatCannotBeOpened(t *testing.T) {
 func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
 	for _, column := range []string{"profile_json", "questions", "answers_json", "interests"} {
 		t.Run(column, func(t *testing.T) {
-			db := testDB(t)
+			db := newTestDB(t)
 			db.CreateParticipant("p", "p", "P", true)
 			db.db.Exec(`UPDATE participants SET ` + column + ` = '{broken' WHERE id = 'p'`)
 
@@ -326,7 +314,7 @@ func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
 }
 
 func TestDB_ReadsAndWritesAgainstABrokenDatabase(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.SetLLMCache("a:b", &matchResult{Score: 1})
 	db.db.Close()
 
@@ -344,7 +332,7 @@ func TestDB_ReadsAndWritesAgainstABrokenDatabase(t *testing.T) {
 }
 
 func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 5, 'x', 'null', '[]', '[]')`)
 
 	r, ok := db.GetLLMCache("a:b")
@@ -355,7 +343,7 @@ func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
 }
 
 func TestReset_ReportsWhenActivityCannotBeCleared(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.LogActivity("hello")
 	db.db.Exec(`CREATE TRIGGER keep_activity BEFORE DELETE ON activity_log BEGIN SELECT RAISE(ABORT, 'injected'); END`)
 
@@ -368,7 +356,7 @@ func TestReset_ReportsWhenActivityCannotBeCleared(t *testing.T) {
 // must not leave Participants deleted, activity cleared or the Event State
 // changed — the three writes commit together or not at all.
 func TestReset_IsOneTransaction(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("p", "p", "P", true)
 	db.LogActivity("hello")
 	db.Reveal()
@@ -390,7 +378,7 @@ func TestReset_IsOneTransaction(t *testing.T) {
 }
 
 func TestCreateParticipant_ReportsADamagedSchema(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.db.Exec(`ALTER TABLE participants DROP COLUMN persona_symbol`)
 
 	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
