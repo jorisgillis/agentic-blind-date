@@ -66,6 +66,8 @@ func main() {
 	matchmaking := NewMatchmaking(db, matcher, relations)
 	onboarding := NewOnboarding(db, github, interview, NewPersonas(mistral), matchmaking)
 
+	onboarding.Resume() // pick up onboarding interrupted by a restart
+
 	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
 
 	addr := "0.0.0.0:8080"

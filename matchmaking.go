@@ -26,6 +26,9 @@ func (mm *Matchmaking) Rematch() error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
+	if ready := mm.db.ReadyCount(); ready < 2 {
+		return fmt.Errorf("need at least 2 ready participants, got %d", ready)
+	}
 	if err := mm.relations.UnpairAll(); err != nil {
 		return err
 	}
@@ -34,9 +37,6 @@ func (mm *Matchmaking) Rematch() error {
 	participants, err := mm.db.GetAllByStep(StepReady)
 	if err != nil {
 		return err
-	}
-	if len(participants) < 2 {
-		return fmt.Errorf("need at least 2 ready participants, got %d", len(participants))
 	}
 
 	for _, m := range mm.matcher.MatchPool(participants) {
@@ -49,35 +49,46 @@ func (mm *Matchmaking) Rematch() error {
 	return nil
 }
 
+// maxChain bounds a chain of take-overs. Each take-over raises the taken
+// Participant's Match score, so chains end anyway; this is a safety net.
+const maxChain = 100
+
 // MatchNewcomer is Continuous Matching for a Participant who just became ready:
 // they are matched against the other ready Participants, taking over a weaker
 // Match when needed. A partner displaced by a take-over is matched straight
-// away in the same way. Participants already paired in this chain are not
-// taken over again, so the chain ends.
+// away in the same way, but never with the pair that just displaced them.
 func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
-	inChain := map[string]bool{}
-	queue := []string{newcomer.ID}
-	for len(queue) > 0 {
-		id := queue[0]
+	type pending struct {
+		id      string
+		exclude map[string]bool // the pair that displaced them
+	}
+	queue := []pending{{id: newcomer.ID}}
+	for steps := 0; len(queue) > 0; steps++ {
+		if steps == maxChain {
+			return fmt.Errorf("matching %s: chain of take-overs longer than %d", newcomer.ID, maxChain)
+		}
+		next := queue[0]
 		queue = queue[1:]
-		displaced, err := mm.matchOne(id, inChain)
+		m, displaced, err := mm.matchOne(next.id, next.exclude)
 		if err != nil {
 			return err
 		}
-		queue = append(queue, displaced...)
+		for _, id := range displaced {
+			queue = append(queue, pending{id: id, exclude: map[string]bool{m.A.ID: true, m.B.ID: true}})
+		}
 	}
 	return nil
 }
 
-// matchOne finds a partner for one Participant, skipping those paired earlier
-// in the chain, and returns whoever the new Match displaced.
-func (mm *Matchmaking) matchOne(id string, inChain map[string]bool) ([]string, error) {
+// matchOne finds a partner for one Participant among the ready Participants
+// not excluded, stores the Match, and returns it with whoever it displaced.
+func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []string, error) {
 	all, err := mm.db.GetAllParticipants()
 	if err != nil {
-		return nil, fmt.Errorf("GetAllParticipants: %w", err)
+		return nil, nil, fmt.Errorf("GetAllParticipants: %w", err)
 	}
 	var newcomer *Participant
 	var others []*Participant
@@ -85,30 +96,29 @@ func (mm *Matchmaking) matchOne(id string, inChain map[string]bool) ([]string, e
 		switch {
 		case p.ID == id:
 			newcomer = p
-		case inChain[p.ID]:
+		case exclude[p.ID]:
 		case p.PipelineStep == StepReady:
 			others = append(others, p)
 		}
 	}
 	if newcomer == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	mm.db.LogActivity(fmt.Sprintf("🔮 Matching %s against existing pool...", newcomer.PersonaName))
 
 	m := mm.matcher.MatchNewcomer(newcomer, others)
 	if m == nil {
 		mm.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newcomer.PersonaName))
-		return nil, nil
+		return nil, nil, nil
 	}
 	displaced, err := mm.store(*m)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	inChain[m.A.ID], inChain[m.B.ID] = true, true
 	if len(displaced) > 0 {
 		mm.db.LogActivity(fmt.Sprintf("🔄 %s took over %s's previous match", newcomer.PersonaName, m.B.PersonaName))
 	}
-	return displaced, nil
+	return m, displaced, nil
 }
 
 // store records a Match through the Relationship module and returns the

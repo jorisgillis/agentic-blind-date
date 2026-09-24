@@ -143,7 +143,7 @@ func describeDeveloper(n int, p *Participant) string {
 	if answers == nil {
 		answers = map[string]string{}
 	}
-	s := fmt.Sprintf("DEVELOPER %d (%s):\n%s\nInterview answers: %v", n, p.PersonaName, profile.Summary(), answers)
+	s := fmt.Sprintf("DEVELOPER %d (%s):\n%s\nInterview answers: %v", n, p.PersonaName, p.Summary(), answers)
 	if interests := fmtInterests(p.Interests); interests != "" {
 		s += "\nInterests: " + interests
 	}

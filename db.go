@@ -125,7 +125,7 @@ func NewDB(path string) (*DB, error) {
 		`ALTER TABLE participants ADD COLUMN interests TEXT NOT NULL DEFAULT '{}'`,
 		`ALTER TABLE participants ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'`,
 		`UPDATE participants SET questions = custom_questions WHERE custom_questions IS NOT NULL`,
-		`ALTER TABLE participants DROP COLUMN extra_answers`, // ExtraAnswers live in profile_json
+		`ALTER TABLE participants DROP COLUMN extra_answers`,                              // ExtraAnswers live in profile_json
 		`UPDATE participants SET pipeline_step = 'ready' WHERE pipeline_step = 'matched'`, // Relationship State is not a Pipeline Step
 	} {
 		sqlDB.Exec(m)

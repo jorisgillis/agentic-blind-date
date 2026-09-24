@@ -66,8 +66,8 @@
               <td class="py-2 pr-4"><span class="px-2 py-0.5 rounded text-xs {{.PersonaColor}} text-gray-900">{{.PersonaColor}}</span></td>
               <td class="py-2 pr-4
                 {{if .MatchedWith}}text-green-400
-                {{else if eq .PipelineStep "ready"}}text-yellow-400
-                {{else if eq .PipelineStep "interviewing"}}text-blue-400
+                {{else if .PipelineStep.IsReady}}text-yellow-400
+                {{else if .PipelineStep.IsInterviewing}}text-blue-400
                 {{else}}text-gray-500
                 {{end}}">{{.PipelineStep}}{{if .MatchedWith}} · matched{{end}}</td>
               <td class="py-2 pr-4">{{if .CompatScore}}{{.CompatScore}}%{{else}}-{{end}}</td>

@@ -10,19 +10,19 @@
   <div class="space-y-3">
     {{$step := .PipelineStep}}
 
-    <div class="flex items-center gap-3 p-4 rounded-xl {{if eq $step "fetching_github"}}bg-indigo-900/40 border border-indigo-700{{else}}bg-gray-900 border border-gray-800{{end}}">
-      <span class="text-xl">{{if eq $step "fetching_github"}}⏳{{else}}✅{{end}}</span>
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsFetchingGitHub}}bg-indigo-900/40 border border-indigo-700{{else}}bg-gray-900 border border-gray-800{{end}}">
+      <span class="text-xl">{{if $step.IsFetchingGitHub}}⏳{{else}}✅{{end}}</span>
       <div>
         <p class="font-semibold text-sm">Fetching GitHub profile</p>
-        {{if eq $step "fetching_github"}}<p class="text-indigo-400 text-xs">Preparing your interview questions...</p>{{end}}
+        {{if $step.IsFetchingGitHub}}<p class="text-indigo-400 text-xs">Preparing your interview questions...</p>{{end}}
       </div>
     </div>
 
-    <div class="flex items-center gap-3 p-4 rounded-xl {{if eq $step "creating_persona"}}bg-indigo-900/40 border border-indigo-700{{else if eq $step "fetching_github"}}bg-gray-900/50 border border-gray-800 opacity-40{{else}}bg-gray-900 border border-gray-800{{end}}">
-      <span class="text-xl">{{if eq $step "creating_persona"}}⏳{{else if eq $step "fetching_github"}}⬜{{else}}✅{{end}}</span>
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsCreatingPersona}}bg-indigo-900/40 border border-indigo-700{{else if $step.IsFetchingGitHub}}bg-gray-900/50 border border-gray-800 opacity-40{{else}}bg-gray-900 border border-gray-800{{end}}">
+      <span class="text-xl">{{if $step.IsCreatingPersona}}⏳{{else if $step.IsFetchingGitHub}}⬜{{else}}✅{{end}}</span>
       <div>
         <p class="font-semibold text-sm">Crafting your persona</p>
-        {{if eq $step "creating_persona"}}<p class="text-indigo-400 text-xs">Creating your persona...</p>{{end}}
+        {{if $step.IsCreatingPersona}}<p class="text-indigo-400 text-xs">Creating your persona...</p>{{end}}
       </div>
     </div>
 
@@ -248,13 +248,13 @@
       {{range .Participants}}
       <div class="flex flex-col items-center text-center">
         <div class="w-full aspect-square rounded-2xl {{.PersonaColor}} flex items-center justify-center text-4xl shadow-lg mb-2
-          {{if eq .PipelineStep "ready"}}ring-2 ring-white/40{{else}}opacity-70{{end}}
+          {{if .PipelineStep.IsReady}}ring-2 ring-white/40{{else}}opacity-70{{end}}
           {{if .MatchedWith}}ring-2 ring-indigo-500{{end}}">
           {{.PersonaSymbol}}
         </div>
         <p class="text-sm font-bold leading-tight">{{if .PersonaName}}{{.PersonaName}}{{else}}{{.DisplayHandle}}{{end}}</p>
         <p class="text-xs text-gray-500">
-          {{if .MatchedWith}}❤️ matched{{else if eq .PipelineStep "ready"}}✅ ready{{else if eq .PipelineStep "interviewing"}}💬 interviewing{{else if eq .PipelineStep "creating_persona"}}{{.PersonaSymbol}} profiling{{else}}🔍 fetching{{end}}
+          {{if .MatchedWith}}❤️ matched{{else if .PipelineStep.IsReady}}✅ ready{{else if .PipelineStep.IsInterviewing}}💬 interviewing{{else if .PipelineStep.IsCreatingPersona}}{{.PersonaSymbol}} profiling{{else}}🔍 fetching{{end}}
         </p>
       </div>
       {{end}}

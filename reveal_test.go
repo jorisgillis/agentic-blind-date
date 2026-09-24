@@ -89,3 +89,28 @@ func TestRematch_KeepsTheEventState(t *testing.T) {
 		})
 	}
 }
+
+func TestReveal_TheBigScreenSendsNoIdentitiesBeforeTheReveal(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.CreateParticipant("g1", "octocat", "Octo Cat", true)
+	deps.db.SetPersona("g1", "The Gopher", "")
+	forceStep(deps.db, "g1", StepReady)
+	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
+	deps.db.SetPersona("ada", "The Analyst", "")
+	forceStep(deps.db, "ada", StepReady)
+
+	for _, path := range []string{"/bigscreen/graph-data", "/bigscreen/state"} {
+		body := readBody(t, get(t, srv, path))
+		if strings.Contains(body, "octocat") || strings.Contains(body, "Ada Lovelace") {
+			t.Errorf("%s reveals identities before the Reveal", path)
+		}
+	}
+	if body := readBody(t, open(t, srv, "/bigscreen/stream").waitForAny(t)); strings.Contains(body, "octocat") {
+		t.Errorf("the Big Screen stream reveals identities before the Reveal")
+	}
+
+	post(t, srv, "/admin/reveal", nil)
+	if body := readBody(t, get(t, srv, "/bigscreen/graph-data")); !strings.Contains(body, "@octocat") || !strings.Contains(body, "Ada Lovelace") {
+		t.Errorf("after the Reveal the Big Screen identifies everyone")
+	}
+}

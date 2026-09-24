@@ -151,3 +151,12 @@ func TestStreams_UnknownParticipantIs404(t *testing.T) {
 		}
 	}
 }
+
+// waitForAny waits for the first event and returns what was written so far.
+func (s *liveStream) waitForAny(t *testing.T) *http.Response {
+	t.Helper()
+	eventually(t, "a first event", func() bool { return s.String() != "" })
+	rec := httptest.NewRecorder()
+	rec.WriteString(s.String())
+	return rec.Result()
+}

@@ -30,6 +30,7 @@ func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Per
 func (o *Onboarding) Register(name, handle string, hasGitHub bool) (string, error) {
 	if hasGitHub {
 		if existing, err := o.db.GetParticipantByHandle(handle); err == nil {
+			o.resume(existing)
 			return existing.ID, nil
 		}
 	}
@@ -85,24 +86,60 @@ func (o *Onboarding) prepare(participantID string) {
 	o.db.LogActivity("✅ Ready for the interview!")
 }
 
-// finish creates the Persona and Interests, makes the Participant ready, and
-// hands them to Continuous Matching.
+// Resume restarts onboarding work that was interrupted, for example by a
+// restart: Participants still being prepared, or whose Persona was being created.
+func (o *Onboarding) Resume() {
+	all, err := o.db.GetAllParticipants()
+	if err != nil {
+		log.Printf("Onboarding: resume: %v", err)
+		return
+	}
+	for _, p := range all {
+		o.resume(p)
+	}
+}
+
+func (o *Onboarding) resume(p *Participant) {
+	switch p.PipelineStep {
+	case StepFetchingGitHub:
+		go o.prepare(p.ID)
+	case StepCreatingPersona:
+		go o.becomeReady(p.ID)
+	}
+}
+
+// finish moves the Participant on from a completed Interview.
 func (o *Onboarding) finish(participantID string) {
 	// Only one finish per Participant: a second submit of the last answer stops here.
 	if err := o.db.AdvanceStep(participantID, StepCreatingPersona); err != nil {
 		log.Printf("Onboarding: %v", err)
 		return
 	}
-	o.db.LogActivity(fmt.Sprintf("🎭 Crafting persona for participant %s...", participantID))
+	o.becomeReady(participantID)
+}
 
+// becomeReady creates the Persona and Interests, makes the Participant ready,
+// and hands them to Continuous Matching. Failures to save the Persona or
+// Interests are logged rather than leaving the Participant stuck.
+func (o *Onboarding) becomeReady(participantID string) {
+	o.db.LogActivity(fmt.Sprintf("🎭 Crafting persona for participant %s...", participantID))
 	p, err := o.db.GetParticipant(participantID)
-	if err != nil || p.Profile == nil {
+	if err != nil {
 		log.Printf("Onboarding: cannot finish %s: %v", participantID, err)
 		return
 	}
+	profile := p.Profile
+	if profile == nil {
+		profile = &GitHubProfile{}
+		p.Profile = profile
+	}
 	persona := o.personas.Create(p)
-	o.db.SetPersona(participantID, persona.Name, persona.Tagline)
-	o.db.UpdateInterests(participantID, interestsOf(p.Profile))
+	if err := o.db.SetPersona(participantID, persona.Name, persona.Tagline); err != nil {
+		log.Printf("Onboarding: saving persona of %s: %v", participantID, err)
+	}
+	if err := o.db.UpdateInterests(participantID, interestsOf(profile)); err != nil {
+		log.Printf("Onboarding: saving interests of %s: %v", participantID, err)
+	}
 	if err := o.db.AdvanceStep(participantID, StepReady); err != nil {
 		log.Printf("Onboarding: %v", err)
 		return

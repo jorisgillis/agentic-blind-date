@@ -28,7 +28,8 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 	}
 	defer tx.Rollback()
 
-	for _, side := range [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}} {
+	sides := [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}}
+	for _, side := range sides {
 		former, err := partnerOf(tx, side[0])
 		if err != nil {
 			return nil, err
@@ -42,7 +43,7 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 	}
 
 	red, green, ice := encodeAssessment(m.Result)
-	for _, side := range [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}} {
+	for _, side := range sides {
 		res, err := tx.Exec(`
 			UPDATE participants SET matched_with = ?, compat_score = ?, compat_reason = ?,
 			    red_flags = ?, green_flags = ?, icebreakers = ?
@@ -50,7 +51,9 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 		if err != nil {
 			return nil, err
 		}
-		if n, _ := res.RowsAffected(); n != 1 {
+		if n, err := res.RowsAffected(); err != nil {
+			return nil, err
+		} else if n != 1 {
 			return nil, fmt.Errorf("pairing %s ↔ %s: participant %s not found", m.A.ID, m.B.ID, side[0])
 		}
 	}
@@ -95,8 +98,7 @@ func decodeList(raw string) []string {
 // UnpairAll breaks every Match at once, returning everyone to the Pool.
 func (r *Relationships) UnpairAll() error {
 	_, err := r.db.db.Exec(`
-		UPDATE participants SET matched_with = '', compat_score = 0, compat_reason = '',
-		    red_flags = '[]', green_flags = '[]', icebreakers = '[]'
+		UPDATE participants SET ` + clearMatch + `
 		WHERE COALESCE(matched_with, '') != ''`)
 	if err == nil {
 		r.db.changed()
@@ -140,12 +142,13 @@ func partnerOf(tx *sql.Tx, id string) (string, error) {
 	return partner, err
 }
 
+// clearMatch is the SET clause that returns a Participant to the Pool.
+const clearMatch = `matched_with = '', compat_score = 0, compat_reason = '',
+		    red_flags = '[]', green_flags = '[]', icebreakers = '[]'`
+
 // unpair returns a Participant to the Pool, clearing their Match and its assessment.
 func unpair(tx *sql.Tx, id string) error {
-	_, err := tx.Exec(`
-		UPDATE participants SET matched_with = '', compat_score = 0, compat_reason = '',
-		    red_flags = '[]', green_flags = '[]', icebreakers = '[]'
-		WHERE id = ?`, id)
+	_, err := tx.Exec(`UPDATE participants SET `+clearMatch+` WHERE id = ?`, id)
 	return err
 }
 

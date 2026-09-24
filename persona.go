@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Persona is a Participant's fun, anonymous identity in the room.
@@ -59,10 +61,8 @@ Respond with ONLY a valid JSON object — no markdown, no backticks:
 
 func personaPrompt(p *Participant) string {
 	var parts []string
-	if p.Profile != nil {
-		if summary := p.Profile.Summary(); summary != "" {
-			parts = append(parts, summary)
-		}
+	if summary := p.Summary(); summary != "" {
+		parts = append(parts, summary)
 	}
 	parts = append(parts, "\nInterview answers:")
 	ids := make([]string, 0, len(p.Answers))
@@ -80,7 +80,8 @@ func personaPrompt(p *Participant) string {
 // their handle or name.
 func fallbackPersona(p *Participant) Persona {
 	if lang := mainLanguage(p); lang != "" {
-		return Persona{Name: "The " + strings.ToUpper(lang[:1]) + lang[1:] + " Developer", Tagline: "Ships things."}
+		first, size := utf8.DecodeRuneInString(lang)
+		return Persona{Name: "The " + string(unicode.ToUpper(first)) + lang[size:] + " Developer", Tagline: "Ships things."}
 	}
 	return Persona{Name: "The Mysterious Coder", Tagline: "Ships things."}
 }

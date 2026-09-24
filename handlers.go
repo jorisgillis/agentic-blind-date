@@ -56,8 +56,9 @@ type graphNode struct {
 	Color       string `json:"color"`
 	Symbol      string `json:"symbol"`
 	Step        string `json:"step"`
+	Ready       bool   `json:"ready"`
 	Matched     bool   `json:"matched"`
-	Handle      string `json:"handle"`
+	Handle      string `json:"handle,omitempty"`
 }
 
 type graphEdge struct {
@@ -233,7 +234,7 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if done {
-		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
+		w.Header().Set("HX-Redirect", h.destination(p))
 		return
 	}
 
@@ -275,7 +276,6 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		"Profile":     profile,
 		"QAPairs":     qaPairs,
 		"Count":       h.db.ReadyCount(),
-		"Phase":       h.phase(),
 	})
 }
 
@@ -293,7 +293,6 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "fragment-wait-status.html", map[string]any{
 		"Participant": p,
 		"Count":       h.db.ReadyCount(),
-		"Phase":       h.phase(),
 	})
 }
 
@@ -379,14 +378,20 @@ func (h *Handler) buildGraphPayload() map[string]any {
 
 	nodes := make([]graphNode, 0, len(participants))
 	for _, p := range participants {
+		// Identities leave the server only after the Reveal.
+		handle := ""
+		if phase == "revealed" {
+			handle = p.DisplayHandle()
+		}
 		nodes = append(nodes, graphNode{
 			ID:          p.ID,
 			PersonaName: p.PersonaName,
 			Color:       p.PersonaColor,
 			Symbol:      p.PersonaSymbol,
 			Step:        string(p.PipelineStep),
+			Ready:       p.PipelineStep.IsReady(),
 			Matched:     p.IsMatched(),
-			Handle:      p.DisplayHandle(),
+			Handle:      handle,
 		})
 	}
 

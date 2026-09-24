@@ -130,49 +130,73 @@ func (g *GitHubClient) FetchProfile(handle string) (*GitHubProfile, error) {
 	return profile, nil
 }
 
+// Summary describes a Participant for the LLM: their GitHub data if they have
+// a GitHub account, and their ExtraAnswers if they gave any.
+func (p *Participant) Summary() string {
+	if p.Profile == nil {
+		return ""
+	}
+	var parts []string
+	if p.HasGitHub {
+		parts = append(parts, p.Profile.githubLines()...)
+	}
+	parts = append(parts, p.Profile.extraLines()...)
+	return strings.Join(parts, "\n")
+}
+
+// Summary describes a GitHub user's profile for the LLM: GitHub data and any ExtraAnswers.
 func (p *GitHubProfile) Summary() string {
+	return strings.Join(append(p.githubLines(), p.extraLines()...), "\n")
+}
+
+func (p *GitHubProfile) githubLines() []string {
 	var parts []string
 	if p.Login != "" {
 		parts = append(parts, fmt.Sprintf("GitHub: @%s", p.Login))
-		if p.Name != "" {
-			parts = append(parts, "Name: "+p.Name)
-		}
-		if p.Bio != "" {
-			parts = append(parts, "Bio: "+p.Bio)
-		}
-		if p.Company != "" {
-			parts = append(parts, "Company: "+p.Company)
-		}
-		if p.Location != "" {
-			parts = append(parts, "Location: "+p.Location)
-		}
-		if p.AccountAgeDays > 0 {
-			parts = append(parts, fmt.Sprintf("Account age: %d days (~%d years)", p.AccountAgeDays, p.AccountAgeDays/365))
-		}
-		parts = append(parts, fmt.Sprintf("Public repos: %d, Followers: %d, Total stars: %d", p.PublicRepos, p.Followers, p.TotalStars))
-		if p.HasProfileReadme {
-			parts = append(parts, "Has profile README: yes")
-		}
-		if len(p.Languages) > 0 {
-			parts = append(parts, "Languages used: "+strings.Join(p.Languages, ", "))
-		}
-		if len(p.TopTopics) > 0 {
-			parts = append(parts, "Top topics: "+strings.Join(p.TopTopics, ", "))
-		}
-		for _, r := range p.TopRepos {
-			line := "Repo: " + r.Name
-			if r.Description != "" {
-				line += " — " + r.Description
-			}
-			if r.Language != "" {
-				line += " (" + r.Language + ")"
-			}
-			if r.Stars > 0 {
-				line += fmt.Sprintf(" ⭐%d", r.Stars)
-			}
-			parts = append(parts, line)
-		}
 	}
+	if p.Name != "" {
+		parts = append(parts, "Name: "+p.Name)
+	}
+	if p.Bio != "" {
+		parts = append(parts, "Bio: "+p.Bio)
+	}
+	if p.Company != "" {
+		parts = append(parts, "Company: "+p.Company)
+	}
+	if p.Location != "" {
+		parts = append(parts, "Location: "+p.Location)
+	}
+	if p.AccountAgeDays > 0 {
+		parts = append(parts, fmt.Sprintf("Account age: %d days (~%d years)", p.AccountAgeDays, p.AccountAgeDays/365))
+	}
+	parts = append(parts, fmt.Sprintf("Public repos: %d, Followers: %d, Total stars: %d", p.PublicRepos, p.Followers, p.TotalStars))
+	if p.HasProfileReadme {
+		parts = append(parts, "Has profile README: yes")
+	}
+	if len(p.Languages) > 0 {
+		parts = append(parts, "Languages used: "+strings.Join(p.Languages, ", "))
+	}
+	if len(p.TopTopics) > 0 {
+		parts = append(parts, "Top topics: "+strings.Join(p.TopTopics, ", "))
+	}
+	for _, r := range p.TopRepos {
+		line := "Repo: " + r.Name
+		if r.Description != "" {
+			line += " — " + r.Description
+		}
+		if r.Language != "" {
+			line += " (" + r.Language + ")"
+		}
+		if r.Stars > 0 {
+			line += fmt.Sprintf(" ⭐%d", r.Stars)
+		}
+		parts = append(parts, line)
+	}
+	return parts
+}
+
+func (p *GitHubProfile) extraLines() []string {
+	var parts []string
 	if p.ExtraAnswers != nil {
 		ea := p.ExtraAnswers
 		if len(ea.Languages) > 0 {
@@ -191,7 +215,7 @@ func (p *GitHubProfile) Summary() string {
 			parts = append(parts, "Keyboard: "+ea.Keyboard)
 		}
 	}
-	return strings.Join(parts, "\n")
+	return parts
 }
 
 type ghUser struct {

@@ -47,15 +47,7 @@ func (e *InvalidAnswerError) Error() string { return e.msg }
 //   - Non-GitHub User: Extra Questions + Fixed Questions without "go-to language",
 //     which the Extra Questions already cover
 func (iv *Interview) Start(p *Participant, profile *GitHubProfile) error {
-	participantID := p.ID
-	questions := iv.questionSet(profile, p.HasGitHub)
-	if err := iv.db.SetProfile(participantID, profile); err != nil {
-		return err
-	}
-	if err := iv.db.SetQuestions(participantID, questions); err != nil {
-		return err
-	}
-	return iv.db.AdvanceStep(participantID, StepInterviewing)
+	return iv.db.StartInterview(p.ID, profile, iv.questionSet(profile, p.HasGitHub))
 }
 
 func (iv *Interview) questionSet(profile *GitHubProfile, githubUser bool) []Question {

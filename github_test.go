@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -45,5 +46,18 @@ func TestGitHubProfileSummary(t *testing.T) {
 	summary = profile.Summary()
 	if summary == "" {
 		t.Error("expected non-empty summary for full profile")
+	}
+}
+
+func TestParticipantSummary_AsksWhetherTheParticipantHasGitHub(t *testing.T) {
+	extra := &ExtraAnswers{Languages: []string{"Python"}, ProjectType: "Data Science/Engineering"}
+	ada := &Participant{HasGitHub: false, Profile: &GitHubProfile{Login: "stale-login", ExtraAnswers: extra}}
+	octo := &Participant{HasGitHub: true, Profile: &GitHubProfile{Login: "", Languages: []string{"Go"}, ExtraAnswers: extra}}
+
+	if s := ada.Summary(); strings.Contains(s, "GitHub") || !strings.Contains(s, "Languages: Python") {
+		t.Errorf("Non-GitHub User: no GitHub section, just their answers:\n%s", s)
+	}
+	if s := octo.Summary(); !strings.Contains(s, "Languages used: Go") || !strings.Contains(s, "Project type: Data Science/Engineering") {
+		t.Errorf("GitHub user: GitHub data (even without a login) plus answers:\n%s", s)
 	}
 }

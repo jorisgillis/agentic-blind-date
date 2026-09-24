@@ -341,8 +341,34 @@ func TestMatchNewcomer_ADisplacedPartnerIsRematchedRightAway(t *testing.T) {
 	}
 
 	// N takes over A (70 beats 40); displaced B takes over C (60 beats 30);
-	// displaced D finds nobody left to beat outside this chain and stays in the Pool.
+	// displaced D beats nobody (and may not take B or C back) and stays in the Pool.
 	for id, want := range map[string]string{"N": "A", "A": "N", "B": "C", "C": "B", "D": ""} {
+		if got := reload(t, db, id).MatchedWith; got != want {
+			t.Errorf("%s matched with %q, want %q", id, got, want)
+		}
+	}
+	assertInvariant(t, db)
+}
+
+func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain(t *testing.T) {
+	db := newTestDB(t)
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70, {"B", "C"}: 60, {"D", "A"}: 80}))
+	gh := newFakeGitHub()
+	rel := NewRelationships(db)
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
+	for _, id := range []string{"A", "B", "C", "D", "N"} {
+		seed(t, db, id, id, "ready")
+	}
+	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
+	rel.Pair(Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
+
+	if err := matchmaking.MatchNewcomer(reload(t, db, "N")); err != nil {
+		t.Fatal(err)
+	}
+
+	// N takes A (70 > 40); displaced B takes C (60 > 30); displaced D takes A from N
+	// (80 > 70), although A was paired earlier in this chain; displaced N beats nobody.
+	for id, want := range map[string]string{"D": "A", "A": "D", "B": "C", "C": "B", "N": ""} {
 		if got := reload(t, db, id).MatchedWith; got != want {
 			t.Errorf("%s matched with %q, want %q", id, got, want)
 		}

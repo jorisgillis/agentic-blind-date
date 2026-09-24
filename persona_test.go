@@ -105,3 +105,11 @@ func TestPersonaPalette_IsTheOneSourceForEveryDisplay(t *testing.T) {
 		}
 	}
 }
+
+func TestPersonasCreate_FallbackCapitalisesNonASCIILanguages(t *testing.T) {
+	p := &Participant{ID: "p", Profile: &GitHubProfile{}, Answers: map[string]string{"fixed_1": "élixir"}}
+
+	if got := NewPersonas(newFakeLLM()).Create(p).Name; got != "The Élixir Developer" {
+		t.Errorf("want The Élixir Developer, got %q", got)
+	}
+}

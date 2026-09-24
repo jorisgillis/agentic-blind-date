@@ -112,3 +112,32 @@ func TestOnboarding_SubmittingTheLastAnswerTwiceCreatesOnePersona(t *testing.T) 
 		t.Errorf("personas created: want 1, got %d", n)
 	}
 }
+
+func TestOnboarding_RegisteringAgainResumesAPreparationThatNeverFinished(t *testing.T) {
+	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "octo"})
+	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`)
+	o, db := onboardingFor(t, llm, gh)
+	// A previous preparation died (crash, restart) and left the Participant waiting.
+	db.CreateParticipant("stuck", "octo", "Octo", true)
+
+	id, err := o.Register("Octo", "octo", true)
+
+	if err != nil || id != "stuck" {
+		t.Fatalf("want the existing Participant, got %q (err %v)", id, err)
+	}
+	eventually(t, "interview started", func() bool { return reload(t, db, id).PipelineStep == StepInterviewing })
+}
+
+func TestOnboarding_ResumeFinishesAPersonaThatWasInterrupted(t *testing.T) {
+	llm := newFakeLLM().on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`)
+	o, db := onboardingFor(t, llm, newFakeGitHub())
+	db.CreateParticipant("p", "p", "P", true)
+	forceStep(db, "p", StepCreatingPersona)
+
+	o.Resume()
+
+	eventually(t, "ready", func() bool { return reload(t, db, "p").PipelineStep == StepReady })
+	if got := reload(t, db, "p").PersonaName; got != "The Gopher" {
+		t.Errorf("persona: got %q", got)
+	}
+}
