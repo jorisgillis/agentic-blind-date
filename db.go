@@ -68,7 +68,6 @@ func NewDB(path string) (*DB, error) {
 			profile_json     TEXT NOT NULL DEFAULT '{}',
 			questions       TEXT NOT NULL DEFAULT '[]',
 			answers_json     TEXT NOT NULL DEFAULT '{}',
-			extra_answers    TEXT NOT NULL DEFAULT '{}',
 			interests       TEXT NOT NULL DEFAULT '{}',
 			pipeline_step    TEXT NOT NULL DEFAULT 'fetching_github',
 			matched_with     TEXT REFERENCES participants(id),
@@ -113,10 +112,10 @@ func NewDB(path string) (*DB, error) {
 		`ALTER TABLE participants ADD COLUMN persona_symbol TEXT NOT NULL DEFAULT '🎭'`,
 		`ALTER TABLE participants ADD COLUMN persona_tagline TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE participants MODIFY github_handle TEXT UNIQUE`,
-		`ALTER TABLE participants ADD COLUMN extra_answers TEXT NOT NULL DEFAULT '{}'`,
 		`ALTER TABLE participants ADD COLUMN interests TEXT NOT NULL DEFAULT '{}'`,
 		`ALTER TABLE participants ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'`,
 		`UPDATE participants SET questions = custom_questions WHERE custom_questions IS NOT NULL`,
+		`ALTER TABLE participants DROP COLUMN extra_answers`, // ExtraAnswers live in profile_json
 	} {
 		sqlDB.Exec(m)
 	}
@@ -242,8 +241,8 @@ func (db *DB) CreateParticipant(id, handle, name string) error {
 	}
 
 	_, err = tx.Exec(
-		`INSERT INTO participants (id, github_handle, name, persona_color, persona_symbol, questions, extra_answers, interests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, handle, name, color, symbol, "[]", "{}", "{}",
+		`INSERT INTO participants (id, github_handle, name, persona_color, persona_symbol, questions, interests) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, handle, name, color, symbol, "[]", "{}",
 	)
 	if err != nil {
 		return err
@@ -266,18 +265,29 @@ func (db *DB) UpdatePipelineStep(id, step string) error {
 	return err
 }
 
-func (db *DB) UpdateProfile(id string, profile *GitHubProfile, personaName, personaTagline string, questions []Question) error {
+// SetProfile saves the Participant's profile (GitHub data and ExtraAnswers).
+func (db *DB) SetProfile(id string, profile *GitHubProfile) error {
 	profileJSON, err := json.Marshal(profile)
 	if err != nil {
 		return err
 	}
+	_, err = db.db.Exec(`UPDATE participants SET profile_json = ? WHERE id = ?`, string(profileJSON), id)
+	return err
+}
+
+// SetQuestions saves the Participant's interview question set.
+func (db *DB) SetQuestions(id string, questions []Question) error {
 	questionsJSON, err := json.Marshal(questions)
 	if err != nil {
 		return err
 	}
-	_, err = db.db.Exec(`
-		UPDATE participants SET profile_json = ?, persona_name = ?, persona_tagline = ?, questions = ?
-		WHERE id = ?`, string(profileJSON), personaName, personaTagline, string(questionsJSON), id)
+	_, err = db.db.Exec(`UPDATE participants SET questions = ? WHERE id = ?`, string(questionsJSON), id)
+	return err
+}
+
+// SetPersona saves the Participant's Persona name and tagline.
+func (db *DB) SetPersona(id, name, tagline string) error {
+	_, err := db.db.Exec(`UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`, name, tagline, id)
 	return err
 }
 
@@ -308,44 +318,16 @@ func (db *DB) SetMatched(id, matchedWith string, score int, reason, redFlags, gr
 }
 
 func (db *DB) GetAllParticipants() ([]*Participant, error) {
-	rows, err := db.db.Query(selectParticipant + ` ORDER BY created_at`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []*Participant
-	for rows.Next() {
-		p, err := scanParticipant(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+	return db.queryParticipants(`ORDER BY created_at`)
 }
 
 func (db *DB) GetAllByStep(step string) ([]*Participant, error) {
-	rows, err := db.db.Query(selectParticipant+` WHERE pipeline_step = ? ORDER BY created_at`, step)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []*Participant
-	for rows.Next() {
-		p, err := scanParticipant(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
+	return db.queryParticipants(`WHERE pipeline_step = ? ORDER BY created_at`, step)
 }
 
-func (db *DB) GetReadyUnmatched() ([]*Participant, error) {
-	// Get participants who are ready and not yet matched
-	rows, err := db.db.Query(selectParticipant + ` WHERE pipeline_step = 'ready' AND (matched_with = '' OR matched_with IS NULL) ORDER BY created_at`)
+// queryParticipants selects the Participants matching the given clause.
+func (db *DB) queryParticipants(clause string, args ...any) ([]*Participant, error) {
+	rows, err := db.db.Query(selectParticipant+" "+clause, args...)
 	if err != nil {
 		return nil, err
 	}

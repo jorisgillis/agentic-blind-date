@@ -105,7 +105,7 @@ func (a *AgentPipeline) RunFinalSetup(participantID string) {
 
 	interests := a.computeInterestsFromCompleteProfile(completeProfile)
 
-	a.db.UpdateProfile(participantID, &profile, persona.Name, persona.Tagline, p.Questions)
+	a.db.SetPersona(participantID, persona.Name, persona.Tagline)
 	a.db.UpdateInterests(participantID, interests)
 	a.db.UpdatePipelineStep(participantID, "ready")
 	a.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))

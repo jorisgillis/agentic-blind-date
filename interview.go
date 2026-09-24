@@ -48,7 +48,10 @@ func (e *InvalidAnswerError) Error() string { return e.msg }
 //     which the Extra Questions already cover
 func (iv *Interview) Start(participantID string, profile *GitHubProfile, githubUser bool) error {
 	questions := iv.questionSet(profile, githubUser)
-	if err := iv.db.UpdateProfile(participantID, profile, "", "", questions); err != nil {
+	if err := iv.db.SetProfile(participantID, profile); err != nil {
+		return err
+	}
+	if err := iv.db.SetQuestions(participantID, questions); err != nil {
 		return err
 	}
 	return iv.db.UpdatePipelineStep(participantID, "interviewing")
@@ -156,7 +159,7 @@ func (iv *Interview) complete(p *Participant) error {
 	}
 	profile.ExtraAnswers = extra
 	p.Profile = profile
-	return iv.db.UpdateProfile(p.ID, profile, p.PersonaName, p.PersonaTagline, p.Questions)
+	return iv.db.SetProfile(p.ID, profile)
 }
 
 // extraAnswersFrom maps answers to the Extra Questions onto ExtraAnswers.

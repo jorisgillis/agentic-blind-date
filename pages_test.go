@@ -17,7 +17,9 @@ func seed(t *testing.T, db *DB, id, persona, step string) *Participant {
 		t.Fatal(err)
 	}
 	questions := []Question{{ID: "fixed_0", Text: "Tabs or spaces?"}}
-	db.UpdateProfile(id, &GitHubProfile{Login: id, Languages: []string{"Go"}}, persona, "Ships things", questions)
+	db.SetProfile(id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
+	db.SetPersona(id, persona, "Ships things")
+	db.SetQuestions(id, questions)
 	db.UpdateAnswers(id, map[string]string{"fixed_0": "Tabs"})
 	db.UpdatePipelineStep(id, step)
 	return reload(t, db, id)

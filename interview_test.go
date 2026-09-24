@@ -17,7 +17,7 @@ func participantInInterview(t *testing.T, db *DB, questions []Question) *Partici
 	if err := db.CreateParticipant("p-1", "someone", "Someone"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.UpdateProfile("p-1", &GitHubProfile{}, "", "", questions); err != nil {
+	if err := db.SetQuestions("p-1", questions); err != nil {
 		t.Fatal(err)
 	}
 	db.UpdatePipelineStep("p-1", "interviewing")

@@ -517,7 +517,8 @@ func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThe
 	pipeline := NewAgentPipeline(db, gh, llm, NewMatcher(db, gh, llm), NewInterview(db, llm))
 	for _, id := range []string{"A", "B", "N"} {
 		db.CreateParticipant(id, id, id)
-		db.UpdateProfile(id, &GitHubProfile{Login: id}, id, "", nil)
+		db.SetProfile(id, &GitHubProfile{Login: id})
+		db.SetPersona(id, id, "")
 		db.UpdatePipelineStep(id, "ready")
 	}
 	db.SetMatched("A", "B", 40, "meh", "[]", "[]", "[]")

@@ -219,3 +219,27 @@ func TestOnboarding_SecondReadyParticipantIsMatchedWithoutAnAdminRematch(t *test
 		t.Errorf("first participant: matched with %q at %d", f.MatchedWith, f.CompatScore)
 	}
 }
+
+func TestFinalSetup_SavingThePersonaKeepsAProfileChangeMadeMeanwhile(t *testing.T) {
+	var db *DB
+	llm := newFakeLLM().onFunc("personality generator", func(string) (string, error) {
+		// While the LLM is thinking, someone else updates the profile.
+		p, _ := db.GetParticipant("p1")
+		p.Profile.Bio = "updated meanwhile"
+		db.SetProfile("p1", p.Profile)
+		return `{"name": "The Gopher", "tagline": "Ships"}`, nil
+	})
+	_, deps := newTestServer(t, llm, nil)
+	db = deps.db
+	seed(t, db, "p1", "", "interviewing")
+
+	deps.agents.RunFinalSetup("p1")
+
+	p := reload(t, db, "p1")
+	if p.PersonaName != "The Gopher" {
+		t.Fatalf("persona not saved: %q", p.PersonaName)
+	}
+	if p.Profile.Bio != "updated meanwhile" {
+		t.Errorf("saving the Persona overwrote a profile change made meanwhile")
+	}
+}

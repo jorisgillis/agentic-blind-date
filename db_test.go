@@ -78,32 +78,24 @@ func TestUpdatePipelineStep(t *testing.T) {
 	}
 }
 
-func TestUpdateProfile(t *testing.T) {
+func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 	db := testDB(t)
 	db.CreateParticipant("id-1", "octocat", "")
 
-	profile := &GitHubProfile{Login: "octocat"}
-	questions := []Question{
-		{ID: "q1", Text: "Question 1"},
-		{ID: "q2", Text: "Question 2"},
-	}
-	err := db.UpdateProfile("id-1", profile, "The Octo", "Ships things", questions)
-	if err != nil {
-		t.Fatalf("UpdateProfile: %v", err)
-	}
+	db.SetProfile("id-1", &GitHubProfile{Login: "octocat"})
+	db.SetQuestions("id-1", []Question{{ID: "q1", Text: "Question 1"}, {ID: "q2", Text: "Question 2"}})
+	db.SetPersona("id-1", "The Octo", "Ships things")
+	db.SetProfile("id-1", &GitHubProfile{Login: "octocat", Bio: "later"})
 
 	p, _ := db.GetParticipant("id-1")
-	if p.PersonaName != "The Octo" {
-		t.Errorf("PersonaName: want 'The Octo', got %s", p.PersonaName)
+	if p.PersonaName != "The Octo" || p.PersonaTagline != "Ships things" {
+		t.Errorf("persona: got %q / %q", p.PersonaName, p.PersonaTagline)
 	}
-	if p.PersonaTagline != "Ships things" {
-		t.Errorf("PersonaTagline: want 'Ships things', got %s", p.PersonaTagline)
-	}
-	if p.Profile == nil || p.Profile.Login != "octocat" {
-		t.Errorf("Profile unexpected: %+v", p.Profile)
+	if p.Profile == nil || p.Profile.Bio != "later" {
+		t.Errorf("profile: got %+v", p.Profile)
 	}
 	if len(p.Questions) != 2 || p.Questions[0].ID != "q1" {
-		t.Errorf("Questions unexpected: %+v", p.Questions)
+		t.Errorf("questions should survive the later profile write: %+v", p.Questions)
 	}
 }
 
@@ -344,42 +336,6 @@ func TestUpdateInterests(t *testing.T) {
 	}
 }
 
-func TestGetReadyUnmatched(t *testing.T) {
-	db := testDB(t)
-
-	// Create participants with different states
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.UpdatePipelineStep("id-1", "ready")
-
-	db.CreateParticipant("id-2", "user2", "User 2")
-	db.UpdatePipelineStep("id-2", "ready")
-	db.SetMatched("id-2", "id-3", 0, "", "", "", "")
-
-	db.CreateParticipant("id-3", "user3", "User 3")
-	db.UpdatePipelineStep("id-3", "interviewing")
-
-	db.CreateParticipant("id-4", "user4", "User 4")
-	db.UpdatePipelineStep("id-4", "ready")
-
-	readyUnmatched, err := db.GetReadyUnmatched()
-	if err != nil {
-		t.Fatalf("GetReadyUnmatched: %v", err)
-	}
-
-	// Should only return id-1 and id-4
-	if len(readyUnmatched) != 2 {
-		t.Errorf("expected 2 ready unmatched participants, got %d", len(readyUnmatched))
-	}
-
-	ids := make(map[string]bool)
-	for _, p := range readyUnmatched {
-		ids[p.ID] = true
-	}
-	if !ids["id-1"] || !ids["id-4"] {
-		t.Error("expected id-1 and id-4 in results")
-	}
-}
-
 func TestUnmatchParticipant(t *testing.T) {
 	db := testDB(t)
 
@@ -405,5 +361,32 @@ func TestUnmatchParticipant(t *testing.T) {
 	}
 	if p2.MatchedWith != "" {
 		t.Errorf("expected id-2 to be unmatched, got %s", p2.MatchedWith)
+	}
+}
+
+func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
+	path := t.TempDir() + "/old.db"
+	old, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.db.Exec(`ALTER TABLE participants ADD COLUMN extra_answers TEXT NOT NULL DEFAULT '{}'`)
+	old.Close()
+
+	db, err := NewDB(path)
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	defer db.Close()
+	if err := db.CreateParticipant("id-1", "octocat", "Octo"); err != nil {
+		t.Fatalf("CreateParticipant after migration: %v", err)
+	}
+	if _, err := db.GetParticipant("id-1"); err != nil {
+		t.Fatalf("GetParticipant after migration: %v", err)
+	}
+	var n int
+	db.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name = 'extra_answers'`).Scan(&n)
+	if n != 0 {
+		t.Error("the extra_answers column should be dropped")
 	}
 }
