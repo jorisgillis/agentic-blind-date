@@ -2,7 +2,7 @@
 label: wayfinder:research
 title: How Themes can reach every page, and what browsers allow for motion and sound
 status: open
-assignee:
+assignee: claude (research agent, branch research/theme-delivery)
 blocked_by: []
 ---
 
