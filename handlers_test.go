@@ -296,8 +296,8 @@ func TestDataParticipants(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create some participants
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.CreateParticipant("id-2", "user2", "User 2")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
+	db.CreateParticipant("id-2", "user2", "User 2", true)
 
 	// Call DataParticipants endpoint
 	resp, err := srv.Client().Get(srv.URL + "/data/participants")
@@ -315,7 +315,7 @@ func TestDataParticipant(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 
 	// Call DataParticipant endpoint by ID
 	resp, err := srv.Client().Get(srv.URL + "/data/participant/id-1")
@@ -374,7 +374,7 @@ func TestSubmitAnswer(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant in interviewing state with questions
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	p, _ := db.GetParticipant("id-1")
 	p.Questions = FixedQuestions
 	p.Answers = map[string]string{}
@@ -499,7 +499,7 @@ func TestSubmitAnswer_WrongPipelineStep(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant NOT in interviewing state
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	db.UpdatePipelineStep("id-1", "ready")
 
 	// Submit answer
@@ -524,7 +524,7 @@ func TestSubmitAnswer_NoMoreQuestions(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with only 2 questions and both answered
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	p, _ := db.GetParticipant("id-1")
 	p.Questions = []Question{
 		{ID: "q0", Text: "Q1?"},
@@ -557,7 +557,7 @@ func TestSubmitAnswer_MultiSelectInvalidJSON(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with multi-select questions
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	p, _ := db.GetParticipant("id-1")
 	p.Questions = []Question{
 		{ID: "q1", Text: "Select languages", MaxSelections: 3, Mode: MultiSelect},
@@ -586,7 +586,7 @@ func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with multi-select questions (max 2 selections)
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	p, _ := db.GetParticipant("id-1")
 	p.Questions = []Question{
 		{ID: "q1", Text: "Select languages", MaxSelections: 2, Mode: MultiSelect},

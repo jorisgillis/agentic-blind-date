@@ -35,7 +35,7 @@ func dev(id, persona string, langs ...string) *Participant {
 		anyLangs[i] = l
 	}
 	return &Participant{
-		ID: id, GitHubHandle: id, PersonaName: persona,
+		ID: id, GitHubHandle: id, HasGitHub: true, PersonaName: persona,
 		Profile:   &GitHubProfile{Login: id, Languages: langs},
 		Answers:   map[string]string{"fixed_0": "Tabs"},
 		Interests: map[string]interface{}{"languages": anyLangs}, // as decoded from the database
@@ -374,5 +374,19 @@ func TestMatcherMatchPool_PairsParticipantsLeftOutOfEveryCandidatePair(t *testin
 	got := strings.Join(pairsOf(matches), " ")
 	if len(matches) != 4 || !strings.Contains(got, "A-B:50") {
 		t.Errorf("want all 8 matched, including leftovers A-B, got %s", got)
+	}
+}
+
+func TestMatcherScorePair_NoFollowLookupsForNonGitHubUsers(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", matchReply)
+	gh := newFakeGitHub()
+	m := NewMatcher(newTestDB(t), gh, llm)
+	ada := dev("no-github-1234", "The Ada")
+	ada.HasGitHub = false
+
+	m.ScorePair(dev("a", "The Gopher", "Go"), ada)
+
+	if n := gh.followLookups(); n != 0 {
+		t.Errorf("follow lookups for a Non-GitHub User: want 0, got %d", n)
 	}
 }

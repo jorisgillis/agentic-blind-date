@@ -221,8 +221,8 @@ func TestNewDB_MigratesTheOldMatchedPipelineStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old.CreateParticipant("A", "a", "A")
-	old.CreateParticipant("B", "b", "B")
+	old.CreateParticipant("A", "a", "A", true)
+	old.CreateParticipant("B", "b", "B", true)
 	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'B' WHERE id = 'A'`)
 	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'A' WHERE id = 'B'`)
 	old.Close()

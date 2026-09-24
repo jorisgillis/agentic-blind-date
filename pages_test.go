@@ -13,7 +13,7 @@ import (
 // seed creates a Participant with a persona, profile and answers in the given pipeline step.
 func seed(t *testing.T, db *DB, id, persona, step string) *Participant {
 	t.Helper()
-	if err := db.CreateParticipant(id, id, id); err != nil {
+	if err := db.CreateParticipant(id, id, id, true); err != nil {
 		t.Fatal(err)
 	}
 	questions := []Question{{ID: "fixed_0", Text: "Tabs or spaces?"}}

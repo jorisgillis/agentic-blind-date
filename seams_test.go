@@ -169,7 +169,7 @@ func TestExplore_RepeatViewsOfAPairAreServedFromTheCache(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", `{"score": 77, "reason": "Both love Go", "red_flags": [], "green_flags": ["Go"], "icebreakers": ["Why?"]}`)
 	srv, deps := newTestServer(t, llm, nil)
 	for _, id := range []string{"me", "other"} {
-		deps.db.CreateParticipant(id, id, id)
+		deps.db.CreateParticipant(id, id, id, true)
 	}
 
 	for i := 0; i < 2; i++ {
@@ -241,5 +241,27 @@ func TestFinalSetup_SavingThePersonaKeepsAProfileChangeMadeMeanwhile(t *testing.
 	}
 	if p.Profile.Bio != "updated meanwhile" {
 		t.Errorf("saving the Persona overwrote a profile change made meanwhile")
+	}
+}
+
+func TestJoin_RecordsWhetherTheParticipantHasAGitHubAccount(t *testing.T) {
+	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "no-github-fan", Languages: []string{"Go"}})
+	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`)
+	srv, deps := newTestServer(t, llm, gh)
+
+	post(t, srv, "/user/join", url.Values{"name": {"Fan"}, "github": {"no-github-fan"}})
+	resp := post(t, srv, "/user/join", url.Values{"name": {"Ada"}, "no_github": {"on"}})
+	adaID := strings.TrimPrefix(resp.Header.Get("Location"), "/user/onboard/")
+
+	var fan *Participant
+	eventually(t, "GitHub user's interview started", func() bool {
+		fan, _ = deps.db.GetParticipantByHandle("no-github-fan")
+		return fan != nil && fan.PipelineStep == "interviewing"
+	})
+	if !fan.HasGitHub || fan.Profile == nil || len(fan.Profile.Languages) == 0 {
+		t.Errorf("a GitHub user whose handle starts with no-github- is still a GitHub user: %+v", fan)
+	}
+	if ada := reload(t, deps.db, adaID); ada.HasGitHub {
+		t.Error("a Participant who registered without GitHub has no GitHub account")
 	}
 }

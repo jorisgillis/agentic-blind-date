@@ -48,17 +48,21 @@ type CompleteProfile struct {
 
 // RunSetup fetches the GitHub profile (GitHub users only) and starts the Interview.
 // Runs in a goroutine after participant registration.
-func (a *AgentPipeline) RunSetup(participantID, githubHandle string) {
-	// Non-GitHub Users get a generated "no-github-" handle at registration.
-	isGitHubUser := !strings.HasPrefix(githubHandle, "no-github-")
+func (a *AgentPipeline) RunSetup(participantID string) {
+	p, err := a.db.GetParticipant(participantID)
+	if err != nil {
+		log.Printf("RunSetup: participant %s not found: %v", participantID, err)
+		return
+	}
 
 	profile := &GitHubProfile{}
-	if isGitHubUser {
-		profile = &GitHubProfile{Login: githubHandle, Name: githubHandle}
-		a.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", githubHandle))
-		fetched, err := a.github.FetchProfile(githubHandle)
+	if p.HasGitHub {
+		handle := p.GitHubHandle
+		profile = &GitHubProfile{Login: handle, Name: handle}
+		a.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", handle))
+		fetched, err := a.github.FetchProfile(handle)
 		if err != nil {
-			log.Printf("Failed to fetch GitHub profile for @%s: %v", githubHandle, err)
+			log.Printf("Failed to fetch GitHub profile for @%s: %v", handle, err)
 		} else if fetched != nil {
 			profile = fetched
 		}
@@ -67,7 +71,7 @@ func (a *AgentPipeline) RunSetup(participantID, githubHandle string) {
 	}
 	a.db.LogActivity("📝 Preparing interview questions...")
 
-	if err := a.interview.Start(participantID, profile, isGitHubUser); err != nil {
+	if err := a.interview.Start(p, profile); err != nil {
 		log.Printf("Starting interview for %s failed: %v", participantID, err)
 		return
 	}

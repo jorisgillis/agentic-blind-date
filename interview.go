@@ -46,8 +46,9 @@ func (e *InvalidAnswerError) Error() string { return e.msg }
 //     or + Extra Questions when generation fails (ADR-0003, ADR-0006)
 //   - Non-GitHub User: Extra Questions + Fixed Questions without "go-to language",
 //     which the Extra Questions already cover
-func (iv *Interview) Start(participantID string, profile *GitHubProfile, githubUser bool) error {
-	questions := iv.questionSet(profile, githubUser)
+func (iv *Interview) Start(p *Participant, profile *GitHubProfile) error {
+	participantID := p.ID
+	questions := iv.questionSet(profile, p.HasGitHub)
 	if err := iv.db.SetProfile(participantID, profile); err != nil {
 		return err
 	}

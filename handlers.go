@@ -182,14 +182,14 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		id := uuid.New().String()
 		// For non-GitHub users, generate a unique handle to avoid UNIQUE constraint violation
 		handle = "no-github-" + id[:8]
-		if err := h.db.CreateParticipant(id, handle, name); err != nil {
+		if err := h.db.CreateParticipant(id, handle, name, false); err != nil {
 			log.Printf("CreateParticipant failed for non-GitHub user name=%s: %v", name, err)
 			http.Error(w, "registration failed: "+err.Error(), 500)
 			return
 		}
 
 		// Non-GitHub users will get ExtraQuestions during interview
-		go h.agents.RunSetup(id, handle)
+		go h.agents.RunSetup(id)
 		setParticipantCookie(w, id)
 		http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 		return
@@ -204,13 +204,13 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := uuid.New().String()
-	if err := h.db.CreateParticipant(id, handle, name); err != nil {
+	if err := h.db.CreateParticipant(id, handle, name, true); err != nil {
 		log.Printf("CreateParticipant failed for handle=%s, name=%s: %v", handle, name, err)
 		http.Error(w, "registration failed: "+err.Error(), 500)
 		return
 	}
 
-	go h.agents.RunSetup(id, handle)
+	go h.agents.RunSetup(id)
 	setParticipantCookie(w, id)
 	http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 }

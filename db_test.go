@@ -19,7 +19,7 @@ func testDB(t *testing.T) *DB {
 func TestCreateAndGetParticipant(t *testing.T) {
 	db := testDB(t)
 
-	if err := db.CreateParticipant("id-1", "octocat", "Octo Cat"); err != nil {
+	if err := db.CreateParticipant("id-1", "octocat", "Octo Cat", true); err != nil {
 		t.Fatalf("CreateParticipant: %v", err)
 	}
 
@@ -44,7 +44,7 @@ func TestCreateAndGetParticipant(t *testing.T) {
 
 func TestGetParticipantByHandle(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-2", "torvalds", "Linus")
+	db.CreateParticipant("id-2", "torvalds", "Linus", true)
 
 	p, err := db.GetParticipantByHandle("torvalds")
 	if err != nil {
@@ -57,8 +57,8 @@ func TestGetParticipantByHandle(t *testing.T) {
 
 func TestCreateParticipant_duplicate(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "")
-	err := db.CreateParticipant("id-2", "octocat", "")
+	db.CreateParticipant("id-1", "octocat", "", true)
+	err := db.CreateParticipant("id-2", "octocat", "", true)
 	if err == nil {
 		t.Error("expected error for duplicate github_handle, got nil")
 	}
@@ -66,7 +66,7 @@ func TestCreateParticipant_duplicate(t *testing.T) {
 
 func TestUpdatePipelineStep(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "")
+	db.CreateParticipant("id-1", "octocat", "", true)
 
 	if err := db.UpdatePipelineStep("id-1", "interviewing"); err != nil {
 		t.Fatalf("UpdatePipelineStep: %v", err)
@@ -80,7 +80,7 @@ func TestUpdatePipelineStep(t *testing.T) {
 
 func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "")
+	db.CreateParticipant("id-1", "octocat", "", true)
 
 	db.SetProfile("id-1", &GitHubProfile{Login: "octocat"})
 	db.SetQuestions("id-1", []Question{{ID: "q1", Text: "Question 1"}, {ID: "q2", Text: "Question 2"}})
@@ -101,7 +101,7 @@ func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 
 func TestUpdateAnswers(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "")
+	db.CreateParticipant("id-1", "octocat", "", true)
 
 	answers := map[string]string{"0": "Tabs", "1": "Go"}
 	if err := db.UpdateAnswers("id-1", answers); err != nil {
@@ -119,8 +119,8 @@ func TestUpdateAnswers(t *testing.T) {
 
 func TestGetAllByStep(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "alice", "")
-	db.CreateParticipant("id-2", "bob", "")
+	db.CreateParticipant("id-1", "alice", "", true)
+	db.CreateParticipant("id-2", "bob", "", true)
 	db.UpdatePipelineStep("id-1", "ready")
 
 	ready, err := db.GetAllByStep("ready")
@@ -191,9 +191,9 @@ func TestCounts(t *testing.T) {
 		t.Errorf("initial count: want 0, got %d", n)
 	}
 
-	db.CreateParticipant("id-1", "alice", "")
-	db.CreateParticipant("id-2", "bob", "")
-	db.CreateParticipant("id-3", "carol", "")
+	db.CreateParticipant("id-1", "alice", "", true)
+	db.CreateParticipant("id-2", "bob", "", true)
+	db.CreateParticipant("id-3", "carol", "", true)
 	db.UpdatePipelineStep("id-1", "ready")
 	db.UpdatePipelineStep("id-2", "ready")
 	NewRelationships(db).Pair(Match{A: &Participant{ID: "id-1"}, B: &Participant{ID: "id-2"}, Result: &matchResult{}})
@@ -242,7 +242,7 @@ func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
 
 func TestUpdateInterests(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 
 	interests := map[string]interface{}{
 		"languages": []string{"Go", "Python"},
@@ -274,7 +274,7 @@ func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
 		t.Fatalf("reopening: %v", err)
 	}
 	defer db.Close()
-	if err := db.CreateParticipant("id-1", "octocat", "Octo"); err != nil {
+	if err := db.CreateParticipant("id-1", "octocat", "Octo", true); err != nil {
 		t.Fatalf("CreateParticipant after migration: %v", err)
 	}
 	if _, err := db.GetParticipant("id-1"); err != nil {
@@ -284,5 +284,35 @@ func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
 	db.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name = 'extra_answers'`).Scan(&n)
 	if n != 0 {
 		t.Error("the extra_answers column should be dropped")
+	}
+}
+
+func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
+	path := t.TempDir() + "/old.db"
+	old, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.CreateParticipant("gh", "octocat", "Octo", true)
+	old.CreateParticipant("ng", "no-github-1234abcd", "Ada", true)
+	if _, err := old.db.Exec(`ALTER TABLE participants DROP COLUMN has_github`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+
+	db, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reload(t, db, "gh").HasGitHub || reload(t, db, "ng").HasGitHub {
+		t.Error("backfill: the generated-handle Participant has no GitHub account, the other does")
+	}
+	db.db.Exec(`UPDATE participants SET has_github = 1 WHERE id = 'ng'`)
+	db.Close()
+
+	reopened, _ := NewDB(path)
+	defer reopened.Close()
+	if !reload(t, reopened, "ng").HasGitHub {
+		t.Error("the backfill must only run once, when the column is introduced")
 	}
 }

@@ -21,6 +21,7 @@ var personaSymbols = []string{"🦊", "🦁", "🐯", "🐺", "🦝", "🦔", "�
 type Participant struct {
 	ID             string
 	GitHubHandle   string
+	HasGitHub      bool // recorded at registration; Non-GitHub Users get a generated handle
 	Name           string
 	PersonaName    string
 	PersonaColor   string
@@ -65,6 +66,7 @@ func NewDB(path string) (*DB, error) {
 		CREATE TABLE IF NOT EXISTS participants (
 			id               TEXT PRIMARY KEY,
 			github_handle    TEXT UNIQUE,
+			has_github       INTEGER NOT NULL DEFAULT 1,
 			name             TEXT NOT NULL DEFAULT '',
 			persona_name     TEXT NOT NULL DEFAULT '',
 			persona_color    TEXT NOT NULL DEFAULT 'bg-gray-400',
@@ -125,6 +127,11 @@ func NewDB(path string) (*DB, error) {
 	} {
 		sqlDB.Exec(m)
 	}
+	// One-time backfill when has_github is introduced: until then, Non-GitHub
+	// Users could only be recognised by their generated handle.
+	if _, err := sqlDB.Exec(`ALTER TABLE participants ADD COLUMN has_github INTEGER NOT NULL DEFAULT 1`); err == nil {
+		sqlDB.Exec(`UPDATE participants SET has_github = 0 WHERE github_handle LIKE 'no-github-%'`)
+	}
 
 	return &DB{sqlDB}, nil
 }
@@ -149,7 +156,7 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 	p := &Participant{}
 	var profileJSON, questionsJSON, answersJSON, interestsJSON string
 	err := row.Scan(
-		&p.ID, &p.GitHubHandle, &p.Name,
+		&p.ID, &p.GitHubHandle, &p.HasGitHub, &p.Name,
 		&p.PersonaName, &p.PersonaColor, &p.PersonaSymbol, &p.PersonaTagline,
 		&profileJSON, &questionsJSON, &answersJSON, &interestsJSON,
 		&p.PipelineStep,
@@ -185,14 +192,14 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 }
 
 const selectParticipant = `
-	SELECT id, github_handle, name,
+	SELECT id, github_handle, has_github, name,
 	       persona_name, persona_color, persona_symbol, persona_tagline,
 	       profile_json, questions, answers_json, interests, pipeline_step,
 	       COALESCE(matched_with, ''), compat_score, compat_reason,
 	       red_flags, green_flags, icebreakers, created_at
 	FROM participants`
 
-func (db *DB) CreateParticipant(id, handle, name string) error {
+func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
 	tx, err := db.db.Begin()
 	if err != nil {
 		return err
@@ -237,8 +244,8 @@ func (db *DB) CreateParticipant(id, handle, name string) error {
 	}
 
 	_, err = tx.Exec(
-		`INSERT INTO participants (id, github_handle, name, persona_color, persona_symbol, questions, interests) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, handle, name, color, symbol, "[]", "{}",
+		`INSERT INTO participants (id, github_handle, has_github, name, persona_color, persona_symbol, questions, interests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, handle, hasGitHub, name, color, symbol, "[]", "{}",
 	)
 	if err != nil {
 		return err

@@ -132,7 +132,7 @@ Data fetched from a participant's GitHub account, including:
 
 ### Non-GitHub User
 A participant who registers without a GitHub account. These users go through a modified onboarding flow:
-- **Handle**: Automatically generated as `"no-github-{uuid-prefix}"` to ensure uniqueness
+- **Handle**: Automatically generated as `"no-github-{uuid-prefix}"` to ensure uniqueness. It is only a unique key: whether a Participant has a GitHub account is recorded at registration, never inferred from the handle
 - **Pipeline**: Skips the GitHub fetch; moves to `interviewing` as soon as their question set is stored
 - **Questions**: Answers ExtraQuestions instead of FixedQuestions + CustomQuestions
 - **Profile Data**: When the Interview completes, the answers to the Extra Questions are turned into **ExtraAnswers** (languages, project type, dev environment, weirdest bug, keyboard) on their profile. This also happens for GitHub users who got the Extra Questions as a fallback

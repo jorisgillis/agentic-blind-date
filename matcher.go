@@ -151,7 +151,7 @@ func describeDeveloper(n int, p *Participant) string {
 }
 
 func (m *Matcher) followNote(p1, p2 *Participant) string {
-	if p1.GitHubHandle == "" || p2.GitHubHandle == "" {
+	if !p1.HasGitHub || !p2.HasGitHub {
 		return ""
 	}
 	aFollowsB, bFollowsA := m.github.CheckMutualFollow(p1.GitHubHandle, p2.GitHubHandle)

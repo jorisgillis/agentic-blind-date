@@ -14,7 +14,7 @@ var testQuestions = []Question{
 
 func participantInInterview(t *testing.T, db *DB, questions []Question) *Participant {
 	t.Helper()
-	if err := db.CreateParticipant("p-1", "someone", "Someone"); err != nil {
+	if err := db.CreateParticipant("p-1", "someone", "Someone", true); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.SetQuestions("p-1", questions); err != nil {
@@ -108,11 +108,11 @@ func TestInterview_RejectsTooManySelections(t *testing.T) {
 func startedQuestions(t *testing.T, llm *fakeLLM, githubUser bool) []Question {
 	t.Helper()
 	db := newTestDB(t)
-	if err := db.CreateParticipant("p-1", "someone", "Someone"); err != nil {
+	if err := db.CreateParticipant("p-1", "someone", "Someone", githubUser); err != nil {
 		t.Fatal(err)
 	}
 	iv := NewInterview(db, llm)
-	if err := iv.Start("p-1", &GitHubProfile{Login: "someone"}, githubUser); err != nil {
+	if err := iv.Start(reload(t, db, "p-1"), &GitHubProfile{Login: "someone"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	p := reload(t, db, "p-1")
