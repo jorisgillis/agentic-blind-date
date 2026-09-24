@@ -167,30 +167,19 @@ func (m *Matcher) followNote(p1, p2 *Participant) string {
 	return ""
 }
 
-// fmtInterests renders Interests as "category: a, b; ...". Values may be
-// []string (freshly computed) or []any (decoded from the database).
-func fmtInterests(interests map[string]interface{}) string {
-	categories := make([]string, 0, len(interests))
-	for category := range interests {
-		categories = append(categories, category)
-	}
-	sort.Strings(categories)
-
+// fmtInterests renders Interests as "category: a, b; ...".
+func fmtInterests(interests Interests) string {
 	var parts []string
-	for _, category := range categories {
-		var items []string
-		switch v := interests[category].(type) {
-		case []string:
-			items = v
-		case []any:
-			for _, item := range v {
-				if s, ok := item.(string); ok {
-					items = append(items, s)
-				}
-			}
-		}
-		if len(items) > 0 {
-			parts = append(parts, category+": "+strings.Join(items, ", "))
+	for _, cat := range []struct {
+		name  string
+		items []string
+	}{
+		{"languages", interests.Languages},
+		{"tools", interests.Tools},
+		{"domains", interests.Domains},
+	} {
+		if len(cat.items) > 0 {
+			parts = append(parts, cat.name+": "+strings.Join(cat.items, ", "))
 		}
 	}
 	return strings.Join(parts, "; ")

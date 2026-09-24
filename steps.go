@@ -18,6 +18,10 @@ const (
 	StepReady           Step = "ready"
 )
 
+// stepPtr is a convenience for ParticipantChange.PipelineStep, which needs a
+// pointer to distinguish "advance to this step" from "leave it alone".
+func stepPtr(s Step) *Step { return &s }
+
 // Step predicates, for templates (which cannot use the constants).
 func (s Step) IsFetchingGitHub() bool  { return s == StepFetchingGitHub }
 func (s Step) IsInterviewing() bool    { return s == StepInterviewing }

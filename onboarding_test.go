@@ -55,10 +55,8 @@ func TestOnboarding_FromRegistrationToReady(t *testing.T) {
 	if p.PersonaName != "The Gopher" {
 		t.Errorf("persona: got %q", p.PersonaName)
 	}
-	langs, _ := p.Interests["languages"].([]any)
-	tools, _ := p.Interests["tools"].([]any)
-	if len(langs) != 1 || langs[0] != "Go" || len(tools) != 1 || tools[0] != "cli" {
-		t.Errorf("interests from the GitHub profile: got %v", p.Interests)
+	if len(p.Interests.Languages) != 1 || p.Interests.Languages[0] != "Go" || len(p.Interests.Tools) != 1 || p.Interests.Tools[0] != "cli" {
+		t.Errorf("interests from the GitHub profile: got %+v", p.Interests)
 	}
 }
 

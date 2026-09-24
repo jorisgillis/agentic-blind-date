@@ -222,11 +222,8 @@ func TestUpdateInterests(t *testing.T) {
 	db.UpdateInterests("id-1", interests)
 
 	p, _ := db.GetParticipant("id-1")
-	if p.Interests == nil {
-		t.Fatal("expected Interests to be set")
-	}
-	if len(p.Interests) != 2 {
-		t.Errorf("expected 2 interest categories, got %d", len(p.Interests))
+	if len(p.Interests.Languages) != 2 || len(p.Interests.Tools) != 1 {
+		t.Errorf("want 2 languages and 1 tool, got %+v", p.Interests)
 	}
 }
 
@@ -364,6 +361,31 @@ func TestReset_ReportsWhenActivityCannotBeCleared(t *testing.T) {
 
 	if err := db.Reset(); err == nil {
 		t.Error("want the failure reported")
+	}
+}
+
+// TestReset_IsOneTransaction covers #51: a Reset that fails partway through
+// must not leave Participants deleted, activity cleared or the Event State
+// changed — the three writes commit together or not at all.
+func TestReset_IsOneTransaction(t *testing.T) {
+	db := testDB(t)
+	db.CreateParticipant("p", "p", "P", true)
+	db.LogActivity("hello")
+	db.Reveal()
+	db.db.Exec(`CREATE TRIGGER keep_activity BEFORE DELETE ON activity_log BEGIN SELECT RAISE(ABORT, 'injected'); END`)
+
+	if err := db.Reset(); err == nil {
+		t.Fatal("want the failure reported")
+	}
+
+	if db.ParticipantCount() != 1 {
+		t.Errorf("Participants should be untouched, got %d", db.ParticipantCount())
+	}
+	if msgs, _ := db.GetRecentActivity(10); len(msgs) != 1 {
+		t.Errorf("activity should be untouched, got %v", msgs)
+	}
+	if db.EventState() != Revealed {
+		t.Errorf("Event State should be untouched, got %s", db.EventState())
 	}
 }
 

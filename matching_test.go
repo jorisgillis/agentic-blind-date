@@ -205,50 +205,22 @@ func TestExtractJSON_trailingGarbage(t *testing.T) {
 }
 
 func TestFmtInterests(t *testing.T) {
-	// Test empty interests
-	if result := fmtInterests(nil); result != "" {
-		t.Errorf("expected empty string for nil, got %s", result)
+	if result := fmtInterests(Interests{}); result != "" {
+		t.Errorf("expected empty string for zero value, got %s", result)
 	}
 
-	if result := fmtInterests(map[string]interface{}{}); result != "" {
-		t.Errorf("expected empty string for empty map, got %s", result)
-	}
-
-	// Test with languages
-	interests := map[string]interface{}{
-		"languages": []string{"Go", "Python"},
-	}
-	result := fmtInterests(interests)
+	result := fmtInterests(Interests{Languages: []string{"Go", "Python"}})
 	if result != "languages: Go, Python" {
 		t.Errorf("expected 'languages: Go, Python', got %s", result)
 	}
 
-	// Test with multiple categories
-	interests = map[string]interface{}{
-		"languages": []string{"Go", "Python"},
-		"tools":     []string{"Docker"},
-	}
-	result = fmtInterests(interests)
-	if result != "languages: Go, Python; tools: Docker" && result != "tools: Docker; languages: Go, Python" {
+	result = fmtInterests(Interests{Languages: []string{"Go", "Python"}, Tools: []string{"Docker"}})
+	if result != "languages: Go, Python; tools: Docker" {
 		t.Errorf("expected both categories, got %s", result)
 	}
 
-	// Test with empty slice
-	interests = map[string]interface{}{
-		"languages": []string{},
-	}
-	result = fmtInterests(interests)
-	if result != "" {
-		t.Errorf("expected empty string for empty slice, got %s", result)
-	}
-
-	// Test with non-slice value (should be skipped)
-	interests = map[string]interface{}{
-		"languages": "Go", // Not a slice
-	}
-	result = fmtInterests(interests)
-	if result != "" {
-		t.Errorf("expected empty string for non-slice value, got %s", result)
+	if result := fmtInterests(Interests{Languages: []string{}}); result != "" {
+		t.Errorf("expected empty string for an empty slice, got %s", result)
 	}
 }
 

@@ -150,10 +150,8 @@ func TestNonGitHubInterview_ProducesExtraAnswersThatDriveInterestsAndPersona(t *
 		t.Errorf("ExtraAnswers: got %+v", ea)
 	}
 
-	langs, _ := p.Interests["languages"].([]any)
-	domains, _ := p.Interests["domains"].([]any)
-	if len(langs) != 2 || langs[0] != "Go" || len(domains) != 1 || domains[0] != "Backend Services" {
-		t.Errorf("Interests should reflect the Non-GitHub answers, got %v", p.Interests)
+	if len(p.Interests.Languages) != 2 || p.Interests.Languages[0] != "Go" || len(p.Interests.Domains) != 1 || p.Interests.Domains[0] != "Backend Services" {
+		t.Errorf("Interests should reflect the Non-GitHub answers, got %+v", p.Interests)
 	}
 
 	call, _ := llm.lastCallMatching("personality generator")
