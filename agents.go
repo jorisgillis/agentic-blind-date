@@ -277,37 +277,65 @@ func (a *AgentPipeline) storeMatch(m Match) ([]string, error) {
 }
 
 // RunContinuousMatching matches a Participant who just became ready against the
-// other ready and matched Participants, breaking a weaker Match when needed.
+// other ready and matched Participants, taking over a weaker Match when needed.
+// A partner displaced by a take-over is matched straight away in the same way.
+// Participants already paired in this chain are not taken over again, so the
+// chain ends.
 func (a *AgentPipeline) RunContinuousMatching(newcomer *Participant) error {
 	a.matchMu.Lock()
 	defer a.matchMu.Unlock()
 
-	a.db.LogActivity(fmt.Sprintf("🔮 Matching %s against existing pool...", newcomer.PersonaName))
+	inChain := map[string]bool{}
+	queue := []string{newcomer.ID}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		displaced, err := a.matchOne(id, inChain)
+		if err != nil {
+			return err
+		}
+		queue = append(queue, displaced...)
+	}
+	return nil
+}
 
+// matchOne finds a partner for one Participant, skipping those paired earlier
+// in the chain, and returns whoever the new Match displaced.
+func (a *AgentPipeline) matchOne(id string, inChain map[string]bool) ([]string, error) {
 	all, err := a.db.GetAllParticipants()
 	if err != nil {
-		return fmt.Errorf("GetAllParticipants: %w", err)
+		return nil, fmt.Errorf("GetAllParticipants: %w", err)
 	}
+	var newcomer *Participant
 	var others []*Participant
 	for _, p := range all {
-		if p.ID != newcomer.ID && (p.PipelineStep == "ready" || p.PipelineStep == "matched") {
+		switch {
+		case p.ID == id:
+			newcomer = p
+		case inChain[p.ID]:
+		case p.PipelineStep == "ready" || p.PipelineStep == "matched":
 			others = append(others, p)
 		}
 	}
+	if newcomer == nil {
+		return nil, nil
+	}
+	a.db.LogActivity(fmt.Sprintf("🔮 Matching %s against existing pool...", newcomer.PersonaName))
 
 	m := a.matcher.MatchNewcomer(newcomer, others)
 	if m == nil {
 		a.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newcomer.PersonaName))
-		return nil
+		return nil, nil
 	}
 	displaced, err := a.storeMatch(*m)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	inChain[m.A.ID], inChain[m.B.ID] = true, true
 	if len(displaced) > 0 {
 		a.db.LogActivity(fmt.Sprintf("🔄 %s took over %s's previous match", newcomer.PersonaName, m.B.PersonaName))
 	}
-	return nil
+	return displaced, nil
 }
 
 func extractJSON(s string) string {

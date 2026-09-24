@@ -67,7 +67,7 @@ The LLM returns a JSON response with score, reason, flags, and icebreakers.
 ### Continuous Matching
 The process of automatically matching participants as they become ready. Unlike batch matching, continuous matching:
 - Runs as each participant reaches `ready` state, i.e. once they have completed every pipeline step (Interview answered, Persona created), in any event phase including onboarding
-- Can break existing matches if a better candidate arrives
+- Can break existing matches if a better candidate arrives; the partner left behind is matched again straight away (a chain that never takes over someone already paired in the same chain)
 - Maintains a dynamic pool of ready participants
 
 ### Matching Algorithm

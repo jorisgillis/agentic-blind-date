@@ -534,3 +534,29 @@ func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThe
 		t.Errorf("displaced B should be ready and unmatched, got step %s matched with %q", b.PipelineStep, b.MatchedWith)
 	}
 }
+
+func TestRunContinuousMatching_ADisplacedPartnerIsRematchedRightAway(t *testing.T) {
+	db := newTestDB(t)
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70, {"B", "C"}: 60}))
+	gh := newFakeGitHub()
+	rel := NewRelationships(db)
+	pipeline := NewAgentPipeline(db, gh, llm, NewMatcher(db, gh, llm), NewInterview(db, llm), rel)
+	for _, id := range []string{"A", "B", "C", "D", "N"} {
+		seed(t, db, id, id, "ready")
+	}
+	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
+	rel.Pair(Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
+
+	if err := pipeline.RunContinuousMatching(reload(t, db, "N")); err != nil {
+		t.Fatal(err)
+	}
+
+	// N takes over A (70 beats 40); displaced B takes over C (60 beats 30);
+	// displaced D finds nobody left to beat outside this chain and stays in the Pool.
+	for id, want := range map[string]string{"N": "A", "A": "N", "B": "C", "C": "B", "D": ""} {
+		if got := reload(t, db, id).MatchedWith; got != want {
+			t.Errorf("%s matched with %q, want %q", id, got, want)
+		}
+	}
+	assertInvariant(t, db)
+}
