@@ -68,7 +68,7 @@ func (o *Onboarding) prepare(participantID string) {
 	if p.HasGitHub {
 		handle := p.GitHubHandle
 		profile = &GitHubProfile{Login: handle, Name: handle}
-		o.db.LogActivity(fmt.Sprintf("🔍 Fetching @%s's GitHub profile...", handle))
+		o.db.LogActivity("🔍 Fetching a GitHub profile...")
 		fetched, err := o.github.FetchProfile(handle)
 		if err != nil {
 			log.Printf("Failed to fetch GitHub profile for @%s: %v", handle, err)
@@ -123,7 +123,7 @@ func (o *Onboarding) finish(p *Participant) {
 // and hands them to Continuous Matching. Failures to save the Persona or
 // Interests are logged rather than leaving the Participant stuck.
 func (o *Onboarding) becomeReady(p *Participant) {
-	o.db.LogActivity(fmt.Sprintf("🎭 Crafting persona for participant %s...", p.ID))
+	o.db.LogActivity("🎭 Crafting a new persona...")
 	if p.Profile == nil {
 		p.Profile = &GitHubProfile{}
 	}
