@@ -2,7 +2,7 @@
 label: wayfinder:grilling
 title: Which tokens make up a Theme, and where motion and sound happen
 status: open
-assignee:
+assignee: claude
 blocked_by: [01-theme-delivery-and-browser-constraints.md]
 ---
 
