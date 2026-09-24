@@ -258,6 +258,30 @@ func TestGitHubClient_NetworkFailures(t *testing.T) {
 	}
 }
 
+// hangingTransport never responds, like a follow check stuck behind a dead connection.
+type hangingTransport struct{}
+
+func (hangingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
+
+func TestGitHubClient_ATimeoutIsTreatedLikeAnyOtherFailure(t *testing.T) {
+	c := NewGitHubClient("secret")
+	c.httpClient = &http.Client{Transport: hangingTransport{}, Timeout: 20 * time.Millisecond}
+
+	start := time.Now()
+	if _, err := c.FetchProfile("octo"); err == nil {
+		t.Error("a hung fetch should fail")
+	}
+	if a, b := c.CheckMutualFollow("octo", "ferris"); a || b {
+		t.Error("a hung follow check is treated as not following")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("calls should be bounded by the client timeout, took %v", elapsed)
+	}
+}
+
 func TestGitHubClient_FollowChecksSendTheToken(t *testing.T) {
 	u := newUpstream().on("/users/octo/following/ferris", 204, "")
 

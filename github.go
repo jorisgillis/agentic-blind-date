@@ -24,9 +24,13 @@ type GitHubClient struct {
 	httpClient *http.Client
 }
 
+// githubTimeout bounds every GitHub call. A hung request must not stall
+// Matchmaking, which holds its lock for the whole assessment.
+const githubTimeout = 10 * time.Second
+
 // NewGitHubClient creates a new GitHubClient with the given API token.
 func NewGitHubClient(token string) *GitHubClient {
-	return &GitHubClient{token: token, httpClient: http.DefaultClient}
+	return &GitHubClient{token: token, httpClient: &http.Client{Timeout: githubTimeout}}
 }
 
 // GitHubProfile contains data fetched from a user's GitHub account.
