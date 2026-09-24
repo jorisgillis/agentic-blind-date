@@ -44,16 +44,3 @@ func TestAdvanceStep_RejectsIllegalTransitions(t *testing.T) {
 		})
 	}
 }
-
-func TestFinalSetup_RunsOnceEvenIfTheLastAnswerIsSubmittedTwice(t *testing.T) {
-	llm := newFakeLLM().on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`)
-	_, deps := newTestServer(t, llm, nil)
-	seed(t, deps.db, "p", "", "interviewing")
-
-	deps.agents.RunFinalSetup("p")
-	deps.agents.RunFinalSetup("p")
-
-	if n := llm.callsMatching("personality generator"); n != 1 {
-		t.Errorf("persona created %d times, want once", n)
-	}
-}

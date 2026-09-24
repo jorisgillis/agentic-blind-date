@@ -233,8 +233,11 @@ func TestFinalSetup_SavingThePersonaKeepsAProfileChangeMadeMeanwhile(t *testing.
 	db = deps.db
 	seed(t, db, "p1", "", "interviewing")
 
-	deps.agents.RunFinalSetup("p1")
+	if _, err := deps.onboarding.Answer(reload(t, db, "p1"), "Tabs"); err != nil {
+		t.Fatal(err)
+	}
 
+	eventually(t, "ready", func() bool { return reload(t, db, "p1").PipelineStep == StepReady })
 	p := reload(t, db, "p1")
 	if p.PersonaName != "The Gopher" {
 		t.Fatalf("persona not saved: %q", p.PersonaName)

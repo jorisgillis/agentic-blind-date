@@ -7,7 +7,7 @@ Accepted
 
 As the Agentic Blind Date application grows, we need a clear strategy for managing dependencies between components. The application currently has several components that depend on each other:
 
-- `Handler` depends on `DB`, `AgentPipeline`
+- `Handler` depends on `DB`, `AgentPipeline` (since replaced by `Onboarding` and `Matchmaking`)
 - `AgentPipeline` depends on `DB`, `GitHubClient`, `MistralClient`, `Matcher`
 - `Matcher` depends on `GitHubClient`, `MistralClient`
 - `DB` wraps `*sql.DB`
@@ -39,15 +39,16 @@ func NewDB(path string) (*DB, error)
 func NewGitHubClient(token string) *GitHubClient
 func NewMistralClient(apiKey, model string, httpClient *http.Client) *MistralClient
 
-// Business logic: upstream services are accepted through the LLM and GitHubAPI seams
+// Domain modules: upstream services are accepted through the LLM and GitHubAPI seams
+func NewInterview(db *DB, llm LLM) *Interview
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
 func NewRelationships(db *DB) *Relationships
 func NewPersonas(llm LLM) *Personas
-func NewAgentPipeline(db *DB, github GitHubAPI, matcher *Matcher, interview *Interview, relations *Relationships, personas *Personas) *AgentPipeline
+func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking
+func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding
 
 // HTTP handlers
-func NewInterview(db *DB, llm LLM) *Interview
-func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Matcher, relations *Relationships) *Handler
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler
 ```
 
 #### Composition Root
@@ -74,8 +75,9 @@ func main() {
     matcher := NewMatcher(db, github, mistral)
     interview := NewInterview(db, mistral)
     relations := NewRelationships(db)
-    agents := NewAgentPipeline(db, github, matcher, interview, relations, NewPersonas(mistral))
-    h := NewHandler(db, agents, interview, matcher, relations)
+    matchmaking := NewMatchmaking(db, matcher, relations)
+    onboarding := NewOnboarding(db, github, interview, NewPersonas(mistral), matchmaking)
+    h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
 
     // Start server
     log.Fatal(http.ListenAndServe(addr, buildMux(h)))

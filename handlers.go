@@ -11,8 +11,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Badge represents a visual badge displayed on participant cards.
@@ -71,17 +69,18 @@ type graphEdge struct {
 
 // Handler handles HTTP requests for the web application.
 type Handler struct {
-	db        *DB
-	agents    *AgentPipeline
-	interview *Interview
-	matcher   *Matcher
-	relations *Relationships
-	tmpl      *template.Template
+	db          *DB
+	onboarding  *Onboarding
+	interview   *Interview
+	matcher     *Matcher
+	relations   *Relationships
+	matchmaking *Matchmaking
+	tmpl        *template.Template
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-// It initializes the templates with the provided database, AgentPipeline, Interview module, Matcher and Relationship module.
-func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Matcher, relations *Relationships) *Handler {
+// It initializes the templates and takes the modules the pages use.
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -108,7 +107,7 @@ func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Ma
 		"textColor": paletteText,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
-	return &Handler{db: db, agents: agents, interview: interview, matcher: matcher, relations: relations, tmpl: tmpl}
+	return &Handler{db: db, onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking, tmpl: tmpl}
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
@@ -166,39 +165,12 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if noGitHub {
-		id := uuid.New().String()
-		// For non-GitHub users, generate a unique handle to avoid UNIQUE constraint violation
-		handle = "no-github-" + id[:8]
-		if err := h.db.CreateParticipant(id, handle, name, false); err != nil {
-			log.Printf("CreateParticipant failed for non-GitHub user name=%s: %v", name, err)
-			http.Error(w, "registration failed: "+err.Error(), 500)
-			return
-		}
-
-		// Non-GitHub users will get ExtraQuestions during interview
-		go h.agents.RunSetup(id)
-		setParticipantCookie(w, id)
-		http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
-		return
-	}
-
-	if existing, err := h.db.GetParticipantByHandle(handle); err == nil {
-		setParticipantCookie(w, existing.ID)
-		http.Redirect(w, r, "/user/onboard/"+existing.ID, http.StatusSeeOther)
-		return
-	} else if err != nil {
-		log.Printf("GetParticipantByHandle failed for handle=%s: %v", handle, err)
-	}
-
-	id := uuid.New().String()
-	if err := h.db.CreateParticipant(id, handle, name, true); err != nil {
-		log.Printf("CreateParticipant failed for handle=%s, name=%s: %v", handle, name, err)
+	id, err := h.onboarding.Register(name, handle, !noGitHub)
+	if err != nil {
+		log.Printf("Registration failed for handle=%s, name=%s: %v", handle, name, err)
 		http.Error(w, "registration failed: "+err.Error(), 500)
 		return
 	}
-
-	go h.agents.RunSetup(id)
 	setParticipantCookie(w, id)
 	http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 }
@@ -249,7 +221,7 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	done, err := h.interview.Submit(p, r.FormValue("answer"))
+	done, err := h.onboarding.Answer(p, r.FormValue("answer"))
 	var invalid *InvalidAnswerError
 	switch {
 	case errors.Is(err, ErrInterviewOver), errors.As(err, &invalid):
@@ -261,7 +233,6 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if done {
-		go h.agents.RunFinalSetup(p.ID)
 		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
 		return
 	}
@@ -622,7 +593,7 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 	h.db.LogActivity("🔄 Admin triggered full rematch")
 	go func() {
-		if err := h.agents.Rematch(); err != nil {
+		if err := h.matchmaking.Rematch(); err != nil {
 			log.Printf("Rematch error: %v", err)
 		}
 	}()

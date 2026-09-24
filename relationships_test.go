@@ -157,8 +157,8 @@ func TestRematch_RunningAlongsideANewcomersMatchingKeepsTheKeyInvariant(t *testi
 	}
 
 	done := make(chan error, 2)
-	go func() { done <- deps.agents.Rematch() }()
-	go func() { done <- deps.agents.RunContinuousMatching(reload(t, deps.db, "N")) }()
+	go func() { done <- deps.matchmaking.Rematch() }()
+	go func() { done <- deps.matchmaking.MatchNewcomer(reload(t, deps.db, "N")) }()
 	for i := 0; i < 2; i++ {
 		if err := <-done; err != nil {
 			t.Fatal(err)

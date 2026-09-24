@@ -47,8 +47,8 @@ Candidate selection and greedy assignment are internal (`topCandidates`,
 
 ### Integration
 - `Matcher` is created in the composition root (main.go)
-- `Matcher` is injected into `AgentPipeline` and `Handler` via their constructors
-- The pipeline stores the Matches the Matcher returns; it holds no matching logic
+- `Matcher` is injected into `Matchmaking` and `Handler` via their constructors
+- `Matchmaking` serialises Rematch and Continuous Matching and stores the Matches the Matcher returns through the Relationship module; it holds no matching logic
 
 > Updated after the deepening in the architecture review (2026-09): the original
 > extraction left the algorithm, cache and a duplicate Match prompt in

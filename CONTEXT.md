@@ -28,6 +28,8 @@ The automated process that each participant goes through:
 3. **Generating Persona**: LLM creates the fun persona based on profile and answers
 4. **Ready**: Participant is ready for matching
 
+The **Onboarding module** runs the pipeline: registration, preparing the Interview, and, once every question is answered, creating the Persona, computing Interests, making the Participant ready and handing them to Continuous Matching.
+
 ### Pipeline Step
 The current stage of a participant in the pipeline. Steps only move forward, one at a time (only an event Reset starts over), so each step is entered at most once. Valid values:
 - `fetching_github`
@@ -71,6 +73,8 @@ The process of automatically matching participants as they become ready. Unlike 
 - Runs as each participant reaches `ready` state, i.e. once they have completed every pipeline step (Interview answered, Persona created), in any event phase including onboarding
 - Can break existing matches if a better candidate arrives; the partner left behind is matched again straight away (a chain that never takes over someone already paired in the same chain)
 - Maintains a dynamic pool of ready participants
+
+The **Matchmaking module** runs matching operations one at a time: the admin's Rematch and Continuous Matching for a newcomer. The Matcher decides who fits; the Relationship module records it.
 
 ### Matching Algorithm
 The 3-phase algorithm for pairing participants:

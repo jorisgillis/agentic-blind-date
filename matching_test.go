@@ -299,11 +299,11 @@ func TestExtractJSON(t *testing.T) {
 	}
 }
 
-func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *testing.T) {
+func TestMatchNewcomer_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *testing.T) {
 	db := newTestDB(t)
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70}))
 	gh := newFakeGitHub()
-	pipeline := NewAgentPipeline(db, gh, NewMatcher(db, gh, llm), NewInterview(db, llm), NewRelationships(db), NewPersonas(llm))
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), NewRelationships(db))
 	for _, id := range []string{"A", "B", "N"} {
 		db.CreateParticipant(id, id, id, true)
 		db.SetProfile(id, &GitHubProfile{Login: id})
@@ -312,7 +312,7 @@ func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThe
 	}
 	NewRelationships(db).Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40, Reason: "meh"}})
 
-	if err := pipeline.RunContinuousMatching(reload(t, db, "N")); err != nil {
+	if err := matchmaking.MatchNewcomer(reload(t, db, "N")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -324,19 +324,19 @@ func TestRunContinuousMatching_BreakingAMatchReturnsTheDisplacedParticipantToThe
 	}
 }
 
-func TestRunContinuousMatching_ADisplacedPartnerIsRematchedRightAway(t *testing.T) {
+func TestMatchNewcomer_ADisplacedPartnerIsRematchedRightAway(t *testing.T) {
 	db := newTestDB(t)
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70, {"B", "C"}: 60}))
 	gh := newFakeGitHub()
 	rel := NewRelationships(db)
-	pipeline := NewAgentPipeline(db, gh, NewMatcher(db, gh, llm), NewInterview(db, llm), rel, NewPersonas(llm))
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
 	for _, id := range []string{"A", "B", "C", "D", "N"} {
 		seed(t, db, id, id, "ready")
 	}
 	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
 	rel.Pair(Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
 
-	if err := pipeline.RunContinuousMatching(reload(t, db, "N")); err != nil {
+	if err := matchmaking.MatchNewcomer(reload(t, db, "N")); err != nil {
 		t.Fatal(err)
 	}
 

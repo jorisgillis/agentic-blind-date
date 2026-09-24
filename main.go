@@ -63,9 +63,10 @@ func main() {
 	matcher := NewMatcher(db, github, mistral)
 	interview := NewInterview(db, mistral)
 	relations := NewRelationships(db)
-	agents := NewAgentPipeline(db, github, matcher, interview, relations, NewPersonas(mistral))
+	matchmaking := NewMatchmaking(db, matcher, relations)
+	onboarding := NewOnboarding(db, github, interview, NewPersonas(mistral), matchmaking)
 
-	h := NewHandler(db, agents, interview, matcher, relations)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)
