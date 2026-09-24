@@ -210,12 +210,11 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	switch p.PipelineStep {
-	case "ready":
-		http.Redirect(w, r, h.matchOrWait(p), http.StatusSeeOther)
-	default:
-		h.render(w, "onboard.html", p)
+	if dest := h.destination(p); dest != r.URL.Path {
+		http.Redirect(w, r, dest, http.StatusSeeOther)
+		return
 	}
+	h.render(w, "onboard.html", p)
 }
 
 // GET /user/pipeline/{id}  — HTMX polled every 2s
@@ -226,19 +225,15 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch p.PipelineStep {
-	case "ready":
-		w.Header().Set("HX-Redirect", h.matchOrWait(p))
-	case "interviewing":
-		if qd := h.interview.Next(p); qd != nil {
-			h.render(w, "fragment-question.html", qd)
-			return
-		}
-		// Every question is answered and the persona is being crafted: keep polling.
-		h.render(w, "fragment-pipeline-step.html", p)
-	default:
-		h.render(w, "fragment-pipeline-step.html", p)
+	if dest := h.destination(p); dest != "/user/onboard/"+p.ID {
+		w.Header().Set("HX-Redirect", dest)
+		return
 	}
+	if qd := h.interview.Next(p); qd != nil && p.PipelineStep == "interviewing" {
+		h.render(w, "fragment-question.html", qd)
+		return
+	}
+	h.render(w, "fragment-pipeline-step.html", p)
 }
 
 // POST /user/answer/{id}
@@ -250,7 +245,7 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if p.PipelineStep != "interviewing" {
-		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
+		w.Header().Set("HX-Redirect", h.destination(p))
 		return
 	}
 
@@ -281,8 +276,8 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if h.matchRevealed(p) {
-		http.Redirect(w, r, "/user/match/"+p.ID, http.StatusSeeOther)
+	if dest := h.destination(p); dest != r.URL.Path {
+		http.Redirect(w, r, dest, http.StatusSeeOther)
 		return
 	}
 
@@ -320,8 +315,8 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", 404)
 		return
 	}
-	if h.matchRevealed(p) {
-		w.Header().Set("HX-Redirect", "/user/match/"+p.ID)
+	if dest := h.destination(p); dest != "/user/wait/"+p.ID {
+		w.Header().Set("HX-Redirect", dest)
 		return
 	}
 	h.render(w, "fragment-wait-status.html", map[string]any{
@@ -338,8 +333,8 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !h.matchRevealed(p) {
-		http.Redirect(w, r, "/user/wait/"+p.ID, http.StatusSeeOther)
+	if dest := h.destination(p); dest != r.URL.Path {
+		http.Redirect(w, r, dest, http.StatusSeeOther)
 		return
 	}
 
@@ -611,19 +606,6 @@ func (h *Handler) phase() string {
 	return phase
 }
 
-// matchRevealed reports whether p may see their Match: they have one and the admin revealed.
-func (h *Handler) matchRevealed(p *Participant) bool {
-	return p.IsMatched() && h.phase() == "revealed"
-}
-
-// matchOrWait is the page for a matched Participant: their Match after the Reveal, else the wait page.
-func (h *Handler) matchOrWait(p *Participant) string {
-	if h.matchRevealed(p) {
-		return "/user/match/" + p.ID
-	}
-	return "/user/wait/" + p.ID
-}
-
 // POST /admin/reset
 func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.Reset(); err != nil {
@@ -698,9 +680,8 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			switch p.PipelineStep {
-			case "ready":
-				sseRedirect(w, h.matchOrWait(p))
+			if dest := h.destination(p); dest != "/user/onboard/"+p.ID {
+				sseRedirect(w, dest)
 				return
 			}
 		}
@@ -729,8 +710,8 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			if h.matchRevealed(p) {
-				sseRedirect(w, "/user/match/"+p.ID)
+			if dest := h.destination(p); dest != "/user/wait/"+p.ID {
+				sseRedirect(w, dest)
 				return
 			}
 		}

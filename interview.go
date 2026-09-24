@@ -107,6 +107,16 @@ Respond with ONLY valid JSON — no markdown:
 	return qs, nil
 }
 
+// hasOpenQuestions reports whether the Participant's Interview has unanswered questions.
+func hasOpenQuestions(p *Participant) bool {
+	for _, q := range p.Questions {
+		if _, answered := p.Answers[q.ID]; !answered {
+			return true
+		}
+	}
+	return false
+}
+
 // Next returns the first unanswered question, or nil when none remain.
 func (iv *Interview) Next(p *Participant) *QuestionData {
 	for i, q := range p.Questions {

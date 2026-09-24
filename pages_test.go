@@ -20,7 +20,9 @@ func seed(t *testing.T, db *DB, id, persona, step string) *Participant {
 	db.SetProfile(id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
 	db.SetPersona(id, persona, "Ships things")
 	db.SetQuestions(id, questions)
-	db.UpdateAnswers(id, map[string]string{"fixed_0": "Tabs"})
+	if step != "interviewing" && step != "fetching_github" {
+		db.UpdateAnswers(id, map[string]string{"fixed_0": "Tabs"})
+	}
 	db.UpdatePipelineStep(id, step)
 	return reload(t, db, id)
 }
@@ -101,7 +103,8 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	seed(t, deps.db, "m", "M", "ready")
 	seed(t, deps.db, "m2", "M2", "ready")
 	pair(t, deps.db, "m", "m2")
-	seed(t, deps.db, "done", "D", "interviewing") // its only question is answered
+	seed(t, deps.db, "done", "D", "interviewing")
+	deps.db.UpdateAnswers("done", map[string]string{"fixed_0": "Tabs"}) // every question answered
 
 	if body := readBody(t, get(t, srv, "/user/pipeline/f")); !strings.Contains(body, "Preparing your interview questions") {
 		t.Errorf("fetching_github: want the preparing state")
@@ -112,9 +115,8 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	if loc := get(t, srv, "/user/pipeline/m").Header.Get("HX-Redirect"); loc != "/user/match/m" {
 		t.Errorf("matched: want HX-Redirect to match, got %q", loc)
 	}
-	resp := get(t, srv, "/user/pipeline/done")
-	if resp.Header.Get("HX-Redirect") != "" || !strings.Contains(readBody(t, resp), "pipeline-area") {
-		t.Errorf("all answered: keep polling while the persona is crafted")
+	if loc := get(t, srv, "/user/pipeline/done").Header.Get("HX-Redirect"); loc != "/user/wait/done" {
+		t.Errorf("all answered: wait while the persona is crafted, got %q", loc)
 	}
 	if resp := get(t, srv, "/user/pipeline/nobody"); resp.StatusCode != 404 {
 		t.Errorf("unknown: want 404, got %d", resp.StatusCode)
@@ -382,6 +384,7 @@ func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 	seed(t, deps.db, "octo", "The Gopher", "ready")
 	pair(t, deps.db, "ada", "octo")
 	deps.db.CreateParticipant("zed", "no-github-5678efgh", "Zed", false)
+	deps.db.SetQuestions("zed", ExtraQuestions)
 	deps.db.UpdatePipelineStep("zed", "interviewing")
 
 	for _, path := range []string{"/user/onboard/zed", "/user/match/ada", "/user/match/octo", "/data", "/bigscreen/graph-data"} {
