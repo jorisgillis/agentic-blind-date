@@ -56,7 +56,7 @@ Late joiners who arrive after the reveal see a "You just missed it!" message rat
 ### Prerequisites
 
 - Go 1.21+
-- A [Mistral AI](https://console.mistral.ai/) API key
+- An LLM provider key ([Mistral AI](https://console.mistral.ai/) by default; see "Choosing an LLM provider" below)
 - A GitHub personal access token (optional, but avoids rate limiting)
 
 ### Setup
@@ -87,8 +87,25 @@ The database (`blind_date.db`) is created automatically on first run.
 
 | Variable | Required | Description |
 |---|---|---|
-| `MISTRAL_API_KEY` | Yes | Mistral AI API key |
+| `LLM_PROVIDER` | No | `mistral` (default) or `scaleway` |
+| `LLM_API_KEY` | Depends on provider | See "Choosing an LLM provider" below |
+| `LLM_BASE_URL` | No | Overrides the provider's default base URL |
+| `LLM_MODEL` | No | Overrides the provider's default model |
+| `LLM_TIMEOUT` | No | Overrides the provider's default timeout (Go duration, e.g. `45s`) |
+| `LLM_JSON_MODE` | No | `true` (default) or `false` |
+| `MISTRAL_API_KEY` | Legacy | Still honoured as the key when `LLM_PROVIDER` is mistral (or unset) and `LLM_API_KEY` is unset |
 | `GITHUB_TOKEN` | No | GitHub PAT — increases rate limit from 60 to 5000 req/hr |
+
+### Choosing an LLM provider
+
+The organiser picks the provider for the whole deployment with `LLM_PROVIDER`. Each provider works out of the box with sensible defaults; any of `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_TIMEOUT` and `LLM_JSON_MODE` overrides them.
+
+| Provider | Base URL default | Key | Default model | Default timeout |
+|---|---|---|---|---|
+| `mistral` (default) | `https://api.mistral.ai/v1` | required (`LLM_API_KEY` or legacy `MISTRAL_API_KEY`) | `mistral-medium-latest` | 30s |
+| `scaleway` | `https://api.scaleway.ai/v1` | required — the secret key of a Scaleway IAM API key | `mistral-small-3.2-24b-instruct-2506` | 30s |
+
+An unknown `LLM_PROVIDER` or a missing required key stops the app at startup with a clear message, before the event.
 
 ## Developing
 
@@ -108,6 +125,7 @@ main.go          server setup, route registration, .env auto-loading
 db.go            SQLite schema, Participant type, all queries
 github.go        GitHub public API client
 llm.go           OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
+llmprovider.go   LLM provider selection from LLM_* settings
 agents.go        agent pipeline (RunSetup, RunMatching, greedy matching)
 handlers.go      HTTP handlers + /data JSON endpoints + /bigscreen/graph-data
 questions.go     fixed Q&A question definitions

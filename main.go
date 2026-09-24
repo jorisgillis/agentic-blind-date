@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 )
 
 // loadDotEnv sets environment variables from a KEY=value file, without
@@ -38,11 +37,13 @@ func loadDotEnv(path string) {
 func main() {
 	loadDotEnv(".env")
 
-	if os.Getenv("MISTRAL_API_KEY") == "" {
-		log.Println("WARNING: MISTRAL_API_KEY not set — LLM calls will fail")
-	}
 	if os.Getenv("GITHUB_TOKEN") == "" {
 		log.Println("WARNING: GITHUB_TOKEN not set — GitHub API limited to 60 req/hr")
+	}
+
+	llm, err := SelectLLM(os.Getenv)
+	if err != nil {
+		log.Fatal("LLM provider: ", err)
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -56,13 +57,6 @@ func main() {
 	defer db.Close()
 
 	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
-	llm := NewOpenAIClient(
-		"https://api.mistral.ai/v1",
-		os.Getenv("MISTRAL_API_KEY"),
-		"mistral-medium-latest",
-		true,
-		&http.Client{Timeout: 30 * time.Second},
-	)
 
 	matcher := NewMatcher(db, github, llm)
 	interview := NewInterview(db, llm)

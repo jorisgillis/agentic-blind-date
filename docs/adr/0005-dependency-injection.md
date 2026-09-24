@@ -39,6 +39,10 @@ func NewDB(path string) (*DB, error)
 func NewGitHubClient(token string) *GitHubClient
 func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *http.Client) *OpenAIClient
 
+// Provider selection: reads the LLM_* settings through an injected lookup
+// (never the process environment directly) and returns a configured LLM
+func SelectLLM(lookup func(string) string) (LLM, error)
+
 // Domain modules: upstream services are accepted through the LLM and GitHubAPI seams
 func NewInterview(db *DB, llm LLM) *Interview
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
@@ -64,14 +68,11 @@ func main() {
     }
     defer db.Close()
 
+    llm, err := SelectLLM(os.Getenv)
+    if err != nil {
+        log.Fatal("LLM provider: ", err)
+    }
     github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
-    llm := NewOpenAIClient(
-        "https://api.mistral.ai/v1",
-        os.Getenv("MISTRAL_API_KEY"),
-        "mistral-medium-latest",
-        true,
-        &http.Client{Timeout: 30 * time.Second},
-    )
 
     // Initialize application components
     matcher := NewMatcher(db, github, llm)
