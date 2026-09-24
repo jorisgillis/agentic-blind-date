@@ -78,11 +78,13 @@ func TestOpenAIClient_ErrorTextPrefersErrorMessageThenTopLevelMessageThenDetailT
 		body string
 		want string
 	}{
-		"error.message":     {`{"error": {"message": "bad key"}}`, "bad key"},
-		"top-level message": {`{"message": "slow down"}`, "slow down"},
-		"detail string":     {`{"detail": "invalid request"}`, "invalid request"},
-		"detail structured": {`{"detail": [{"loc": ["body"], "msg": "field required"}]}`, "field required"},
-		"raw body":          {`not json at all`, "not json at all"},
+		"error.message":             {`{"error": {"message": "bad key"}}`, "bad key"},
+		"top-level message":         {`{"message": "slow down"}`, "slow down"},
+		"detail string":             {`{"detail": "invalid request"}`, "invalid request"},
+		"detail structured":         {`{"detail": [{"loc": ["body"], "msg": "field required"}]}`, "field required"},
+		"detail multiple errors":    {`{"detail": [{"msg": "field required"}, {"msg": "must be positive"}]}`, "field required; must be positive"},
+		"detail unrecognized shape": {`{"detail": {"foo": "bar"}}`, `{"foo": "bar"}`},
+		"raw body":                  {`not json at all`, "not json at all"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			u := newUpstream().on(chatPath, 400, tc.body)
