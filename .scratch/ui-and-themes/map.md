@@ -29,7 +29,8 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
 ## Decisions so far
 
 - [How Themes can reach every page, and what browsers allow for motion and sound](issues/01-theme-delivery-and-browser-constraints.md): Themes are CSS variables under `<html data-theme>`, set before first paint and untouched by HTMX and SSE. Motion collapses under reduced motion. Sound needs one tap (or one click on the Big Screen) and must be optional.
-- [Which tokens make up a Theme, and where motion and sound happen](issues/02-theme-token-set.md): 12 colour roles; Persona-coloured pages keep their background; three font families with at most one self-hosted web font; four radii, a border width and a glow; motion tokens on eight moments; synthesised sound cues, opt-in on phones; 3:1 Persona contrast; the default Theme is today's look.
+- [Which tokens make up a Theme, and where motion and sound happen](issues/02-theme-token-set.md): 12 colour roles; Persona-coloured pages keep their background; three font families with at most one self-hosted web font; four radii, a border width and a glow; motion tokens on eight moments; synthesised sound cues, opt-in on phones; 3:1 Persona contrast; the default Theme is today's look. (Grown to 14 roles by the next decision.)
+- [What the three Themes look, move and sound like](issues/03-three-theme-looks.md): Classic (today's look, the default), Neon and Paper, chosen from a five-variant prototype (branch `prototype/themes`). Two roles added: text on a Persona colour, and a Persona outline that lets light Themes pass the 3:1 rule.
 
 ## Not yet specified
 
