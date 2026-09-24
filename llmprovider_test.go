@@ -106,6 +106,29 @@ func TestSelectLLM_TheLegacyKeyDoesNotApplyToScaleway(t *testing.T) {
 	}
 }
 
+func TestSelectLLM_OllamaDefaultsAndNeedsNoKey(t *testing.T) {
+	llm, err := SelectLLM(fakeEnv(map[string]string{"LLM_PROVIDER": "ollama", "LLM_MODEL": "llama3.1:8b"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c := asOpenAI(t, llm)
+	if c.baseURL != "http://localhost:11434/v1" || c.model != "llama3.1:8b" || c.apiKey != "" {
+		t.Errorf("ollama defaults: %+v", c)
+	}
+	if c.httpClient.Timeout != 180*time.Second {
+		t.Errorf("ollama's default timeout should be 180s, got %v", c.httpClient.Timeout)
+	}
+}
+
+func TestSelectLLM_OllamaWithoutAModelIsAnError(t *testing.T) {
+	_, err := SelectLLM(fakeEnv(map[string]string{"LLM_PROVIDER": "ollama"}))
+
+	if err == nil || !strings.Contains(err.Error(), "LLM_MODEL") {
+		t.Errorf("want a missing-model error, got %v", err)
+	}
+}
+
 func TestSelectLLM_UnknownProviderIsAnError(t *testing.T) {
 	_, err := SelectLLM(fakeEnv(map[string]string{"LLM_PROVIDER": "openai"}))
 

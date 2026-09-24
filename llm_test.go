@@ -231,15 +231,37 @@ func TestOpenAIClient_BacksOffExponentially(t *testing.T) {
 	}
 }
 
-func TestOpenAIClient_A404LogsTheModelNameAndIsNotRetried(t *testing.T) {
-	u := newUpstream().on(chatPath, 404, `{"error": "model 'llama3.1:8b' not found, try pulling it first"}`)
+// TestOpenAIClient_Ollama covers #39: an Ollama-shaped adapter (no key, its
+// model) still treats an unpulled model (404) as a configuration error and a
+// full queue (503) as transient.
+func TestOpenAIClient_Ollama(t *testing.T) {
+	t.Run("a model that hasn't been pulled is a configuration error, not retried", func(t *testing.T) {
+		u := newUpstream().on(chatPath, 404, `{"error": "model 'llama3.1:8b' not found, try pulling it first"}`)
 
-	_, err := openAIFor(u, "", "llama3.1:8b", true).Chat("s", "u")
+		_, err := openAIFor(u, "", "llama3.1:8b", true).Chat("s", "u")
 
-	if err == nil || !strings.Contains(err.Error(), "404") {
-		t.Errorf("want a 404 error, got %v", err)
-	}
-	if len(u.requests) != 1 {
-		t.Errorf("a 404 should not be retried, got %d attempts", len(u.requests))
-	}
+		if err == nil || !strings.Contains(err.Error(), "404") {
+			t.Errorf("want a 404 error, got %v", err)
+		}
+		if len(u.requests) != 1 {
+			t.Errorf("a 404 should not be retried, got %d attempts", len(u.requests))
+		}
+	})
+
+	t.Run("a full queue is retried", func(t *testing.T) {
+		attempts := 0
+		u := newUpstream().onFunc(chatPath, func(*http.Request) (int, string) {
+			attempts++
+			if attempts < 2 {
+				return 503, `{"error": "queue is full"}`
+			}
+			return 200, `{"choices": [{"message": {"content": "hi"}}]}`
+		})
+
+		got, err := openAIFor(u, "", "llama3.1:8b", true).Chat("s", "u")
+
+		if err != nil || got != "hi" || attempts != 2 {
+			t.Errorf("want success after a retried 503, got %q after %d attempts (err %v)", got, attempts, err)
+		}
+	})
 }

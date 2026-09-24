@@ -87,7 +87,7 @@ The database (`blind_date.db`) is created automatically on first run.
 
 | Variable | Required | Description |
 |---|---|---|
-| `LLM_PROVIDER` | No | `mistral` (default) or `scaleway` |
+| `LLM_PROVIDER` | No | `mistral` (default), `scaleway` or `ollama` |
 | `LLM_API_KEY` | Depends on provider | See "Choosing an LLM provider" below |
 | `LLM_BASE_URL` | No | Overrides the provider's default base URL |
 | `LLM_MODEL` | No | Overrides the provider's default model |
@@ -104,8 +104,20 @@ The organiser picks the provider for the whole deployment with `LLM_PROVIDER`. E
 |---|---|---|---|---|
 | `mistral` (default) | `https://api.mistral.ai/v1` | required (`LLM_API_KEY` or legacy `MISTRAL_API_KEY`) | `mistral-medium-latest` | 30s |
 | `scaleway` | `https://api.scaleway.ai/v1` | required — the secret key of a Scaleway IAM API key | `mistral-small-3.2-24b-instruct-2506` | 30s |
+| `ollama` | `http://localhost:11434/v1` | not needed | none — set `LLM_MODEL` yourself | 180s |
 
-An unknown `LLM_PROVIDER` or a missing required key stops the app at startup with a clear message, before the event.
+An unknown `LLM_PROVIDER` or a missing required key or model stops the app at startup with a clear message, before the event.
+
+#### Running against Ollama
+
+Ollama has no universal default model, so pull one first and name it in `LLM_MODEL`:
+
+```bash
+ollama pull llama3.1:8b
+LLM_PROVIDER=ollama LLM_MODEL=llama3.1:8b ./agentic-blind-date
+```
+
+The 180s default timeout covers the first request, which can be slow while the model loads. A model that hasn't been pulled fails with a clear "try pulling it first" log message instead of being retried.
 
 ## Developing
 

@@ -29,6 +29,12 @@ var llmProviders = map[string]providerDefaults{
 		timeout:     30 * time.Second,
 		keyRequired: true,
 	},
+	"ollama": {
+		baseURL: "http://localhost:11434/v1",
+		// no default model: Ollama has no universal one, so the organiser
+		// names one they've pulled (for example llama3.1:8b)
+		timeout: 180 * time.Second, // a local model can take minutes to load on first use
+	},
 }
 
 // SelectLLM reads the LLM_* settings through lookup (never the process
@@ -43,7 +49,7 @@ func SelectLLM(lookup func(string) string) (LLM, error) {
 	}
 	defaults, ok := llmProviders[provider]
 	if !ok {
-		return nil, fmt.Errorf("unknown LLM_PROVIDER %q (want mistral or scaleway)", provider)
+		return nil, fmt.Errorf("unknown LLM_PROVIDER %q (want mistral, scaleway or ollama)", provider)
 	}
 
 	apiKey := lookup("LLM_API_KEY")
@@ -61,6 +67,9 @@ func SelectLLM(lookup func(string) string) (LLM, error) {
 	model := lookup("LLM_MODEL")
 	if model == "" {
 		model = defaults.model
+	}
+	if model == "" {
+		return nil, fmt.Errorf("LLM_PROVIDER=%s requires LLM_MODEL (for example llama3.1:8b)", provider)
 	}
 
 	baseURL := lookup("LLM_BASE_URL")
