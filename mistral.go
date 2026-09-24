@@ -20,6 +20,7 @@ type MistralClient struct {
 	apiKey     string
 	model      string
 	httpClient *http.Client
+	retryDelay func(attempt int) time.Duration // wait before retry attempt 1, 2, ...
 }
 
 // NewMistralClient creates a new MistralClient with the given API key, model, and HTTP client.
@@ -28,6 +29,7 @@ func NewMistralClient(apiKey, model string, httpClient *http.Client) *MistralCli
 		apiKey:     apiKey,
 		model:      model,
 		httpClient: httpClient,
+		retryDelay: func(attempt int) time.Duration { return time.Duration(1<<uint(attempt)) * time.Second },
 	}
 }
 
@@ -112,7 +114,7 @@ func (m *MistralClient) Chat(system, user string) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
-			time.Sleep(time.Duration(1<<uint(attempt)) * time.Second)
+			time.Sleep(m.retryDelay(attempt))
 		}
 		result, err := m.doChat(system, user)
 		if err == nil {

@@ -324,3 +324,55 @@ func ready(p *Participant) *Participant {
 	p.PipelineStep = "ready"
 	return p
 }
+
+func TestMatcherScorePair_PromptMentionsMutualAndReverseFollows(t *testing.T) {
+	for name, tc := range map[string]struct {
+		gh   *fakeGitHub
+		want string
+	}{
+		"mutual":  {newFakeGitHub().withFollow("a", "b").withFollow("b", "a"), "The Gopher and The Crab already follow each other on GitHub!"},
+		"reverse": {newFakeGitHub().withFollow("b", "a"), "The Crab already follows The Gopher on GitHub."},
+		"none":    {newFakeGitHub(), ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			llm := newFakeLLM().on("matchmaker", matchReply)
+			m := NewMatcher(newTestDB(t), tc.gh, llm)
+
+			m.ScorePair(dev("a", "The Gopher", "Go"), dev("b", "The Crab", "Rust"))
+
+			call, _ := llm.lastCallMatching("matchmaker")
+			if tc.want == "" && strings.Contains(call.User, "follow") {
+				t.Errorf("no follows: prompt should not mention following:\n%s", call.User)
+			}
+			if tc.want != "" && !strings.Contains(call.User, tc.want) {
+				t.Errorf("prompt should contain %q:\n%s", tc.want, call.User)
+			}
+		})
+	}
+}
+
+func TestMatcherMatchPool_PairsParticipantsLeftOutOfEveryCandidatePair(t *testing.T) {
+	scores := map[[2]string]int{}
+	others := []string{"C", "D", "E", "F", "G", "H"}
+	for i, a := range others {
+		for _, b := range others[i+1:] {
+			scores[[2]string{a, b}] = 90
+		}
+		scores[[2]string{"A", a}], scores[[2]string{"B", a}] = 10, 10
+	}
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(scores))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	// A and B are outside each other's top 5, and everyone they are a candidate with
+	// is taken by a 90, so they are only paired by the leftover heuristic pass.
+	pool := []*Participant{ready(dev("A", "A", "Go")), ready(dev("B", "B", "Rust"))}
+	for _, id := range others {
+		pool = append(pool, ready(dev(id, id, "Go", "Rust")))
+	}
+
+	matches := m.MatchPool(pool)
+
+	got := strings.Join(pairsOf(matches), " ")
+	if len(matches) != 4 || !strings.Contains(got, "A-B:50") {
+		t.Errorf("want all 8 matched, including leftovers A-B, got %s", got)
+	}
+}

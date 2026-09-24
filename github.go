@@ -20,12 +20,13 @@ type GitHubAPI interface {
 
 // GitHubClient provides access to the GitHub API for fetching user profiles and repositories.
 type GitHubClient struct {
-	token string
+	token      string
+	httpClient *http.Client
 }
 
 // NewGitHubClient creates a new GitHubClient with the given API token.
 func NewGitHubClient(token string) *GitHubClient {
-	return &GitHubClient{token: token}
+	return &GitHubClient{token: token, httpClient: http.DefaultClient}
 }
 
 // GitHubProfile contains data fetched from a user's GitHub account.
@@ -224,7 +225,7 @@ func (g *GitHubClient) get(url string) ([]byte, error) {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +281,7 @@ func (g *GitHubClient) checkFollows(follower, followee string) bool {
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return false
 	}
