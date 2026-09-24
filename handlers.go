@@ -77,6 +77,10 @@ type Handler struct {
 	relations   *Relationships
 	matchmaking *Matchmaking
 	tmpl        *template.Template
+
+	// streamChecked, when set (tests only), is told each time a stream has
+	// looked at the current state, so tests can wait for a stream to catch up.
+	streamChecked func(path string)
 }
 
 // NewHandler creates a new Handler with the given dependencies.
@@ -650,6 +654,9 @@ func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (do
 	for {
 		if check() {
 			return
+		}
+		if h.streamChecked != nil {
+			h.streamChecked(r.URL.Path)
 		}
 		select {
 		case <-r.Context().Done():

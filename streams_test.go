@@ -8,11 +8,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // liveStream is an SSE response that a test can read while the handler is still writing.
 type liveStream struct {
+	srv    *testSrv
+	path   string
 	mu     sync.Mutex
 	header http.Header
 	body   bytes.Buffer
@@ -44,7 +45,7 @@ func (s *liveStream) String() string {
 func open(t *testing.T, srv *testSrv, path string) *liveStream {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &liveStream{header: http.Header{}, cancel: cancel, done: make(chan struct{})}
+	s := &liveStream{srv: srv, path: path, header: http.Header{}, cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(s.done)
 		srv.h.ServeHTTP(s, httptest.NewRequest("GET", path, nil).WithContext(ctx))
@@ -73,11 +74,11 @@ func waitFor(t *testing.T, s *liveStream, want string) {
 	eventually(t, "stream to contain "+want, func() bool { return strings.Contains(s.String(), want) })
 }
 
-// quiet asserts the stream writes nothing more for a short while.
-func quiet(t *testing.T, s *liveStream, what string) {
+// sentNothingNew waits until the stream has handled its checks-th change (its
+// first look counts as one) and asserts it sent nothing beyond before.
+func sentNothingNew(t *testing.T, s *liveStream, checks int, before, what string) {
 	t.Helper()
-	before := s.String()
-	time.Sleep(50 * time.Millisecond)
+	eventually(t, "the stream to catch up", func() bool { return s.srv.streamChecks(s.path) >= checks })
 	if after := s.String(); after != before {
 		t.Errorf("%s: unexpected events %q", what, strings.TrimPrefix(after, before))
 	}
@@ -89,17 +90,14 @@ func TestPipelineStream_RefreshesWhenTheInterviewStartsAndRedirectsWhenDone(t *t
 	deps.db.SetQuestions("p", []Question{{ID: "q1", Text: "Tabs?"}})
 
 	s := open(t, srv, "/user/pipeline-stream/p")
-	quiet(t, s, "while preparing")
+	sentNothingNew(t, s, 1, "", "while preparing")
 
 	forceStep(deps.db, "p", StepInterviewing)
 	waitFor(t, s, "event: refresh")
 
 	before := s.String()
 	deps.db.LogActivity("someone else did something")
-	quiet(t, s, "a change that does not concern this Participant")
-	if s.String() != before {
-		t.Fatal("unrelated changes must not refresh the question form")
-	}
+	sentNothingNew(t, s, 3, before, "a change that does not concern this Participant")
 
 	deps.db.UpdateAnswers("p", map[string]string{"q1": "yes"})
 	waitFor(t, s, "event: redirect\ndata: /user/wait/p")
@@ -121,7 +119,7 @@ func TestWaitStream_RefreshesOnChangesAndRedirectsOnTheReveal(t *testing.T) {
 	seed(t, deps.db, "b", "B", "ready")
 
 	s := open(t, srv, "/user/wait-stream/a")
-	quiet(t, s, "nothing changed")
+	sentNothingNew(t, s, 1, "", "nothing changed")
 
 	pair(t, deps.db, "a", "b")
 	waitFor(t, s, "event: refresh")

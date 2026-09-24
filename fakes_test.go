@@ -150,6 +150,16 @@ func (g *fakeGitHub) followLookups() int {
 type testSrv struct {
 	URL string
 	h   http.Handler
+
+	mu     sync.Mutex
+	checks map[string]int // how often each stream has looked at the current state
+}
+
+// streamChecks reports how many times the stream at path has looked at the current state.
+func (s *testSrv) streamChecks(path string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checks[path]
 }
 
 func (s *testSrv) Client() *http.Client {
@@ -203,7 +213,13 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	matchmaking := NewMatchmaking(db, matcher, relations)
 	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking)
 	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
-	return &testSrv{URL: "http://test", h: buildMux(h)}, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
+	srv := &testSrv{URL: "http://test", h: buildMux(h), checks: map[string]int{}}
+	h.streamChecked = func(path string) {
+		srv.mu.Lock()
+		srv.checks[path]++
+		srv.mu.Unlock()
+	}
+	return srv, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
 }
 
 // forceStep puts a Participant at any Pipeline Step, bypassing the guarded transitions (test setup only).
