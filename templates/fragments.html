@@ -229,7 +229,7 @@
           <div class="flex items-center text-gray-600">❤️</div>
           <div class="w-14 h-14 rounded-xl bg-gray-700 flex items-center justify-center text-2xl">{{.PersonaSymbol}}</div>
         </div>
-        <p class="font-bold text-sm">@{{.GitHubHandle}}</p>
+        <p class="font-bold text-sm">{{.DisplayHandle}}</p>
         <p class="text-gray-500 text-xs mb-2">{{.PersonaName}}</p>
         <div class="bg-gray-800 rounded-full px-3 py-1 text-xs font-bold text-indigo-400 inline-block">
           {{.CompatScore}}% match
@@ -252,7 +252,7 @@
           {{if .MatchedWith}}ring-2 ring-indigo-500{{end}}">
           {{.PersonaSymbol}}
         </div>
-        <p class="text-sm font-bold leading-tight">{{if .PersonaName}}{{.PersonaName}}{{else}}@{{.GitHubHandle}}{{end}}</p>
+        <p class="text-sm font-bold leading-tight">{{if .PersonaName}}{{.PersonaName}}{{else}}{{.DisplayHandle}}{{end}}</p>
         <p class="text-xs text-gray-500">
           {{if .MatchedWith}}❤️ matched{{else if eq .PipelineStep "ready"}}✅ ready{{else if eq .PipelineStep "interviewing"}}💬 interviewing{{else if eq .PipelineStep "creating_persona"}}{{.PersonaSymbol}} profiling{{else}}🔍 fetching{{end}}
         </p>

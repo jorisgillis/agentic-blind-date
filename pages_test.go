@@ -371,3 +371,30 @@ func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t
 		}
 	}
 }
+
+func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed")
+	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
+	deps.db.SetProfile("ada", &GitHubProfile{})
+	deps.db.SetPersona("ada", "The Analyst", "Computes")
+	deps.db.UpdatePipelineStep("ada", "ready")
+	seed(t, deps.db, "octo", "The Gopher", "ready")
+	pair(t, deps.db, "ada", "octo")
+	deps.db.CreateParticipant("zed", "no-github-5678efgh", "Zed", false)
+	deps.db.UpdatePipelineStep("zed", "interviewing")
+
+	for _, path := range []string{"/user/onboard/zed", "/user/match/ada", "/user/match/octo", "/data", "/bigscreen/graph-data"} {
+		resp := get(t, srv, path)
+		if resp.StatusCode != 200 {
+			t.Errorf("%s: status %d", path, resp.StatusCode)
+			continue
+		}
+		if body := readBody(t, resp); strings.Contains(body, "no-github-") {
+			t.Errorf("%s shows the generated handle", path)
+		}
+	}
+	if body := readBody(t, get(t, srv, "/bigscreen/graph-data")); !strings.Contains(body, `"handle": "Ada Lovelace"`) {
+		t.Errorf("after the Reveal, the Big Screen identifies a Non-GitHub User by name:\n%s", body)
+	}
+}

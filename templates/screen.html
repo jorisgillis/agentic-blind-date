@@ -194,7 +194,7 @@ function updateGraph(data) {
     });
   nodeAll.select('.sym').text(d => d.symbol || '🎭');
   nodeAll.select('.lbl').text(d =>
-    phase === 'revealed' ? '@' + d.handle : (d.persona_name || '')
+    phase === 'revealed' ? d.handle : (d.persona_name || '')
   );
 
   if (hasNew) simulation.alpha(0.4).restart();

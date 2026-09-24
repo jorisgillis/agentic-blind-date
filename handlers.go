@@ -432,7 +432,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			Symbol:      p.PersonaSymbol,
 			Step:        p.PipelineStep,
 			Matched:     p.IsMatched(),
-			Handle:      p.GitHubHandle,
+			Handle:      p.DisplayHandle(),
 		})
 	}
 

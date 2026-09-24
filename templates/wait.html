@@ -23,7 +23,7 @@
       {{if $p.PersonaTagline}}
       <p class="text-gray-700 text-sm mt-1 italic" data-md>"{{$p.PersonaTagline}}"</p>
       {{end}}
-      <p class="text-gray-600 text-xs mt-1">@{{$p.GitHubHandle}}</p>
+      <p class="text-gray-600 text-xs mt-1">{{$p.DisplayHandle}}</p>
       <div class="mt-4">
         <p class="text-gray-600 text-xs mb-2">📲 Let others find your profile</p>
         <img id="qr" alt="QR code" class="mx-auto rounded-lg shadow-md" width="120" height="120" />

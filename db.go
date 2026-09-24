@@ -41,6 +41,15 @@ type Participant struct {
 	CreatedAt      time.Time
 }
 
+// DisplayHandle is how the Participant is identified on screen: "@handle" for
+// GitHub users, their name for Non-GitHub Users (whose handle is generated).
+func (p *Participant) DisplayHandle() string {
+	if p.HasGitHub {
+		return "@" + p.GitHubHandle
+	}
+	return p.Name
+}
+
 // IsMatched reports the Participant's Relationship State: whether they have a partner.
 func (p *Participant) IsMatched() bool {
 	return p.MatchedWith != ""
