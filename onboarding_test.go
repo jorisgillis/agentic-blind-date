@@ -141,3 +141,110 @@ func TestOnboarding_ResumeFinishesAPersonaThatWasInterrupted(t *testing.T) {
 		t.Errorf("persona: got %q", got)
 	}
 }
+
+// awaitingPersona puts a Participant at the persona step, as if their Interview just completed.
+func awaitingPersona(t *testing.T, db *DB, id string) {
+	t.Helper()
+	db.CreateParticipant(id, id, id, true)
+	db.SetProfile(id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
+	forceStep(db, id, StepCreatingPersona)
+}
+
+func TestOnboarding_RegistrationThatCannotBeSavedIsAnError(t *testing.T) {
+	o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
+	failWrites(t, db)
+
+	if _, err := o.Register("Ada", "", false); err == nil {
+		t.Error("want an error when the Participant cannot be saved")
+	}
+}
+
+func TestOnboarding_AFailedInterviewStartWritesNothing(t *testing.T) {
+	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "octo", Languages: []string{"Go"}})
+	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`)
+	o, db := onboardingFor(t, llm, gh)
+	db.CreateParticipant("p", "octo", "Octo", true)
+	restore := failWrites(t, db, "questions")
+
+	o.Resume()
+	eventually(t, "the interview start to be attempted", func() bool { return llm.callsMatching("interviewer") == 1 })
+
+	p := reload(t, db, "p")
+	if p.PipelineStep != StepFetchingGitHub || len(p.Questions) != 0 || (p.Profile != nil && len(p.Profile.Languages) != 0) {
+		t.Errorf("a failed start must leave the Participant untouched, got step %s, %d questions, profile %+v", p.PipelineStep, len(p.Questions), p.Profile)
+	}
+
+	restore()
+	o.Resume()
+	eventually(t, "the resumed interview to start", func() bool { return reload(t, db, "p").PipelineStep == StepInterviewing })
+}
+
+func TestOnboarding_AParticipantBecomesReadyEvenIfPersonaOrInterestsCannotBeSaved(t *testing.T) {
+	for _, column := range []string{"persona_name", "interests"} {
+		t.Run(column, func(t *testing.T) {
+			o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
+			awaitingPersona(t, db, "p")
+			failWrites(t, db, column)
+
+			o.Resume()
+
+			eventually(t, "ready", func() bool { return reload(t, db, "p").PipelineStep == StepReady })
+		})
+	}
+}
+
+func TestOnboarding_AParticipantWithoutAProfileStillGetsAPersona(t *testing.T) {
+	o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
+	awaitingPersona(t, db, "p")
+	db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = 'p'`)
+
+	o.Resume()
+
+	eventually(t, "ready", func() bool { return reload(t, db, "p").PipelineStep == StepReady })
+	if got := reload(t, db, "p").PersonaName; got != "The Mysterious Coder" {
+		t.Errorf("persona: got %q", got)
+	}
+}
+
+func TestOnboarding_AParticipantRemovedWhileTheirPersonaIsCreatedIsNotMatched(t *testing.T) {
+	var db *DB
+	llm := newFakeLLM().
+		onFunc("personality generator", func(string) (string, error) {
+			NewRelationships(db).Remove("p")
+			return `{"name": "The Ghost", "tagline": "Gone"}`, nil
+		})
+	o, testDB := onboardingFor(t, llm, newFakeGitHub())
+	db = testDB
+	awaitingPersona(t, db, "p")
+	seed(t, db, "q", "Q", "ready")
+
+	o.Resume()
+
+	eventually(t, "persona attempted", func() bool { return llm.callsMatching("personality generator") == 1 })
+	if llm.callsMatching("matchmaker") != 0 || reload(t, db, "q").IsMatched() {
+		t.Error("a removed Participant must not be matched")
+	}
+}
+
+func TestOnboarding_AFailedMatchLeavesTheParticipantReadyAndUnmatched(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 80}`)
+	o, db := onboardingFor(t, llm, newFakeGitHub())
+	awaitingPersona(t, db, "p")
+	seed(t, db, "q", "Q", "ready")
+	failWrites(t, db, "matched_with")
+
+	o.Resume()
+
+	eventually(t, "matching attempted", func() bool { return llm.callsMatching("matchmaker") == 1 })
+	eventually(t, "ready", func() bool { return reload(t, db, "p").PipelineStep == StepReady })
+	if reload(t, db, "p").IsMatched() || reload(t, db, "q").IsMatched() {
+		t.Error("a failed match must leave both unmatched")
+	}
+}
+
+func TestOnboarding_ResumeWithABrokenDatabaseDoesNothing(t *testing.T) {
+	o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
+	breakDB(db)
+
+	o.Resume() // must not panic
+}
