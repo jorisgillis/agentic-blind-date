@@ -74,7 +74,7 @@ func TestLanding_UnknownCookieIsClearedAndTheFormShown(t *testing.T) {
 
 func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
+	deps.db.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "i", "I", "interviewing")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
@@ -97,7 +97,7 @@ func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 
 func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
+	deps.db.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "f", "F", "fetching_github")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
@@ -125,7 +125,7 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 
 func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
+	deps.db.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "The Gopher", "ready")
 	seed(t, deps.db, "m", "M", "ready")
 	seed(t, deps.db, "m2", "M2", "ready")
@@ -145,7 +145,7 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 
 func TestWaitStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
+	deps.db.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
 	seed(t, deps.db, "m2", "M2", "ready")
@@ -164,7 +164,7 @@ func TestWaitStatus(t *testing.T) {
 
 func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
+	deps.db.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	seed(t, deps.db, "c", "The Snake", "ready")
@@ -297,7 +297,7 @@ func stream(t *testing.T, srv *testSrv, path string, timeout time.Duration) stri
 
 func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed")
+	deps.db.Reveal()
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	pair(t, deps.db, "a", "b")
@@ -323,7 +323,7 @@ func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t
 
 func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed")
+	deps.db.Reveal()
 	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
 	deps.db.SetProfile("ada", &GitHubProfile{})
 	deps.db.SetPersona("ada", "The Analyst", "Computes")

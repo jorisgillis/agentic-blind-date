@@ -45,10 +45,10 @@
       <button
         type="submit"
         class="w-full bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-xl py-3 transition-colors text-sm disabled:opacity-50"
-        {{if eq .Phase "revealed"}}disabled{{end}}
+        {{if .Event.IsRevealed}}disabled{{end}}
         onclick="return confirm('Reveal every match now?')"
       >
-        {{if eq .Phase "revealed"}}🎉 Revealed{{else}}🎉 Reveal matches{{end}}
+        {{if .Event.IsRevealed}}🎉 Revealed{{else}}🎉 Reveal matches{{end}}
       </button>
     </form>
 

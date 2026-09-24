@@ -372,7 +372,7 @@ func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) buildGraphPayload() map[string]any {
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	participants, _ := h.db.GetAllParticipants()
 	activity, _ := h.db.GetRecentActivity(3)
 
@@ -380,7 +380,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 	for _, p := range participants {
 		// Identities leave the server only after the Reveal.
 		handle := ""
-		if phase == "revealed" {
+		if event.IsRevealed() {
 			handle = p.DisplayHandle()
 		}
 		nodes = append(nodes, graphNode{
@@ -459,7 +459,9 @@ func (h *Handler) buildGraphPayload() map[string]any {
 	}
 
 	return map[string]any{
-		"phase":    phase,
+		"phase":       event,
+		"phase_label": event.Label(),
+		"revealed":    event.IsRevealed(),
 		"nodes":    nodes,
 		"edges":    edges,
 		"activity": activity,
@@ -473,11 +475,11 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 
 // GET /bigscreen/state  — HTMX polled every 3s
 func (h *Handler) ScreenState(w http.ResponseWriter, r *http.Request) {
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	participants, _ := h.db.GetAllParticipants()
 	activity, _ := h.db.GetRecentActivity(8)
 	h.render(w, "fragment-screen-state.html", map[string]any{
-		"Phase":        phase,
+		"Event":        event,
 		"Participants": participants,
 		"Activity":     activity,
 		"Count":        len(participants),
@@ -493,11 +495,11 @@ func (h *Handler) DataIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	participants, _ := h.db.GetAllParticipants()
 	activity, _ := h.db.GetRecentActivity(20)
 	h.render(w, "data.html", map[string]any{
-		"Phase":        phase,
+		"Event":        event,
 		"Participants": participants,
 		"Activity":     activity,
 		"Count":        len(participants),
@@ -542,9 +544,9 @@ func (h *Handler) DataActivity(w http.ResponseWriter, r *http.Request) {
 
 // GET /data/state
 func (h *Handler) DataState(w http.ResponseWriter, r *http.Request) {
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	writeJSON(w, map[string]any{
-		"phase": phase,
+		"phase": event,
 		"count": h.db.ParticipantCount(),
 		"ready": h.db.ReadyCount(),
 	})
@@ -561,9 +563,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 // GET /admin
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	h.render(w, "admin.html", map[string]any{
-		"Phase": phase,
+		"Event": event,
 		"Count": h.db.ParticipantCount(),
 		"Ready": h.db.ReadyCount(),
 	})
@@ -571,15 +573,12 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/reveal: the admin reveals every Match once everybody is seated.
 func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
-	h.db.SetPhase("revealed")
+	if err := h.db.Reveal(); err != nil {
+		http.Error(w, "reveal failed: "+err.Error(), 500)
+		return
+	}
 	h.db.LogActivity("🎉 The matches are revealed!")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
-}
-
-// phase returns the Event State: "onboarding" before the Reveal, "revealed" after.
-func (h *Handler) phase() string {
-	phase, _ := h.db.GetPhase()
-	return phase
 }
 
 // POST /admin/reset
@@ -590,7 +589,6 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 	}
 	// Clear LLM cache when resetting event
 	h.matcher.ClearCache()
-	h.db.SetPhase("onboarding")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 

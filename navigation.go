@@ -23,5 +23,5 @@ func destination(p *Participant, revealed bool) string {
 
 // destination applies the navigation rule with the current Event State.
 func (h *Handler) destination(p *Participant) string {
-	return destination(p, h.phase() == "revealed")
+	return destination(p, h.db.EventState().IsRevealed())
 }

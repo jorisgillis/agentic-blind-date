@@ -106,11 +106,9 @@ function drag() {
 }
 
 let currentNodes = [];
-let currentPhase = 'onboarding';
 
 function updateGraph(data) {
-  const phase = data.phase;
-  currentPhase = phase;
+  const revealed = data.revealed;
 
   const byId = Object.fromEntries(currentNodes.map(n => [n.id, n]));
   const hasNew = data.nodes.some(n => !byId[n.id]);
@@ -175,12 +173,12 @@ function updateGraph(data) {
     .attr('fill', d => colorMap[d.color] || '#6b7280')
     .attr('opacity', d => d.ready ? 1 : 0.5)
     .style('filter', d => {
-      if (phase === 'revealed' && d.matched) return 'drop-shadow(0 0 10px #ec4899)';
+      if (revealed && d.matched) return 'drop-shadow(0 0 10px #ec4899)';
       return null;
     });
   nodeAll.select('.sym').text(d => d.symbol || '🎭');
   nodeAll.select('.lbl').text(d =>
-    phase === 'revealed' ? d.handle : (d.persona_name || '')
+    revealed ? d.handle : (d.persona_name || '')
   );
 
   if (hasNew) simulation.alpha(0.4).restart();
@@ -191,8 +189,7 @@ function updateGraph(data) {
 
   // Status labels
   const phaseEl = document.getElementById('phase-label');
-  const labels = { onboarding: 'Waiting for participants', revealed: 'Matches revealed! 🎉' };
-  phaseEl.textContent = labels[phase] || phase;
+  phaseEl.textContent = data.phase_label;
   document.getElementById('count-label').textContent =
     data.nodes.length + ' participant' + (data.nodes.length !== 1 ? 's' : '');
 

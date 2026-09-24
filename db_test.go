@@ -123,24 +123,6 @@ func TestGetAllByStep(t *testing.T) {
 	}
 }
 
-func TestPhase(t *testing.T) {
-	db := testDB(t)
-
-	phase, err := db.GetPhase()
-	if err != nil {
-		t.Fatalf("GetPhase: %v", err)
-	}
-	if phase != "onboarding" {
-		t.Errorf("initial phase: want onboarding, got %s", phase)
-	}
-
-	db.SetPhase("matching")
-	phase, _ = db.GetPhase()
-	if phase != "matching" {
-		t.Errorf("after SetPhase: want matching, got %s", phase)
-	}
-}
-
 func TestActivityLog(t *testing.T) {
 	db := testDB(t)
 

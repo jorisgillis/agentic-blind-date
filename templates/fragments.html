@@ -185,7 +185,6 @@
 
 {{/* Screen state — the main content of the big screen view, polled every 3s */}}
 {{define "fragment-screen-state.html"}}
-{{$phase := .Phase}}
 {{$matchedCount := 0}}
 {{range .Participants}}
 {{if .MatchedWith}}{{$matchedCount = add $matchedCount 1}}{{end}}

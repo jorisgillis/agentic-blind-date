@@ -110,7 +110,6 @@ func NewDB(path string) (*DB, error) {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
-		INSERT OR IGNORE INTO event_state (key, value) VALUES ('phase', 'onboarding');
 	`)
 	if err != nil {
 		return nil, err
@@ -147,15 +146,15 @@ func (db *DB) SetMaxOpenConns(n int) {
 	db.db.SetMaxOpenConns(n)
 }
 
+// Reset starts the event over: no Participants, no activity, and back to before the Reveal.
 func (db *DB) Reset() error {
 	if _, err := db.db.Exec(`DELETE FROM participants`); err != nil {
 		return err
 	}
-	_, err := db.db.Exec(`DELETE FROM activity_log`)
-	if err == nil {
-		db.changed()
+	if _, err := db.db.Exec(`DELETE FROM activity_log`); err != nil {
+		return err
 	}
-	return err
+	return db.setEventState(BeforeReveal)
 }
 
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {
@@ -337,20 +336,6 @@ func (db *DB) queryParticipants(clause string, args ...any) ([]*Participant, err
 		out = append(out, p)
 	}
 	return out, rows.Err()
-}
-
-func (db *DB) GetPhase() (string, error) {
-	var phase string
-	err := db.db.QueryRow(`SELECT value FROM event_state WHERE key = 'phase'`).Scan(&phase)
-	return phase, err
-}
-
-func (db *DB) SetPhase(phase string) error {
-	_, err := db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, phase)
-	if err == nil {
-		db.changed()
-	}
-	return err
 }
 
 func (db *DB) LogActivity(message string) {

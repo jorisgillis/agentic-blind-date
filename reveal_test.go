@@ -45,7 +45,7 @@ func TestReveal_OpensEveryMatchPage(t *testing.T) {
 		t.Errorf("reveal: want redirect to admin, got %q", loc)
 	}
 
-	if phase, _ := deps.db.GetPhase(); phase != "revealed" {
+	if phase := deps.db.EventState(); phase != Revealed {
 		t.Errorf("Event State after the Reveal: want revealed, got %q", phase)
 	}
 	if loc := get(t, srv, "/user/wait/a").Header.Get("Location"); loc != "/user/match/a" {
@@ -62,7 +62,7 @@ func TestReveal_OpensEveryMatchPage(t *testing.T) {
 func TestReveal_NewcomerAfterTheRevealIsNeverToldTheyMissedIt(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "late", "The Latecomer", "ready")
-	deps.db.SetPhase("revealed")
+	deps.db.Reveal()
 
 	body := readBody(t, get(t, srv, "/user/wait-status/late"))
 
@@ -72,18 +72,20 @@ func TestReveal_NewcomerAfterTheRevealIsNeverToldTheyMissedIt(t *testing.T) {
 }
 
 func TestRematch_KeepsTheEventState(t *testing.T) {
-	for _, phase := range []string{"onboarding", "revealed"} {
-		t.Run(phase, func(t *testing.T) {
+	for _, phase := range []EventState{BeforeReveal, Revealed} {
+		t.Run(string(phase), func(t *testing.T) {
 			llm := newFakeLLM().on("matchmaker", `{"score": 70, "reason": "fine"}`)
 			srv, deps := newTestServer(t, llm, nil)
 			seed(t, deps.db, "a", "A", "ready")
 			seed(t, deps.db, "b", "B", "ready")
-			deps.db.SetPhase(phase)
+			if phase.IsRevealed() {
+				deps.db.Reveal()
+			}
 
 			post(t, srv, "/admin/rematch", nil)
 			eventually(t, "both matched", func() bool { return reload(t, deps.db, "a").MatchedWith == "b" })
 
-			if got, _ := deps.db.GetPhase(); got != phase {
+			if got := deps.db.EventState(); got != phase {
 				t.Errorf("Event State after rematch: want %q, got %q", phase, got)
 			}
 		})
