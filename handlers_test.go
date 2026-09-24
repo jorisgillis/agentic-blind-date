@@ -611,3 +611,14 @@ func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
 	}
 }
+
+func TestRoot_RedirectsToTheLandingPageAndUnknownPathsAreNotFound(t *testing.T) {
+	srv, _ := testServer(t)
+
+	if loc := get(t, srv, "/").Header.Get("Location"); loc != "/user" {
+		t.Errorf("/: want redirect to /user, got %q", loc)
+	}
+	if resp := get(t, srv, "/nope"); resp.StatusCode != 404 {
+		t.Errorf("/nope: want 404, got %d", resp.StatusCode)
+	}
+}

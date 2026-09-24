@@ -390,3 +390,44 @@ func TestMatcherScorePair_NoFollowLookupsForNonGitHubUsers(t *testing.T) {
 		t.Errorf("follow lookups for a Non-GitHub User: want 0, got %d", n)
 	}
 }
+
+func TestMatcherScorePair_AnUnreadableReplyIsAnError(t *testing.T) {
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), newFakeLLM().on("matchmaker", "I refuse to score humans"))
+
+	if _, err := m.ScorePair(dev("a", "A"), dev("b", "B")); err == nil {
+		t.Error("want an error")
+	}
+}
+
+func TestMatcher_ParticipantsWithoutProfileOrAnswers(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", matchReply)
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	bare := &Participant{ID: "bare", PersonaName: "The Blank"}
+
+	if _, err := m.ScorePair(dev("a", "A", "Go"), bare); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.PairScore(bare, dev("a", "A", "Go")); got != 0 {
+		t.Errorf("no profile scores 0, got %d", got)
+	}
+	if got := m.PairScore(dev("a", "A", "Go"), bare); got != 0 {
+		t.Errorf("no profile scores 0, got %d", got)
+	}
+}
+
+func TestMatcher_TheNewcomerIsNotTheirOwnCandidateAndOnlyReadyParticipantsArePaired(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(nil))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	n := readyDev("N")
+
+	if match := m.MatchNewcomer(n, []*Participant{n, readyDev("A")}); match == nil || match.B.ID != "A" {
+		t.Errorf("want N-A, got %+v", match)
+	}
+	busy := dev("I", "I", "Go")
+	busy.PipelineStep = StepInterviewing
+	for _, match := range m.MatchPool([]*Participant{readyDev("A"), readyDev("B"), busy}) {
+		if match.A.ID == "I" || match.B.ID == "I" {
+			t.Error("a Participant still interviewing must not be paired")
+		}
+	}
+}

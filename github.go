@@ -239,10 +239,7 @@ type ghRepo struct {
 }
 
 func (g *GitHubClient) get(url string) ([]byte, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
+	req, _ := http.NewRequest("GET", url, nil) // built from a constant base and an escaped handle
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if g.token != "" {
@@ -296,10 +293,7 @@ func (g *GitHubClient) fetchRepos(handle string) ([]ghRepo, error) {
 func (g *GitHubClient) checkFollows(follower, followee string) bool {
 	endpoint := "https://api.github.com/users/" +
 		url.PathEscape(follower) + "/following/" + url.PathEscape(followee)
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		return false
-	}
+	req, _ := http.NewRequest("GET", endpoint, nil) // built from a constant base and escaped handles
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if g.token != "" {

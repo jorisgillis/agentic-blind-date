@@ -73,10 +73,7 @@ func (m *MistralClient) doChat(system, user string) (string, error) {
 
 	body, _ := json.Marshal(req)
 
-	httpReq, err := http.NewRequest("POST", "https://api.mistral.ai/v1/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
+	httpReq, _ := http.NewRequest("POST", "https://api.mistral.ai/v1/chat/completions", bytes.NewReader(body)) // constant URL
 	httpReq.Header.Set("Authorization", "Bearer "+m.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 

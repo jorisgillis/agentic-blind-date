@@ -226,3 +226,88 @@ func TestMistralClientChat_WithoutAnHTTPClient(t *testing.T) {
 		t.Error("want error without an HTTP client")
 	}
 }
+
+// brokenTransport fails every request, like a network outage.
+type brokenTransport struct{}
+
+func (brokenTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, fakeError("network is unreachable")
+}
+
+// failingBody is a response body that breaks off while being read.
+type failingBody struct{}
+
+func (failingBody) Read([]byte) (int, error) { return 0, fakeError("connection reset") }
+func (failingBody) Close() error             { return nil }
+
+type truncatedTransport struct{}
+
+func (truncatedTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: 200, Body: failingBody{}, Header: http.Header{}}, nil
+}
+
+func TestGitHubClient_NetworkFailures(t *testing.T) {
+	c := NewGitHubClient("secret")
+	c.httpClient = &http.Client{Transport: brokenTransport{}}
+
+	if _, err := c.FetchProfile("octo"); err == nil {
+		t.Error("fetching a profile over a broken network should fail")
+	}
+	if a, b := c.CheckMutualFollow("octo", "ferris"); a || b {
+		t.Error("follows are unknown, so false, over a broken network")
+	}
+}
+
+func TestGitHubClient_FollowChecksSendTheToken(t *testing.T) {
+	u := newUpstream().on("/users/octo/following/ferris", 204, "")
+
+	githubClientFor(u, "secret").CheckMutualFollow("octo", "ferris")
+
+	if got := u.requests[0].Header.Get("Authorization"); got != "Bearer secret" {
+		t.Errorf("Authorization header: got %q", got)
+	}
+}
+
+func TestGitHubClientFetchProfile_UnreadableReposAreSkipped(t *testing.T) {
+	u := newUpstream().on("/users/octo", 200, octoUser).on("/users/octo/repos", 200, "not json")
+
+	p, err := githubClientFor(u, "").FetchProfile("octo")
+
+	if err != nil || p.Login != "octo" || len(p.Languages) != 0 {
+		t.Errorf("want the user without repo data, got %+v (err %v)", p, err)
+	}
+}
+
+func TestGitHubClientFetchProfile_KeepsTheFiveMostCommonTopics(t *testing.T) {
+	u := newUpstream().on("/users/octo", 200, octoUser).on("/users/octo/repos", 200,
+		`[{"name": "all", "language": "Go", "topics": ["a", "b", "c", "d", "e", "f", "g"]}]`)
+
+	p, _ := githubClientFor(u, "").FetchProfile("octo")
+
+	if len(p.TopTopics) != 5 {
+		t.Errorf("topics: want 5, got %v", p.TopTopics)
+	}
+}
+
+func TestMistralClientChat_NetworkFailures(t *testing.T) {
+	for name, transport := range map[string]http.RoundTripper{
+		"unreachable":     brokenTransport{},
+		"body breaks off": truncatedTransport{},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := NewMistralClient("key", "m", &http.Client{Transport: transport})
+			c.retryDelay = func(int) time.Duration { return 0 }
+			if _, err := c.Chat("s", "u"); err == nil {
+				t.Error("want an error")
+			}
+		})
+	}
+}
+
+func TestMistralClient_BacksOffExponentially(t *testing.T) {
+	c := NewMistralClient("key", "m", nil)
+
+	if c.retryDelay(1) != 2*time.Second || c.retryDelay(2) != 4*time.Second {
+		t.Errorf("want 2s then 4s, got %v then %v", c.retryDelay(1), c.retryDelay(2))
+	}
+}

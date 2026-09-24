@@ -57,15 +57,13 @@ type DB struct {
 // NewDB creates and initializes a new database connection.
 // It opens a SQLite connection, pings to verify it works, and creates the necessary tables.
 func NewDB(path string) (*DB, error) {
-	sqlDB, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000")
-	if err != nil {
-		return nil, err
-	}
+	// sql.Open only fails for an unregistered driver; Ping reports real problems.
+	sqlDB, _ := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err := sqlDB.Ping(); err != nil {
 		return nil, err
 	}
 
-	_, err = sqlDB.Exec(`
+	_, err := sqlDB.Exec(`
 		CREATE TABLE IF NOT EXISTS participants (
 			id               TEXT PRIMARY KEY,
 			github_handle    TEXT UNIQUE,
@@ -265,33 +263,24 @@ func (db *DB) GetParticipantByHandle(handle string) (*Participant, error) {
 }
 
 func (db *DB) SetProfile(id string, profile *GitHubProfile) error {
-	profileJSON, err := json.Marshal(profile)
-	if err != nil {
-		return err
-	}
-	_, err = db.db.Exec(`UPDATE participants SET profile_json = ? WHERE id = ?`, string(profileJSON), id)
-	if err == nil {
-		db.changed()
-	}
-	return err
+	encoded, _ := json.Marshal(profile) // plain data: cannot fail
+	return db.write(`UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), id)
 }
 
 // SetQuestions saves the Participant's interview question set.
 func (db *DB) SetQuestions(id string, questions []Question) error {
-	questionsJSON, err := json.Marshal(questions)
-	if err != nil {
-		return err
-	}
-	_, err = db.db.Exec(`UPDATE participants SET questions = ? WHERE id = ?`, string(questionsJSON), id)
-	if err == nil {
-		db.changed()
-	}
-	return err
+	encoded, _ := json.Marshal(questions) // plain data: cannot fail
+	return db.write(`UPDATE participants SET questions = ? WHERE id = ?`, string(encoded), id)
 }
 
 // SetPersona saves the Participant's Persona name and tagline.
 func (db *DB) SetPersona(id, name, tagline string) error {
-	_, err := db.db.Exec(`UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`, name, tagline, id)
+	return db.write(`UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`, name, tagline, id)
+}
+
+// write runs one statement and announces the change when it succeeds.
+func (db *DB) write(query string, args ...any) error {
+	_, err := db.db.Exec(query, args...)
 	if err == nil {
 		db.changed()
 	}
@@ -299,27 +288,13 @@ func (db *DB) SetPersona(id, name, tagline string) error {
 }
 
 func (db *DB) UpdateInterests(id string, interests map[string]interface{}) error {
-	interestsJSON, err := json.Marshal(interests)
-	if err != nil {
-		return err
-	}
-	_, err = db.db.Exec(`UPDATE participants SET interests = ? WHERE id = ?`, string(interestsJSON), id)
-	if err == nil {
-		db.changed()
-	}
-	return err
+	encoded, _ := json.Marshal(interests) // plain data: cannot fail
+	return db.write(`UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), id)
 }
 
 func (db *DB) UpdateAnswers(id string, answers map[string]string) error {
-	answersJSON, err := json.Marshal(answers)
-	if err != nil {
-		return err
-	}
-	_, err = db.db.Exec(`UPDATE participants SET answers_json = ? WHERE id = ?`, string(answersJSON), id)
-	if err == nil {
-		db.changed()
-	}
-	return err
+	encoded, _ := json.Marshal(answers) // plain data: cannot fail
+	return db.write(`UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), id)
 }
 
 func (db *DB) GetAllParticipants() ([]*Participant, error) {
@@ -367,10 +342,9 @@ func (db *DB) GetRecentActivity(limit int) ([]string, error) {
 	var msgs []string
 	for rows.Next() {
 		var m string
-		if err := rows.Scan(&m); err != nil {
-			return nil, err
+		if rows.Scan(&m) == nil { // a TEXT column always scans into a string
+			msgs = append(msgs, m)
 		}
-		msgs = append(msgs, m)
 	}
 	return msgs, rows.Err()
 }

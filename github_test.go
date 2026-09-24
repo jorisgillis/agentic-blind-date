@@ -61,3 +61,13 @@ func TestParticipantSummary_AsksWhetherTheParticipantHasGitHub(t *testing.T) {
 		t.Errorf("GitHub user: GitHub data (even without a login) plus answers:\n%s", s)
 	}
 }
+
+func TestSummary_DescribesReposAndHandlesAMissingProfile(t *testing.T) {
+	p := &GitHubProfile{Login: "octo", TopRepos: []RepoInfo{{Name: "gopher", Description: "Go things", Language: "Go", Stars: 3}}}
+	if s := p.Summary(); !strings.Contains(s, "Repo: gopher — Go things (Go) ⭐3") {
+		t.Errorf("repo line: got\n%s", s)
+	}
+	if s := (&Participant{}).Summary(); s != "" {
+		t.Errorf("no profile, no summary: got %q", s)
+	}
+}

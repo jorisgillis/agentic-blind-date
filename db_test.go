@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"os"
 	"testing"
 )
 
@@ -296,5 +297,91 @@ func TestInTx_ReportsAFailedCommit(t *testing.T) {
 
 	if err == nil {
 		t.Error("want the failed commit reported")
+	}
+}
+
+func TestNewDB_ReportsADatabaseThatCannotBeOpened(t *testing.T) {
+	if _, err := NewDB(t.TempDir() + "/missing-dir/x.db"); err == nil {
+		t.Error("a database in a missing directory should not open")
+	}
+	garbage := t.TempDir() + "/garbage.db"
+	os.WriteFile(garbage, []byte("this is not a SQLite database, just a long enough line of text to fill a header"), 0644)
+	if _, err := NewDB(garbage); err == nil {
+		t.Error("a file that is not a database should not open")
+	}
+}
+
+func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
+	for _, column := range []string{"profile_json", "questions", "answers_json", "interests"} {
+		t.Run(column, func(t *testing.T) {
+			db := testDB(t)
+			db.CreateParticipant("p", "p", "P", true)
+			db.db.Exec(`UPDATE participants SET ` + column + ` = '{broken' WHERE id = 'p'`)
+
+			if _, err := db.GetParticipant("p"); err == nil {
+				t.Error("a corrupt row should be an error")
+			}
+			if _, err := db.GetAllParticipants(); err == nil {
+				t.Error("listing should report the corrupt row")
+			}
+		})
+	}
+}
+
+func TestDB_ReadsAndWritesAgainstABrokenDatabase(t *testing.T) {
+	db := testDB(t)
+	db.SetLLMCache("a:b", &matchResult{Score: 1})
+	db.db.Close()
+
+	if _, ok := db.GetLLMCache("a:b"); ok {
+		t.Error("nothing can be read from a broken database")
+	}
+	db.SetLLMCache("a:b", &matchResult{Score: 2}) // logged, not fatal
+	db.ClearLLMCache()                            // logged, not fatal
+	if _, err := db.GetAllParticipants(); err == nil {
+		t.Error("listing should fail")
+	}
+	if _, err := db.GetRecentActivity(5); err == nil {
+		t.Error("reading activity should fail")
+	}
+}
+
+func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
+	db := testDB(t)
+	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 5, 'x', 'null', '[]', '[]')`)
+
+	r, ok := db.GetLLMCache("a:b")
+
+	if !ok || r.RedFlags == nil || len(r.RedFlags) != 0 {
+		t.Errorf("want an empty list, got %+v", r)
+	}
+}
+
+func TestReset_ReportsWhenActivityCannotBeCleared(t *testing.T) {
+	db := testDB(t)
+	db.LogActivity("hello")
+	db.db.Exec(`CREATE TRIGGER keep_activity BEFORE DELETE ON activity_log BEGIN SELECT RAISE(ABORT, 'injected'); END`)
+
+	if err := db.Reset(); err == nil {
+		t.Error("want the failure reported")
+	}
+}
+
+func TestCreateParticipant_ReportsADamagedSchema(t *testing.T) {
+	db := testDB(t)
+	db.db.Exec(`ALTER TABLE participants DROP COLUMN persona_symbol`)
+
+	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
+		t.Error("want an error when Persona looks cannot be read")
+	}
+}
+
+func TestNewDB_ReportsADatabaseThatIsReadOnly(t *testing.T) {
+	path := t.TempDir() + "/readonly.db"
+	os.WriteFile(path, nil, 0644)
+
+	// mode=ro opens the (empty) file read-only, so creating the schema fails.
+	if _, err := NewDB("file:" + path + "?mode=ro&"); err == nil {
+		t.Error("a read-only database cannot get its schema")
 	}
 }

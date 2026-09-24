@@ -171,3 +171,44 @@ func TestInterviewStart_NonGitHubUserGetsExtraQuestionsAndFixedWithoutGoToLangua
 		t.Errorf("Non-GitHub Users need no Custom Questions, but the LLM was asked %d times", n)
 	}
 }
+
+func TestInterviewStart_FallsBackWhenCustomQuestionsAreUnusable(t *testing.T) {
+	for name, reply := range map[string]string{
+		"not json":     "Sure! Here are some questions...",
+		"no questions": `{"questions": []}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			qs := startedQuestions(t, newFakeLLM().on("interviewer", reply), true)
+			if len(qs) != len(FixedQuestions)+len(ExtraQuestions) || qs[len(FixedQuestions)].ID != "extra_0" {
+				t.Errorf("want the Extra Questions fallback, got %v", questionIDs(qs))
+			}
+		})
+	}
+}
+
+func TestInterview_CompletingWithoutAProfileAndWithAFreeTextLanguage(t *testing.T) {
+	db := newTestDB(t)
+	iv := NewInterview(db, newFakeLLM())
+	p := participantInInterview(t, db, []Question{{ID: "extra_0", Text: "Top languages?"}})
+	db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = 'p-1'`)
+	p = reload(t, db, "p-1")
+
+	if done, err := iv.Submit(p, "Zig"); !done || err != nil {
+		t.Fatalf("want completion, got %v %v", done, err)
+	}
+	ea := reload(t, db, "p-1").Profile.ExtraAnswers
+	if ea == nil || len(ea.Languages) != 1 || ea.Languages[0] != "Zig" {
+		t.Errorf("a free-text language answer is kept as one language, got %+v", ea)
+	}
+}
+
+func TestInterview_CompletingFailsWhenExtraAnswersCannotBeSaved(t *testing.T) {
+	db := newTestDB(t)
+	iv := NewInterview(db, newFakeLLM())
+	p := participantInInterview(t, db, []Question{{ID: "extra_1", Text: "Project type?"}})
+	failWrites(t, db, "profile_json")
+
+	if _, err := iv.Submit(p, "Backend Services"); err == nil {
+		t.Error("want the failure reported")
+	}
+}
