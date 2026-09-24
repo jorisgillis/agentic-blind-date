@@ -2,7 +2,7 @@
 label: wayfinder:grilling
 title: Spec the chosen UI concept
 status: open
-assignee:
+assignee: claude
 blocked_by: [05-radical-ui-concepts.md, 02-theme-token-set.md]
 ---
 
