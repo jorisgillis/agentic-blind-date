@@ -56,17 +56,19 @@ func main() {
 	defer db.Close()
 
 	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
-	mistral := NewMistralClient(
+	llm := NewOpenAIClient(
+		"https://api.mistral.ai/v1",
 		os.Getenv("MISTRAL_API_KEY"),
 		"mistral-medium-latest",
+		true,
 		&http.Client{Timeout: 30 * time.Second},
 	)
 
-	matcher := NewMatcher(db, github, mistral)
-	interview := NewInterview(db, mistral)
+	matcher := NewMatcher(db, github, llm)
+	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations)
-	onboarding := NewOnboarding(db, github, interview, NewPersonas(mistral), matchmaking)
+	onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 

@@ -99,7 +99,7 @@ The database (`blind_date.db`) is created automatically on first run.
 - **D3.js** — force-directed graph on the big screen
 - **Tailwind CSS** — via Play CDN, no build step
 - **SQLite3** — via `github.com/mattn/go-sqlite3` (requires CGO / a C compiler)
-- **Mistral AI** — plain HTTP calls to `api.mistral.ai/v1/chat/completions`
+- **Mistral AI** — via an OpenAI-compatible chat completions adapter (`POST {base}/chat/completions`)
 
 ### Project layout
 
@@ -107,7 +107,7 @@ The database (`blind_date.db`) is created automatically on first run.
 main.go          server setup, route registration, .env auto-loading
 db.go            SQLite schema, Participant type, all queries
 github.go        GitHub public API client
-mistral.go       Mistral chat completion client
+llm.go           OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
 agents.go        agent pipeline (RunSetup, RunMatching, greedy matching)
 handlers.go      HTTP handlers + /data JSON endpoints + /bigscreen/graph-data
 questions.go     fixed Q&A question definitions
@@ -231,16 +231,7 @@ sqlite3 blind_date.db "SELECT github_handle, persona_name, pipeline_step, compat
 
 ### Mistral model
 
-The model is set in `main.go`:
-
-```go
-mistral := &MistralClient{
-    apiKey: os.Getenv("MISTRAL_API_KEY"),
-    model:  "mistral-small-latest",
-}
-```
-
-Swap to `mistral-large-latest` for more creative personas and match reasoning, at higher cost and latency.
+The model is set in `main.go`, currently `mistral-medium-latest`. Swap to `mistral-large-latest` for more creative personas and match reasoning, at higher cost and latency.
 
 ## License
 
