@@ -5,6 +5,13 @@ import (
 	"sync"
 )
 
+// defaultMaxChain bounds a chain of take-overs. Take-overs usually end
+// quickly because they're cached and each one raises the taken Participant's
+// score, but a Reset clears the cache and LLM scores aren't perfectly
+// consistent between calls, so a chain could otherwise loop forever while
+// holding the matching lock. Restored by #48.
+const defaultMaxChain = 100
+
 // Matchmaking runs matching operations against the Pool one at a time: the
 // admin's Rematch, and Continuous Matching for a Participant who just became
 // ready. The Matcher decides who fits; the Relationship module records it.
@@ -12,12 +19,13 @@ type Matchmaking struct {
 	db        *DB
 	matcher   *Matcher
 	relations *Relationships
+	maxChain  int        // a field, not a const, so a test can shrink it
 	mu        sync.Mutex // one matching operation at a time
 }
 
 // NewMatchmaking creates the Matchmaking module.
 func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking {
-	return &Matchmaking{db: db, matcher: matcher, relations: relations}
+	return &Matchmaking{db: db, matcher: matcher, relations: relations, maxChain: defaultMaxChain}
 }
 
 // Rematch breaks every Match and pairs all ready Participants again, as one
@@ -48,13 +56,6 @@ func (mm *Matchmaking) Rematch() error {
 	return nil
 }
 
-// maxChain bounds a chain of take-overs. Take-overs usually end quickly
-// because they're cached and each one raises the taken Participant's score,
-// but a Reset clears the cache and LLM scores aren't perfectly consistent
-// between calls, so a chain could otherwise loop forever while holding the
-// matching lock. A var, not a const, so a test can shrink it. Restored by #48.
-var maxChain = 100
-
 // MatchNewcomer is Continuous Matching for a Participant who just became ready:
 // they are matched against the other ready Participants, taking over a weaker
 // Match when needed. A partner displaced by a take-over is matched straight
@@ -69,8 +70,8 @@ func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 	}
 	queue := []pending{{id: newcomer.ID}}
 	for steps := 0; len(queue) > 0; steps++ {
-		if steps == maxChain {
-			return fmt.Errorf("matching %s: chain of take-overs longer than %d", newcomer.ID, maxChain)
+		if steps == mm.maxChain {
+			return fmt.Errorf("matching %s: chain of take-overs longer than %d", newcomer.ID, mm.maxChain)
 		}
 		next := queue[0]
 		queue = queue[1:]

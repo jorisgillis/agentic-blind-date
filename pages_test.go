@@ -234,6 +234,31 @@ func TestExplore_OnlyBetweenTwoReadyParticipants(t *testing.T) {
 	}
 }
 
+// TestExplore_ShowsPersonasOnlyNotHandlesOrNames locks in #47's identity
+// rule: the Explore page never reveals a handle or real name, before or
+// after the Reveal, even though it always renders the same template.
+func TestExplore_ShowsPersonasOnlyNotHandlesOrNames(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
+	srv, deps := newTestServer(t, llm, nil)
+	deps.db.CreateParticipant("p1", "octocat-handle", "Real Name One", true)
+	deps.db.SetPersona("p1", "The Gopher", "Ships things")
+	forceStep(deps.db, "p1", StepReady)
+	deps.db.CreateParticipant("p2", "ferris-handle", "Real Name Two", true)
+	deps.db.SetPersona("p2", "The Crab", "Loves Rust")
+	forceStep(deps.db, "p2", StepReady)
+
+	body := readBody(t, get(t, srv, "/user/explore/p1/p2"))
+
+	for _, leak := range []string{"octocat-handle", "ferris-handle", "Real Name One", "Real Name Two"} {
+		if strings.Contains(body, leak) {
+			t.Errorf("explore page leaked identity %q:\n%s", leak, body)
+		}
+	}
+	if !strings.Contains(body, "The Crab") {
+		t.Errorf("explore page should show the other Participant's persona: %s", body)
+	}
+}
+
 func TestBigScreen_GraphHasMatchedAndPotentialEdges(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")

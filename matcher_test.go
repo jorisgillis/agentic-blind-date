@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultMatchResult(t *testing.T) {
@@ -127,6 +129,33 @@ func TestMatcherScorePair_PromptDescribesEachDeveloperWithTheirOwnInterestsAndFo
 	}
 	if !strings.Contains(call.User, "The Gopher already follows The Crab on GitHub.") {
 		t.Errorf("prompt should mention the follow relationship:\n%s", call.User)
+	}
+}
+
+// TestMatcherScorePair_AHungFollowCheckStillCompletesTheAssessment covers
+// #46: a follow check that never gets a response must not stall a Match
+// assessment, and a timed-out check is treated as no follow relationship.
+func TestMatcherScorePair_AHungFollowCheckStillCompletesTheAssessment(t *testing.T) {
+	gh := NewGitHubClient("secret")
+	gh.httpClient = &http.Client{Transport: hangingTransport{}, Timeout: 20 * time.Millisecond}
+	llm := newFakeLLM().on("matchmaker", matchReply)
+	m := NewMatcher(newTestDB(t), gh, llm)
+
+	start := time.Now()
+	result, err := m.ScorePair(dev("a", "The Gopher", "Go"), dev("b", "The Crab", "Rust"))
+
+	if err != nil {
+		t.Fatalf("assessment should still complete, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("assessment should be bounded by the GitHub timeout, took %v", elapsed)
+	}
+	if result.Score == 0 {
+		t.Errorf("want a real assessment, got %+v", result)
+	}
+	call, _ := llm.lastCallMatching("matchmaker")
+	if strings.Contains(call.User, "follow") {
+		t.Errorf("a hung follow check should add no follow note to the prompt:\n%s", call.User)
 	}
 }
 
