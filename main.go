@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
-func loadDotEnv() {
-	data, err := os.ReadFile(".env")
+// loadDotEnv sets environment variables from a KEY=value file, without
+// overriding variables that are already set. A missing file is ignored.
+func loadDotEnv(path string) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}
@@ -34,7 +36,7 @@ func loadDotEnv() {
 }
 
 func main() {
-	loadDotEnv()
+	loadDotEnv(".env")
 
 	if os.Getenv("MISTRAL_API_KEY") == "" {
 		log.Println("WARNING: MISTRAL_API_KEY not set — LLM calls will fail")
