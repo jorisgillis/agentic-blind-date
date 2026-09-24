@@ -57,6 +57,15 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 	return displaced, tx.Commit()
 }
 
+// UnpairAll breaks every Match at once, returning everyone to the Pool.
+func (r *Relationships) UnpairAll() error {
+	_, err := r.db.db.Exec(`
+		UPDATE participants SET matched_with = '', compat_score = 0, compat_reason = '',
+		    red_flags = '[]', green_flags = '[]', icebreakers = '[]', pipeline_step = 'ready'
+		WHERE pipeline_step = 'matched' OR COALESCE(matched_with, '') != ''`)
+	return err
+}
+
 // Remove deletes a Participant. Their partner, if any, is returned to the Pool.
 func (r *Relationships) Remove(id string) error {
 	tx, err := r.db.db.Begin()

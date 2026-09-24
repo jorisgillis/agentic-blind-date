@@ -139,11 +139,6 @@ func (db *DB) Reset() error {
 	return err
 }
 
-func (db *DB) UnmatchAll() error {
-	_, err := db.db.Exec(`UPDATE participants SET matched_with='', compat_score=0, compat_reason='', pipeline_step='ready' WHERE pipeline_step='matched'`)
-	return err
-}
-
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {
 	p := &Participant{}
 	var profileJSON, questionsJSON, answersJSON, interestsJSON string

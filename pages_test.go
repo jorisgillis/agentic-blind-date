@@ -247,11 +247,11 @@ func TestAdminRematch_PairsTheReadyParticipants(t *testing.T) {
 	})
 }
 
-func TestRunMatching_NeedsTwoReadyParticipants(t *testing.T) {
+func TestRematch_NeedsTwoReadyParticipants(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")
 
-	if err := deps.agents.RunMatching(); err == nil {
+	if err := deps.agents.Rematch(); err == nil {
 		t.Error("want error with a single ready participant")
 	}
 }

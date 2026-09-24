@@ -659,13 +659,9 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/rematch
 func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
-	if err := h.db.UnmatchAll(); err != nil {
-		http.Error(w, "rematch failed: "+err.Error(), 500)
-		return
-	}
 	h.db.LogActivity("🔄 Admin triggered full rematch")
 	go func() {
-		if err := h.agents.RunMatching(); err != nil {
+		if err := h.agents.Rematch(); err != nil {
 			log.Printf("Rematch error: %v", err)
 		}
 	}()

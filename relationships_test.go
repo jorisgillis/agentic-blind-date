@@ -130,3 +130,40 @@ func TestRelationshipsRemove_FreesThePartner(t *testing.T) {
 	}
 	assertInvariant(t, db)
 }
+
+func TestRelationshipsUnpairAll_ReturnsEveryoneToThePool(t *testing.T) {
+	db := newTestDB(t)
+	ps := readyParticipants(t, db, "A", "B", "C", "D", "E")
+	rel := NewRelationships(db)
+	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+	rel.Pair(Match{A: ps["C"], B: ps["D"], Result: assessment(60)})
+
+	if err := rel.UnpairAll(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{"A", "B", "C", "D", "E"} {
+		if p := reload(t, db, id); p.MatchedWith != "" || p.PipelineStep != "ready" || p.CompatScore != 0 || p.RedFlags != "[]" {
+			t.Errorf("%s should be unmatched and ready with no assessment, got %+v", id, p)
+		}
+	}
+}
+
+func TestRematch_RunningAlongsideANewcomersMatchingKeepsTheKeyInvariant(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 70, "reason": "fine"}`)
+	_, deps := newTestServer(t, llm, nil)
+	for _, id := range []string{"A", "B", "C", "D", "N"} {
+		seed(t, deps.db, id, id, "ready")
+	}
+
+	done := make(chan error, 2)
+	go func() { done <- deps.agents.Rematch() }()
+	go func() { done <- deps.agents.RunContinuousMatching(reload(t, deps.db, "N")) }()
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	assertInvariant(t, deps.db)
+}

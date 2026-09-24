@@ -236,11 +236,15 @@ func (a *AgentPipeline) generateFallbackPersonaFromCompleteProfile(profile *Comp
 	}
 }
 
-// RunMatching pairs all ready participants through the Matcher and stores the Matches.
-func (a *AgentPipeline) RunMatching() error {
+// Rematch breaks every Match and pairs all ready Participants again, as one
+// matching operation: Continuous Matching cannot interleave with it.
+func (a *AgentPipeline) Rematch() error {
 	a.matchMu.Lock()
 	defer a.matchMu.Unlock()
 
+	if err := a.relations.UnpairAll(); err != nil {
+		return err
+	}
 	a.db.LogActivity("🔮 The matchmaker agents are at work...")
 
 	participants, err := a.db.GetAllByStep("ready")
