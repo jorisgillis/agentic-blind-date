@@ -27,6 +27,8 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
 
 ## Decisions so far
 
+- [How Themes can reach every page, and what browsers allow for motion and sound](issues/01-theme-delivery-and-browser-constraints.md): Themes are CSS variables under `<html data-theme>`, set before first paint and untouched by HTMX and SSE. Motion collapses under reduced motion. Sound needs one tap (or one click on the Big Screen) and must be optional.
+
 ## Not yet specified
 
 - **How the Theme build splits into slices:** for example tokens on every page first, then the phone picker, then the Big Screen picker, then motion and sound. This is sharper once the token set and the three looks are decided.

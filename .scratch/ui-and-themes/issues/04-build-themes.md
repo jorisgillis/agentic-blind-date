@@ -3,7 +3,7 @@ label: wayfinder:task
 title: Build the Themes
 status: open
 assignee:
-blocked_by: [03-three-theme-looks.md]
+blocked_by: [03-three-theme-looks.md, 07-tailwind-build-step.md]
 ---
 
 ## Question
