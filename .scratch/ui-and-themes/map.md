@@ -23,6 +23,7 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
   - The first build ships three Themes.
   - UI concepts may go beyond the current stack (Go templates, HTMX, Tailwind via CDN). The chosen concept's spec records the stack decision.
   - Concepts are judged on these must-haves: fun and memorable, gets Participants to walk up to each other, and keeps anonymity until the Reveal. Tie-breakers: works on any phone in a noisy room, and buildable in a few days.
+- **Specs and build tickets on GitHub:** "Spec: Themes" (#36), with its build tickets #40–#44 (`needs-triage` until the token set, the three looks and the Tailwind build step are decided here). Once they are, relabel them `ready-for-agent`.
 - **Skills:** research, prototype, grilling + domain-modeling, tdd, codebase-design (for the spec's modules).
 
 ## Decisions so far
@@ -31,7 +32,6 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
 
 ## Not yet specified
 
-- **How the Theme build splits into slices:** for example tokens on every page first, then the phone picker, then the Big Screen picker, then motion and sound. This is sharper once the token set and the three looks are decided.
 - **What the chosen UI concept's spec will surface:** likely its stack consequence (for example a JS front end, WebSockets, a PWA), how it's adopted (replacing the current UI or running alongside behind a switch), accessibility, and how it uses the Theme tokens. These can't be phrased yet, because they depend on which concept wins.
 
 ## Out of scope
