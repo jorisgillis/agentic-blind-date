@@ -41,6 +41,17 @@
       </button>
     </form>
 
+    <form action="/admin/reveal" method="POST">
+      <button
+        type="submit"
+        class="w-full bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-xl py-3 transition-colors text-sm disabled:opacity-50"
+        {{if eq .Phase "revealed"}}disabled{{end}}
+        onclick="return confirm('Reveal every match now?')"
+      >
+        {{if eq .Phase "revealed"}}🎉 Revealed{{else}}🎉 Reveal matches{{end}}
+      </button>
+    </form>
+
     <form action="/admin/rematch" method="POST">
       <button
         type="submit"

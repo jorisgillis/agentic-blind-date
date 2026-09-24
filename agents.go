@@ -239,7 +239,6 @@ func (a *AgentPipeline) RunMatching() error {
 	a.matchMu.Lock()
 	defer a.matchMu.Unlock()
 
-	a.db.SetPhase("matching")
 	a.db.LogActivity("🔮 The matchmaker agents are at work...")
 
 	participants, err := a.db.GetAllByStep("ready")
@@ -256,8 +255,7 @@ func (a *AgentPipeline) RunMatching() error {
 		}
 	}
 
-	a.db.SetPhase("revealed")
-	a.db.LogActivity("🎉 All matches revealed!")
+	a.db.LogActivity("💞 Rematch complete")
 	return nil
 }
 

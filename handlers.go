@@ -224,7 +224,7 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 	case "ready":
 		http.Redirect(w, r, "/user/wait/"+p.ID, http.StatusSeeOther)
 	case "matched":
-		http.Redirect(w, r, "/user/match/"+p.ID, http.StatusSeeOther)
+		http.Redirect(w, r, h.matchOrWait(p), http.StatusSeeOther)
 	default:
 		h.render(w, "onboard.html", p)
 	}
@@ -242,7 +242,7 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 	case "ready":
 		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
 	case "matched":
-		w.Header().Set("HX-Redirect", "/user/match/"+p.ID)
+		w.Header().Set("HX-Redirect", h.matchOrWait(p))
 	case "interviewing":
 		if qd := h.interview.Next(p); qd != nil {
 			h.render(w, "fragment-question.html", qd)
@@ -295,7 +295,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if p.PipelineStep == "matched" {
+	if h.matchRevealed(p) {
 		http.Redirect(w, r, "/user/match/"+p.ID, http.StatusSeeOther)
 		return
 	}
@@ -323,6 +323,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		"Profile":     profile,
 		"QAPairs":     qaPairs,
 		"Count":       h.db.ReadyCount(),
+		"Phase":       h.phase(),
 	})
 }
 
@@ -333,15 +334,14 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", 404)
 		return
 	}
-	if p.PipelineStep == "matched" {
+	if h.matchRevealed(p) {
 		w.Header().Set("HX-Redirect", "/user/match/"+p.ID)
 		return
 	}
-	phase, _ := h.db.GetPhase()
 	h.render(w, "fragment-wait-status.html", map[string]any{
 		"Participant": p,
 		"Count":       h.db.ReadyCount(),
-		"Phase":       phase,
+		"Phase":       h.phase(),
 	})
 }
 
@@ -352,7 +352,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if p.PipelineStep != "matched" {
+	if !h.matchRevealed(p) {
 		http.Redirect(w, r, "/user/wait/"+p.ID, http.StatusSeeOther)
 		return
 	}
@@ -618,12 +618,30 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /admin/reveal - Deprecated with continuous matching, but kept for compatibility
+// POST /admin/reveal: the admin reveals every Match once everybody is seated.
 func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
-	// With continuous matching, this endpoint is no longer needed
-	// But we keep it for backward compatibility - it just redirects back
-	h.db.LogActivity("ℹ️ Admin triggered reveal (continuous matching is active)")
+	h.db.SetPhase("revealed")
+	h.db.LogActivity("🎉 The matches are revealed!")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// phase returns the Event State: "onboarding" before the Reveal, "revealed" after.
+func (h *Handler) phase() string {
+	phase, _ := h.db.GetPhase()
+	return phase
+}
+
+// matchRevealed reports whether p may see their Match: they have one and the admin revealed.
+func (h *Handler) matchRevealed(p *Participant) bool {
+	return p.PipelineStep == "matched" && h.phase() == "revealed"
+}
+
+// matchOrWait is the page for a matched Participant: their Match after the Reveal, else the wait page.
+func (h *Handler) matchOrWait(p *Participant) string {
+	if h.matchRevealed(p) {
+		return "/user/match/" + p.ID
+	}
+	return "/user/wait/" + p.ID
 }
 
 // POST /admin/reset
@@ -644,7 +662,6 @@ func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "rematch failed: "+err.Error(), 500)
 		return
 	}
-	h.db.SetPhase("matching")
 	h.db.LogActivity("🔄 Admin triggered full rematch")
 	go func() {
 		if err := h.agents.RunMatching(); err != nil {
@@ -710,7 +727,7 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 				sseRedirect(w, "/user/wait/"+p.ID)
 				return
 			case "matched":
-				sseRedirect(w, "/user/match/"+p.ID)
+				sseRedirect(w, h.matchOrWait(p))
 				return
 			}
 		}
@@ -739,7 +756,7 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			if p.PipelineStep == "matched" {
+			if h.matchRevealed(p) {
 				sseRedirect(w, "/user/match/"+p.ID)
 				return
 			}

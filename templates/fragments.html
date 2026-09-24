@@ -147,17 +147,17 @@
 {{/* Wait page status — polled every 3s */}}
 {{define "fragment-wait-status.html"}}
 {{$p := .Participant}}
-{{if and (eq .Phase "revealed") (eq $p.PipelineStep "ready")}}
-<div id="wait-status" class="text-center space-y-4 py-4">
-  <p class="text-4xl">😔</p>
-  <p class="text-gray-900 font-bold">You just missed it!</p>
-  <p class="text-gray-700 text-sm">The matching already happened. Check the big screen!</p>
-</div>
-{{else if eq $p.PipelineStep "matched"}}
-<div id="wait-status" class="text-center space-y-4 py-4">
+{{if eq $p.PipelineStep "matched"}}
+<div
+  id="wait-status"
+  hx-get="/user/wait-status/{{$p.ID}}"
+  hx-trigger="every 3s"
+  hx-swap="outerHTML"
+  class="text-center space-y-4 py-4"
+>
   <p class="text-4xl">❤️</p>
-  <p class="text-gray-900 font-bold">Match found!</p>
-  <p class="text-gray-700 text-sm">{{if $p.MatchedWith}}Check your match!{{else}}Loading match...{{end}}</p>
+  <p class="text-gray-900 font-bold">You've been matched!</p>
+  <p class="text-gray-700 text-sm">Your match is waiting for the Reveal. Keep an eye on the big screen!</p>
 </div>
 {{else}}
 <div

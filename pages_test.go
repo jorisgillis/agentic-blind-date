@@ -68,6 +68,7 @@ func TestLanding_UnknownCookieIsClearedAndTheFormShown(t *testing.T) {
 
 func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "i", "I", "interviewing")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "matched")
@@ -88,6 +89,7 @@ func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 
 func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "f", "F", "fetching_github")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "matched")
@@ -113,6 +115,7 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 
 func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "The Gopher", "ready")
 	seed(t, deps.db, "m", "M", "matched")
 
@@ -130,6 +133,7 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 
 func TestWaitStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "matched")
 
@@ -146,6 +150,7 @@ func TestWaitStatus(t *testing.T) {
 
 func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	seed(t, deps.db, "c", "The Snake", "ready")
@@ -236,10 +241,6 @@ func TestAdminRematch_PairsTheReadyParticipants(t *testing.T) {
 	eventually(t, "both matched", func() bool {
 		return reload(t, deps.db, "a").MatchedWith == "b" && reload(t, deps.db, "b").MatchedWith == "a"
 	})
-	eventually(t, "matches revealed", func() bool {
-		phase, _ := deps.db.GetPhase()
-		return phase == "revealed"
-	})
 }
 
 func TestRunMatching_NeedsTwoReadyParticipants(t *testing.T) {
@@ -282,6 +283,7 @@ func stream(t *testing.T, srv *testSrv, path string, timeout time.Duration) stri
 
 func TestPipelineStream_RedirectsOnceTheParticipantIsReadyOrMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "matched")
 	seed(t, deps.db, "i", "I", "interviewing")
@@ -302,6 +304,7 @@ func TestPipelineStream_RedirectsOnceTheParticipantIsReadyOrMatched(t *testing.T
 
 func TestWaitStream_RedirectsOnceMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
+	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "m", "M", "matched")
 	seed(t, deps.db, "r", "R", "ready")
 
