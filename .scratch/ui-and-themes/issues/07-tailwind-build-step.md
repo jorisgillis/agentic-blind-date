@@ -2,7 +2,7 @@
 label: wayfinder:grilling
 title: Do Themes ship with a Tailwind build step instead of the Play CDN
 status: open
-assignee:
+assignee: claude
 blocked_by: []
 ---
 
