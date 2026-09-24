@@ -23,10 +23,8 @@ func AskStructured[T any](llm LLM, system, user string, validate func(T) error) 
 	if err := json.Unmarshal([]byte(extractJSON(reply)), &result); err != nil {
 		return zero, fmt.Errorf("structured reply parse error: %v (raw: %s)", err, reply)
 	}
-	if validate != nil {
-		if err := validate(result); err != nil {
-			return zero, fmt.Errorf("%v (raw: %s)", err, reply)
-		}
+	if err := validate(result); err != nil {
+		return zero, fmt.Errorf("%v (raw: %s)", err, reply)
 	}
 	return result, nil
 }

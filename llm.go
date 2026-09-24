@@ -3,11 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -165,14 +165,37 @@ func errorText(body []byte) string {
 			return e.Message
 		}
 		if len(e.Detail) > 0 {
-			var s string
-			if json.Unmarshal(e.Detail, &s) == nil && s != "" {
-				return s
+			if text := detailText(e.Detail); text != "" {
+				return text
 			}
-			return string(e.Detail)
 		}
 	}
 	return string(body)
+}
+
+// detailText reads a validation-error "detail", either a plain string or
+// FastAPI's shape (Mistral's own 422s): a list of {"msg": "..."} objects,
+// joined into one line. Anything else falls back to the raw JSON.
+func detailText(detail json.RawMessage) string {
+	var s string
+	if json.Unmarshal(detail, &s) == nil && s != "" {
+		return s
+	}
+	var items []struct {
+		Msg string `json:"msg"`
+	}
+	if json.Unmarshal(detail, &items) == nil && len(items) > 0 {
+		msgs := make([]string, 0, len(items))
+		for _, item := range items {
+			if item.Msg != "" {
+				msgs = append(msgs, item.Msg)
+			}
+		}
+		if len(msgs) > 0 {
+			return strings.Join(msgs, "; ")
+		}
+	}
+	return string(detail)
 }
 
 // Chat sends the system and user prompts and returns the reply, retrying a
@@ -190,8 +213,7 @@ func (c *OpenAIClient) Chat(system, user string) (string, error) {
 			return result, nil
 		}
 		lastErr = err
-		var ce *chatError
-		if errors.As(err, &ce) && !ce.retryable {
+		if ce, ok := err.(*chatError); ok && !ce.retryable {
 			break
 		}
 	}

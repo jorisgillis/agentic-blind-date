@@ -69,13 +69,3 @@ func TestAskStructured_AChatFailureIsReturnedAsIs(t *testing.T) {
 		t.Errorf("want the chat error unwrapped, got %v", err)
 	}
 }
-
-func TestAskStructured_NoValidatorMeansNoValidation(t *testing.T) {
-	llm := newFakeLLM().on("s", `{"name": ""}`)
-
-	got, err := AskStructured[structuredReply](llm, "s", "u", nil)
-
-	if err != nil || got.Name != "" {
-		t.Errorf("without a validator, a decoded zero value is fine: got %+v (err %v)", got, err)
-	}
-}
