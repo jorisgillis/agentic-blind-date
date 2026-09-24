@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"sync"
 	"testing"
 )
@@ -203,6 +204,37 @@ func TestOnboarding_AParticipantWithoutAProfileStillGetsAPersona(t *testing.T) {
 	eventually(t, "ready", func() bool { return reload(t, db, "p").PipelineStep == StepReady })
 	if got := reload(t, db, "p").PersonaName; got != "The Mysterious Coder" {
 		t.Errorf("persona: got %q", got)
+	}
+}
+
+// TestOnboarding_ActivityNeverNamesAnyoneBeforeTheReveal covers #45: the Big
+// Screen shows the activity ticker to the whole room, so no line written
+// while onboarding a Participant may contain their handle, name or ID.
+func TestOnboarding_ActivityNeverNamesAnyoneBeforeTheReveal(t *testing.T) {
+	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "octohandle", Languages: []string{"Go"}})
+	llm := newFakeLLM().
+		on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`).
+		on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`)
+	o, db := onboardingFor(t, llm, gh)
+
+	id, err := o.Register("Real Name", "octohandle", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answerEverything(t, o, db, id)
+	eventually(t, "ready", func() bool { return reload(t, db, id).PipelineStep == StepReady })
+
+	lines, err := db.GetRecentActivity(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) == 0 {
+		t.Fatal("expected activity lines to have been logged")
+	}
+	for _, line := range lines {
+		if strings.Contains(line, "octohandle") || strings.Contains(line, "Real Name") || strings.Contains(line, id) {
+			t.Errorf("activity line names the Participant before the Reveal: %q", line)
+		}
 	}
 }
 
