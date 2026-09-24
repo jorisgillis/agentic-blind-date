@@ -48,12 +48,17 @@ func (mm *Matchmaking) Rematch() error {
 	return nil
 }
 
+// maxChain bounds a chain of take-overs. Take-overs usually end quickly
+// because they're cached and each one raises the taken Participant's score,
+// but a Reset clears the cache and LLM scores aren't perfectly consistent
+// between calls, so a chain could otherwise loop forever while holding the
+// matching lock. A var, not a const, so a test can shrink it. Restored by #48.
+var maxChain = 100
+
 // MatchNewcomer is Continuous Matching for a Participant who just became ready:
 // they are matched against the other ready Participants, taking over a weaker
 // Match when needed. A partner displaced by a take-over is matched straight
 // away in the same way, but never with the pair that just displaced them.
-// Chains end: every take-over strictly raises the taken Participant's Match
-// score, and assessments are cached, so no Match can be taken over forever.
 func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
@@ -63,7 +68,10 @@ func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 		exclude map[string]bool // the pair that displaced them
 	}
 	queue := []pending{{id: newcomer.ID}}
-	for len(queue) > 0 {
+	for steps := 0; len(queue) > 0; steps++ {
+		if steps == maxChain {
+			return fmt.Errorf("matching %s: chain of take-overs longer than %d", newcomer.ID, maxChain)
+		}
 		next := queue[0]
 		queue = queue[1:]
 		m, displaced, err := mm.matchOne(next.id, next.exclude)
