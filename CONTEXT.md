@@ -92,6 +92,9 @@ The network visualization shown on the big screen, consisting of:
   - Matched edges: Actual matches (solid lines)
   - Potential edges: Top-3 heuristic connections (dashed lines)
 
+### Explore
+A Participant looking at their compatibility with another Participant who is not their Match. Any two different **ready** Participants may explore each other at any time. The page shows personas only, so before the Reveal it never reveals who either of them is.
+
 ### Big Screen
 The public display for the event, showing:
 - All participants as a graph
