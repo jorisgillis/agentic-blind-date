@@ -71,6 +71,11 @@ func (iv *Interview) questionSet(profile *GitHubProfile, githubUser bool) []Ques
 	return append(qs, custom...)
 }
 
+// customQuestionsReply is the LLM's raw reply shape for Custom Questions.
+type customQuestionsReply struct {
+	Questions []string `json:"questions"`
+}
+
 func (iv *Interview) customQuestions(profile *GitHubProfile) ([]Question, error) {
 	system := `You are an interviewer at a tech meetup blind date event.
 Generate 3 fun, opinionated questions tailored to this developer's GitHub profile.
@@ -78,19 +83,15 @@ Questions should be conversational and tech-related.
 Respond with ONLY valid JSON — no markdown:
 {"questions": ["...", "...", "..."]}`
 
-	response, err := iv.llm.Chat(system, "Generate 3 personalized questions for:\n\n"+profile.Summary())
+	result, err := AskStructured(iv.llm, system, "Generate 3 personalized questions for:\n\n"+profile.Summary(),
+		func(r customQuestionsReply) error {
+			if len(r.Questions) == 0 {
+				return errors.New("empty questions")
+			}
+			return nil
+		})
 	if err != nil {
 		return nil, err
-	}
-
-	var result struct {
-		Questions []string `json:"questions"`
-	}
-	if err := json.Unmarshal([]byte(extractJSON(response)), &result); err != nil {
-		return nil, fmt.Errorf("questions parse error: %v", err)
-	}
-	if len(result.Questions) == 0 {
-		return nil, errors.New("empty questions")
 	}
 	var qs []Question
 	for i, text := range result.Questions {

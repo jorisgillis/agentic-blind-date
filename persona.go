@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -45,18 +45,12 @@ Create a funny, tongue-in-cheek anonymous persona based on a developer's profile
 Respond with ONLY a valid JSON object — no markdown, no backticks:
 {"name": "The [Adjective] [Tech Noun]", "tagline": "<funny one-liner max 60 chars>"}`
 
-	response, err := ps.llm.Chat(system, personaPrompt(p))
-	if err != nil {
-		return Persona{}, err
-	}
-	var persona Persona
-	if err := json.Unmarshal([]byte(extractJSON(response)), &persona); err != nil {
-		return Persona{}, fmt.Errorf("persona parse error: %v (raw: %s)", err, response)
-	}
-	if persona.Name == "" {
-		return Persona{}, fmt.Errorf("persona reply has no name (raw: %s)", response)
-	}
-	return persona, nil
+	return AskStructured(ps.llm, system, personaPrompt(p), func(persona Persona) error {
+		if persona.Name == "" {
+			return errors.New("persona reply has no name")
+		}
+		return nil
+	})
 }
 
 func personaPrompt(p *Participant) string {

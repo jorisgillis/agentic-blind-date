@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -197,15 +196,4 @@ func (c *OpenAIClient) Chat(system, user string) (string, error) {
 		}
 	}
 	return "", lastErr
-}
-
-// extractJSON returns the outermost {...} of an LLM reply, which may wrap the
-// JSON in prose or markdown fences.
-func extractJSON(s string) string {
-	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start == -1 || end == -1 || end <= start {
-		return s
-	}
-	return s[start : end+1]
 }
