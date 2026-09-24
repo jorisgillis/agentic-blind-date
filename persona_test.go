@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -65,5 +66,42 @@ func TestPersonasCreate_FallbackIsAnonymous(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPersonaLooks_AreDistinctAndCycleAfterTheyRunOut(t *testing.T) {
+	db := newTestDB(t)
+	combos := len(personaPalette) * len(personaSymbols)
+
+	for i := 0; i < combos+5; i++ {
+		if err := db.CreateParticipant(fmt.Sprintf("p%d", i), fmt.Sprintf("h%d", i), "", true); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, _ := db.GetAllParticipants()
+	uses := map[string]int{}
+	for _, p := range all {
+		uses[p.PersonaColor+p.PersonaSymbol]++
+	}
+	if len(uses) != combos {
+		t.Errorf("every combination should be used before any repeats: %d of %d used", len(uses), combos)
+	}
+	for look, n := range uses {
+		if n > 2 {
+			t.Errorf("%s used %d times: after running out, looks should cycle, not pile onto one", look, n)
+		}
+	}
+}
+
+func TestPersonaPalette_IsTheOneSourceForEveryDisplay(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	body := readBody(t, get(t, srv, "/bigscreen"))
+
+	for _, c := range personaPalette {
+		if !strings.Contains(body, c.Hex) {
+			t.Errorf("the Big Screen should colour %s from the persona palette (%s)", c.Class, c.Hex)
+		}
 	}
 }

@@ -4,17 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
-	"math/rand"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
-
-var tailwindColors = []string{
-	"bg-teal-400", "bg-red-400", "bg-purple-400", "bg-amber-400", "bg-blue-400",
-}
-
-var personaSymbols = []string{"🦊", "🦁", "🐯", "🐺", "🦝", "🦔", "🐙", "🦈", "🦅", "🐸"}
 
 // Participant represents a person attending the meetup event.
 // It contains their profile data, answers, persona, and matching information.
@@ -215,42 +208,23 @@ func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
 	}
 	defer tx.Rollback()
 
-	// Get all used color+symbol combinations
-	rows, err := tx.Query(`SELECT persona_color, persona_symbol FROM participants`)
+	// Persona colour and symbol come from the Persona module, given current use.
+	rows, err := tx.Query(`SELECT persona_color, persona_symbol, COUNT(*) FROM participants GROUP BY persona_color, persona_symbol`)
 	if err != nil {
 		return err
 	}
-	used := make(map[string]bool)
+	uses := make(map[string]int)
 	for rows.Next() {
 		var c, s string
-		if err := rows.Scan(&c, &s); err != nil {
+		var n int
+		if err := rows.Scan(&c, &s, &n); err != nil {
 			rows.Close()
 			return err
 		}
-		used[c+"|"+s] = true
+		uses[c+"|"+s] = n
 	}
 	rows.Close()
-
-	// Find all available combinations
-	var available [][2]string
-	for _, c := range tailwindColors {
-		for _, s := range personaSymbols {
-			if !used[c+"|"+s] {
-				available = append(available, [2]string{c, s})
-			}
-		}
-	}
-
-	var color, symbol string
-	if len(available) > 0 {
-		pick := available[rand.Intn(len(available))]
-		color, symbol = pick[0], pick[1]
-	} else {
-		// Fallback: all combinations used, pick sequentially
-		n := len(used)
-		symbol = personaSymbols[n%len(personaSymbols)]
-		color = tailwindColors[(n/len(personaSymbols))%len(tailwindColors)]
-	}
+	color, symbol := nextLook(uses)
 
 	_, err = tx.Exec(
 		`INSERT INTO participants (id, github_handle, has_github, name, persona_color, persona_symbol, questions, interests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,

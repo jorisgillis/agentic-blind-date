@@ -54,20 +54,7 @@
   </footer>
 
 <script>
-const colorMap = {
-  'bg-red-400':    '#f87171',
-  'bg-blue-400':   '#60a5fa',
-  'bg-amber-400':  '#fbbf24',
-  'bg-green-400':  '#4ade80',
-  'bg-purple-400': '#c084fc',
-  'bg-pink-400':   '#f472b6',
-  'bg-teal-400':   '#2dd4bf',
-  'bg-orange-400': '#fb923c',
-  'bg-indigo-400': '#818cf8',
-  'bg-rose-400':   '#fb7185',
-  'bg-cyan-400':   '#22d3ee',
-  'bg-lime-400':   '#a3e635',
-};
+const colorMap = {{.Palette}};
 
 // QR code pointing to /user
 new QRCode(document.getElementById('qr'), {

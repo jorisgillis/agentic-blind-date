@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"sort"
 	"strings"
 )
@@ -94,4 +95,62 @@ func mainLanguage(p *Participant) string {
 		}
 	}
 	return strings.TrimSpace(p.Answers["fixed_1"])
+}
+
+// paletteColor is one Persona colour, with its text colour and hex for every display.
+type paletteColor struct {
+	Class string // Tailwind background class stored on the Participant
+	Text  string // readable Tailwind text class on that background
+	Hex   string // for the Big Screen graph
+}
+
+// personaPalette is the one source of Persona colours.
+var personaPalette = []paletteColor{
+	{"bg-teal-400", "text-teal-900", "#2dd4bf"},
+	{"bg-red-400", "text-red-900", "#f87171"},
+	{"bg-purple-400", "text-purple-900", "#c084fc"},
+	{"bg-amber-400", "text-amber-900", "#fbbf24"},
+	{"bg-blue-400", "text-blue-900", "#60a5fa"},
+}
+
+var personaSymbols = []string{"🦊", "🦁", "🐯", "🐺", "🦝", "🦔", "🐙", "🦈", "🦅", "🐸"}
+
+// nextLook picks a Persona colour and symbol given how often each combination
+// ("class|symbol") is already used: a random one among the least used, so every
+// combination is used once before any repeats, and repeats then cycle.
+func nextLook(uses map[string]int) (color, symbol string) {
+	var least [][2]string
+	fewest := -1
+	for _, c := range personaPalette {
+		for _, s := range personaSymbols {
+			n := uses[c.Class+"|"+s]
+			switch {
+			case fewest == -1 || n < fewest:
+				fewest, least = n, [][2]string{{c.Class, s}}
+			case n == fewest:
+				least = append(least, [2]string{c.Class, s})
+			}
+		}
+	}
+	pick := least[rand.Intn(len(least))]
+	return pick[0], pick[1]
+}
+
+// paletteHex maps each Persona colour class to its hex, for the Big Screen.
+func paletteHex() map[string]string {
+	m := make(map[string]string, len(personaPalette))
+	for _, c := range personaPalette {
+		m[c.Class] = c.Hex
+	}
+	return m
+}
+
+// paletteText returns the readable text class for a Persona colour class.
+func paletteText(class string) string {
+	for _, c := range personaPalette {
+		if c.Class == class {
+			return c.Text
+		}
+	}
+	return "text-gray-900"
 }

@@ -105,19 +105,7 @@ func NewHandler(db *DB, agents *AgentPipeline, interview *Interview, matcher *Ma
 			}
 			return c
 		},
-		"textColor": func(bgClass string) string {
-			m := map[string]string{
-				"bg-teal-400":   "text-teal-900",
-				"bg-red-400":    "text-red-900",
-				"bg-purple-400": "text-purple-900",
-				"bg-amber-400":  "text-amber-900",
-				"bg-blue-400":   "text-blue-900",
-			}
-			if c, ok := m[bgClass]; ok {
-				return c
-			}
-			return "text-gray-900"
-		},
+		"textColor": paletteText,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{db: db, agents: agents, interview: interview, matcher: matcher, relations: relations, tmpl: tmpl}
@@ -415,7 +403,7 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 
 // GET /bigscreen
 func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "screen.html", nil)
+	h.render(w, "screen.html", map[string]any{"Palette": paletteHex()})
 }
 
 func (h *Handler) buildGraphPayload() map[string]any {
