@@ -37,7 +37,7 @@ func NewDB(path string) (*DB, error)
 
 // External service clients
 func NewGitHubClient(token string) *GitHubClient
-func NewMistralClient(apiKey, model string, httpClient *http.Client) *MistralClient
+func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *http.Client) *OpenAIClient
 
 // Domain modules: upstream services are accepted through the LLM and GitHubAPI seams
 func NewInterview(db *DB, llm LLM) *Interview
@@ -65,18 +65,20 @@ func main() {
     defer db.Close()
 
     github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
-    mistral := NewMistralClient(
+    llm := NewOpenAIClient(
+        "https://api.mistral.ai/v1",
         os.Getenv("MISTRAL_API_KEY"),
         "mistral-medium-latest",
+        true,
         &http.Client{Timeout: 30 * time.Second},
     )
 
     // Initialize application components
-    matcher := NewMatcher(db, github, mistral)
-    interview := NewInterview(db, mistral)
+    matcher := NewMatcher(db, github, llm)
+    interview := NewInterview(db, llm)
     relations := NewRelationships(db)
     matchmaking := NewMatchmaking(db, matcher, relations)
-    onboarding := NewOnboarding(db, github, interview, NewPersonas(mistral), matchmaking)
+    onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
     h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
 
     // Start server
@@ -86,7 +88,7 @@ func main() {
 
 #### Seams for upstream services
 
-`LLM` (one method: `Chat(system, user)`) and `GitHubAPI` (`FetchProfile`, `CheckMutualFollow`) are the only interfaces. Each has two adapters: the production client (`MistralClient`, `GitHubClient`) and an in-memory fake used by tests, so the test suite never reaches the real APIs.
+`LLM` (one method: `Chat(system, user)`) and `GitHubAPI` (`FetchProfile`, `CheckMutualFollow`) are the only interfaces. Each has two adapters: the production client (`OpenAIClient`, `GitHubClient`) and an in-memory fake used by tests, so the test suite never reaches the real APIs. `OpenAIClient` is one OpenAI-compatible chat completions adapter, configured here for Mistral.
 
 ## Consequences
 

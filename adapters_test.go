@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -147,86 +146,6 @@ func TestGitHubClientCheckMutualFollow(t *testing.T) {
 	}
 }
 
-func mistralFor(u *upstream) *MistralClient {
-	c := NewMistralClient("key", "mistral-test", u.client())
-	c.retryDelay = func(int) time.Duration { return 0 }
-	return c
-}
-
-const chatPath = "/v1/chat/completions"
-
-func TestMistralClientChat_SendsBothPromptsAndReturnsTheReply(t *testing.T) {
-	u := newUpstream().on(chatPath, 200, `{"choices": [{"message": {"content": "hello"}}]}`)
-
-	got, err := mistralFor(u).Chat("be nice", "hi")
-
-	if err != nil || got != "hello" {
-		t.Fatalf("want hello, got %q (err %v)", got, err)
-	}
-	var req mistralReq
-	if err := json.Unmarshal([]byte(u.bodies[0]), &req); err != nil {
-		t.Fatal(err)
-	}
-	if req.Model != "mistral-test" || len(req.Messages) != 2 || req.Messages[0].Content != "be nice" || req.Messages[1].Content != "hi" {
-		t.Errorf("request body: %+v", req)
-	}
-	if got := u.requests[0].Header.Get("Authorization"); got != "Bearer key" {
-		t.Errorf("Authorization header: got %q", got)
-	}
-}
-
-func TestMistralClientChat_RetriesTransientFailures(t *testing.T) {
-	attempts := 0
-	u := newUpstream().onFunc(chatPath, func(*http.Request) (int, string) {
-		attempts++
-		if attempts < 3 {
-			return 429, `{"message": "slow down"}`
-		}
-		return 200, `{"choices": [{"message": {"content": "finally"}}]}`
-	})
-
-	got, err := mistralFor(u).Chat("s", "u")
-
-	if err != nil || got != "finally" || attempts != 3 {
-		t.Errorf("want success on attempt 3, got %q after %d attempts (err %v)", got, attempts, err)
-	}
-}
-
-func TestMistralClientChat_GivesUpAfterThreeAttempts(t *testing.T) {
-	for name, tc := range map[string]struct {
-		status int
-		body   string
-		want   string
-	}{
-		"http error": {500, "boom", "mistral HTTP 500"},
-		"api error":  {200, `{"error": {"message": "bad key"}}`, "bad key"},
-		"no choices": {200, `{"choices": []}`, "no choices"},
-		"not json":   {200, `<html>`, "parse error"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			u := newUpstream().on(chatPath, tc.status, tc.body)
-
-			_, err := mistralFor(u).Chat("s", "u")
-
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Errorf("want error containing %q, got %v", tc.want, err)
-			}
-			if len(u.requests) != 3 {
-				t.Errorf("attempts: want 3, got %d", len(u.requests))
-			}
-		})
-	}
-}
-
-func TestMistralClientChat_WithoutAnHTTPClient(t *testing.T) {
-	c := NewMistralClient("key", "m", nil)
-	c.retryDelay = func(int) time.Duration { return 0 }
-
-	if _, err := c.Chat("s", "u"); err == nil {
-		t.Error("want error without an HTTP client")
-	}
-}
-
 // brokenTransport fails every request, like a network outage.
 type brokenTransport struct{}
 
@@ -310,28 +229,5 @@ func TestGitHubClientFetchProfile_KeepsTheFiveMostCommonTopics(t *testing.T) {
 
 	if len(p.TopTopics) != 5 {
 		t.Errorf("topics: want 5, got %v", p.TopTopics)
-	}
-}
-
-func TestMistralClientChat_NetworkFailures(t *testing.T) {
-	for name, transport := range map[string]http.RoundTripper{
-		"unreachable":     brokenTransport{},
-		"body breaks off": truncatedTransport{},
-	} {
-		t.Run(name, func(t *testing.T) {
-			c := NewMistralClient("key", "m", &http.Client{Transport: transport})
-			c.retryDelay = func(int) time.Duration { return 0 }
-			if _, err := c.Chat("s", "u"); err == nil {
-				t.Error("want an error")
-			}
-		})
-	}
-}
-
-func TestMistralClient_BacksOffExponentially(t *testing.T) {
-	c := NewMistralClient("key", "m", nil)
-
-	if c.retryDelay(1) != 2*time.Second || c.retryDelay(2) != 4*time.Second {
-		t.Errorf("want 2s then 4s, got %v then %v", c.retryDelay(1), c.retryDelay(2))
 	}
 }
