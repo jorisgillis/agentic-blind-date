@@ -57,6 +57,37 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 	return displaced, tx.Commit()
 }
 
+// PartnerOf returns a Participant's partner and the assessment of their Match,
+// or nils when they are unmatched. Lists that cannot be decoded come back empty.
+func (r *Relationships) PartnerOf(id string) (*Participant, *matchResult, error) {
+	p, err := r.db.GetParticipant(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if p.MatchedWith == "" {
+		return nil, nil, nil
+	}
+	partner, err := r.db.GetParticipant(p.MatchedWith)
+	if err != nil {
+		return nil, nil, fmt.Errorf("partner of %s: %w", id, err)
+	}
+	return partner, &matchResult{
+		Score:       p.CompatScore,
+		Reason:      p.CompatReason,
+		RedFlags:    decodeList(p.RedFlags),
+		GreenFlags:  decodeList(p.GreenFlags),
+		Icebreakers: decodeList(p.Icebreakers),
+	}, nil
+}
+
+func decodeList(raw string) []string {
+	var list []string
+	if err := json.Unmarshal([]byte(raw), &list); err != nil || list == nil {
+		return []string{}
+	}
+	return list
+}
+
 // UnpairAll breaks every Match at once, returning everyone to the Pool.
 func (r *Relationships) UnpairAll() error {
 	_, err := r.db.db.Exec(`

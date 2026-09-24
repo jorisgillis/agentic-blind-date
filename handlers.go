@@ -358,20 +358,13 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var match *Participant
-	if p.MatchedWith != "" {
-		var err error
-		match, err = h.db.GetParticipant(p.MatchedWith)
-		if err != nil {
-			log.Printf("Failed to get match participant %s: %v", p.MatchedWith, err)
-			// Continue without match data
-		}
+	match, result, err := h.relations.PartnerOf(p.ID)
+	if err != nil {
+		log.Printf("Match page for %s: %v", p.ID, err)
 	}
-
-	var redFlags, greenFlags, icebreakers []string
-	json.Unmarshal([]byte(p.RedFlags), &redFlags)
-	json.Unmarshal([]byte(p.GreenFlags), &greenFlags)
-	json.Unmarshal([]byte(p.Icebreakers), &icebreakers)
+	if result == nil {
+		result = &matchResult{RedFlags: []string{}, GreenFlags: []string{}, Icebreakers: []string{}}
+	}
 
 	all, _ := h.db.GetAllParticipants()
 	var others []*Participant
@@ -384,9 +377,9 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "match.html", map[string]any{
 		"Me":          p,
 		"Match":       match,
-		"RedFlags":    redFlags,
-		"GreenFlags":  greenFlags,
-		"Icebreakers": icebreakers,
+		"RedFlags":    result.RedFlags,
+		"GreenFlags":  result.GreenFlags,
+		"Icebreakers": result.Icebreakers,
 		"Others":      others,
 	})
 }

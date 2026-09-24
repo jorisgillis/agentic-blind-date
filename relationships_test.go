@@ -167,3 +167,36 @@ func TestRematch_RunningAlongsideANewcomersMatchingKeepsTheKeyInvariant(t *testi
 
 	assertInvariant(t, deps.db)
 }
+
+func TestRelationshipsPartnerOf_ReturnsThePartnerAndTheAssessment(t *testing.T) {
+	db := newTestDB(t)
+	ps := readyParticipants(t, db, "A", "B", "C")
+	rel := NewRelationships(db)
+	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+
+	partner, result, err := rel.PartnerOf("A")
+
+	if err != nil || partner == nil || partner.ID != "B" {
+		t.Fatalf("partner: got %v (err %v)", partner, err)
+	}
+	if result.Score != 80 || result.Reason != "why not" || len(result.RedFlags) != 1 || result.RedFlags[0] != "tabs, sadly" || len(result.Icebreakers) != 1 {
+		t.Errorf("assessment: got %+v", result)
+	}
+	if partner, result, err := rel.PartnerOf("C"); partner != nil || result != nil || err != nil {
+		t.Errorf("unmatched: want nothing, got %v %v %v", partner, result, err)
+	}
+}
+
+func TestRelationshipsPartnerOf_AnUndecodableAssessmentIsEmptyNotBroken(t *testing.T) {
+	db := newTestDB(t)
+	ps := readyParticipants(t, db, "A", "B")
+	rel := NewRelationships(db)
+	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+	db.db.Exec(`UPDATE participants SET red_flags = 'not json', icebreakers = '' WHERE id = 'A'`)
+
+	_, result, err := rel.PartnerOf("A")
+
+	if err != nil || result.RedFlags == nil || len(result.RedFlags) != 0 || result.Icebreakers == nil {
+		t.Errorf("want empty lists, got %+v (err %v)", result, err)
+	}
+}
