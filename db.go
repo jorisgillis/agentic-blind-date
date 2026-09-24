@@ -40,6 +40,11 @@ type Participant struct {
 	CreatedAt      time.Time
 }
 
+// IsMatched reports the Participant's Relationship State: whether they have a partner.
+func (p *Participant) IsMatched() bool {
+	return p.MatchedWith != ""
+}
+
 // DB wraps the SQLite database connection and provides participant management operations.
 type DB struct {
 	db *sql.DB
@@ -116,6 +121,7 @@ func NewDB(path string) (*DB, error) {
 		`ALTER TABLE participants ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'`,
 		`UPDATE participants SET questions = custom_questions WHERE custom_questions IS NOT NULL`,
 		`ALTER TABLE participants DROP COLUMN extra_answers`, // ExtraAnswers live in profile_json
+		`UPDATE participants SET pipeline_step = 'ready' WHERE pipeline_step = 'matched'`, // Relationship State is not a Pipeline Step
 	} {
 		sqlDB.Exec(m)
 	}
@@ -369,7 +375,7 @@ func (db *DB) ParticipantCount() int {
 
 func (db *DB) ReadyCount() int {
 	var n int
-	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step IN ('ready', 'matched')`).Scan(&n)
+	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step = 'ready'`).Scan(&n)
 	return n
 }
 

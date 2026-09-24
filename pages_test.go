@@ -75,7 +75,9 @@ func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "i", "I", "interviewing")
 	seed(t, deps.db, "r", "R", "ready")
-	seed(t, deps.db, "m", "M", "matched")
+	seed(t, deps.db, "m", "M", "ready")
+	seed(t, deps.db, "m2", "M2", "ready")
+	pair(t, deps.db, "m", "m2")
 
 	if resp := get(t, srv, "/user/onboard/i"); resp.StatusCode != 200 {
 		t.Errorf("interviewing: want 200, got %d", resp.StatusCode)
@@ -96,7 +98,9 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "f", "F", "fetching_github")
 	seed(t, deps.db, "r", "R", "ready")
-	seed(t, deps.db, "m", "M", "matched")
+	seed(t, deps.db, "m", "M", "ready")
+	seed(t, deps.db, "m2", "M2", "ready")
+	pair(t, deps.db, "m", "m2")
 	seed(t, deps.db, "done", "D", "interviewing") // its only question is answered
 
 	if body := readBody(t, get(t, srv, "/user/pipeline/f")); !strings.Contains(body, "Preparing your interview questions") {
@@ -121,7 +125,9 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "The Gopher", "ready")
-	seed(t, deps.db, "m", "M", "matched")
+	seed(t, deps.db, "m", "M", "ready")
+	seed(t, deps.db, "m2", "M2", "ready")
+	pair(t, deps.db, "m", "m2")
 
 	body := readBody(t, get(t, srv, "/user/wait/r"))
 	if !strings.Contains(body, "Tabs or spaces?") || !strings.Contains(body, "The Gopher") {
@@ -139,7 +145,9 @@ func TestWaitStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")
-	seed(t, deps.db, "m", "M", "matched")
+	seed(t, deps.db, "m", "M", "ready")
+	seed(t, deps.db, "m2", "M2", "ready")
+	pair(t, deps.db, "m", "m2")
 
 	if resp := get(t, srv, "/user/wait-status/r"); resp.StatusCode != 200 || resp.Header.Get("HX-Redirect") != "" {
 		t.Errorf("ready: want the status fragment, got %d", resp.StatusCode)
@@ -289,7 +297,9 @@ func TestPipelineStream_RedirectsOnceTheParticipantIsReadyOrMatched(t *testing.T
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")
-	seed(t, deps.db, "m", "M", "matched")
+	seed(t, deps.db, "m", "M", "ready")
+	seed(t, deps.db, "m2", "M2", "ready")
+	pair(t, deps.db, "m", "m2")
 	seed(t, deps.db, "i", "I", "interviewing")
 
 	if body := stream(t, srv, "/user/pipeline-stream/r", 3*time.Second); !strings.Contains(body, "data: /user/wait/r") {
@@ -309,7 +319,9 @@ func TestPipelineStream_RedirectsOnceTheParticipantIsReadyOrMatched(t *testing.T
 func TestWaitStream_RedirectsOnceMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
-	seed(t, deps.db, "m", "M", "matched")
+	seed(t, deps.db, "m", "M", "ready")
+	seed(t, deps.db, "m2", "M2", "ready")
+	pair(t, deps.db, "m", "m2")
 	seed(t, deps.db, "r", "R", "ready")
 
 	if body := stream(t, srv, "/user/wait-stream/m", 3*time.Second); !strings.Contains(body, "data: /user/match/m") {

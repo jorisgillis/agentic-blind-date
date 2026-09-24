@@ -186,9 +186,9 @@ function updateGraph(data) {
   const nodeAll = nodeEnter.merge(nodeSel);
   nodeAll.select('circle')
     .attr('fill', d => colorMap[d.color] || '#6b7280')
-    .attr('opacity', d => ['ready', 'matched'].includes(d.step) ? 1 : 0.5)
+    .attr('opacity', d => d.step === 'ready' ? 1 : 0.5)
     .style('filter', d => {
-      if (phase === 'revealed' && d.step === 'matched') return 'drop-shadow(0 0 10px #ec4899)';
+      if (phase === 'revealed' && d.matched) return 'drop-shadow(0 0 10px #ec4899)';
       if (phase === 'matching') return 'drop-shadow(0 0 8px #fde047)';
       return null;
     });

@@ -193,14 +193,16 @@ func TestCounts(t *testing.T) {
 
 	db.CreateParticipant("id-1", "alice", "")
 	db.CreateParticipant("id-2", "bob", "")
+	db.CreateParticipant("id-3", "carol", "")
 	db.UpdatePipelineStep("id-1", "ready")
-	db.UpdatePipelineStep("id-2", "matched")
+	db.UpdatePipelineStep("id-2", "ready")
+	NewRelationships(db).Pair(Match{A: &Participant{ID: "id-1"}, B: &Participant{ID: "id-2"}, Result: &matchResult{}})
 
-	if n := db.ParticipantCount(); n != 2 {
-		t.Errorf("ParticipantCount: want 2, got %d", n)
+	if n := db.ParticipantCount(); n != 3 {
+		t.Errorf("ParticipantCount: want 3, got %d", n)
 	}
 	if n := db.ReadyCount(); n != 2 {
-		t.Errorf("ReadyCount: want 2 (ready+matched), got %d", n)
+		t.Errorf("ReadyCount: want 2 (matched Participants are ready too), got %d", n)
 	}
 }
 

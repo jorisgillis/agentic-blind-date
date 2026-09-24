@@ -147,7 +147,7 @@
 {{/* Wait page status — polled every 3s */}}
 {{define "fragment-wait-status.html"}}
 {{$p := .Participant}}
-{{if eq $p.PipelineStep "matched"}}
+{{if $p.MatchedWith}}
 <div
   id="wait-status"
   hx-get="/user/wait-status/{{$p.ID}}"
@@ -254,7 +254,7 @@
         </div>
         <p class="text-sm font-bold leading-tight">{{if .PersonaName}}{{.PersonaName}}{{else}}@{{.GitHubHandle}}{{end}}</p>
         <p class="text-xs text-gray-500">
-          {{if eq .PipelineStep "matched"}}❤️ matched{{else if eq .PipelineStep "ready"}}✅ ready{{else if eq .PipelineStep "interviewing"}}💬 interviewing{{else if eq .PipelineStep "creating_persona"}}{{.PersonaSymbol}} profiling{{else}}🔍 fetching{{end}}
+          {{if .MatchedWith}}❤️ matched{{else if eq .PipelineStep "ready"}}✅ ready{{else if eq .PipelineStep "interviewing"}}💬 interviewing{{else if eq .PipelineStep "creating_persona"}}{{.PersonaSymbol}} profiling{{else}}🔍 fetching{{end}}
         </p>
       </div>
       {{end}}

@@ -200,3 +200,40 @@ func TestRelationshipsPartnerOf_AnUndecodableAssessmentIsEmptyNotBroken(t *testi
 		t.Errorf("want empty lists, got %+v (err %v)", result, err)
 	}
 }
+
+func TestRelationshipState_IsSeparateFromThePipelineStep(t *testing.T) {
+	db := newTestDB(t)
+	ps := readyParticipants(t, db, "A", "B", "N")
+	rel := NewRelationships(db)
+
+	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
+	if a := reload(t, db, "A"); a.PipelineStep != "ready" || !a.IsMatched() {
+		t.Errorf("a matched Participant stays at Pipeline Step ready, got %s (matched %v)", a.PipelineStep, a.IsMatched())
+	}
+	if db.ReadyCount() != 3 {
+		t.Errorf("ReadyCount counts matched Participants too: want 3, got %d", db.ReadyCount())
+	}
+}
+
+func TestNewDB_MigratesTheOldMatchedPipelineStep(t *testing.T) {
+	path := t.TempDir() + "/old.db"
+	old, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.CreateParticipant("A", "a", "A")
+	old.CreateParticipant("B", "b", "B")
+	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'B' WHERE id = 'A'`)
+	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'A' WHERE id = 'B'`)
+	old.Close()
+
+	db, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if a := reload(t, db, "A"); a.PipelineStep != "ready" || a.MatchedWith != "B" {
+		t.Errorf("want step ready and partner kept, got %s / %q", a.PipelineStep, a.MatchedWith)
+	}
+}

@@ -58,6 +58,7 @@ type graphNode struct {
 	Color       string `json:"color"`
 	Symbol      string `json:"symbol"`
 	Step        string `json:"step"`
+	Matched     bool   `json:"matched"`
 	Handle      string `json:"handle"`
 }
 
@@ -223,8 +224,6 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 	}
 	switch p.PipelineStep {
 	case "ready":
-		http.Redirect(w, r, "/user/wait/"+p.ID, http.StatusSeeOther)
-	case "matched":
 		http.Redirect(w, r, h.matchOrWait(p), http.StatusSeeOther)
 	default:
 		h.render(w, "onboard.html", p)
@@ -241,8 +240,6 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 
 	switch p.PipelineStep {
 	case "ready":
-		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
-	case "matched":
 		w.Header().Set("HX-Redirect", h.matchOrWait(p))
 	case "interviewing":
 		if qd := h.interview.Next(p); qd != nil {
@@ -434,6 +431,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			Color:       p.PersonaColor,
 			Symbol:      p.PersonaSymbol,
 			Step:        p.PipelineStep,
+			Matched:     p.IsMatched(),
 			Handle:      p.GitHubHandle,
 		})
 	}
@@ -627,7 +625,7 @@ func (h *Handler) phase() string {
 
 // matchRevealed reports whether p may see their Match: they have one and the admin revealed.
 func (h *Handler) matchRevealed(p *Participant) bool {
-	return p.PipelineStep == "matched" && h.phase() == "revealed"
+	return p.IsMatched() && h.phase() == "revealed"
 }
 
 // matchOrWait is the page for a matched Participant: their Match after the Reveal, else the wait page.
@@ -714,9 +712,6 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 			}
 			switch p.PipelineStep {
 			case "ready":
-				sseRedirect(w, "/user/wait/"+p.ID)
-				return
-			case "matched":
 				sseRedirect(w, h.matchOrWait(p))
 				return
 			}

@@ -313,7 +313,7 @@ func (a *AgentPipeline) matchOne(id string, inChain map[string]bool) ([]string, 
 		case p.ID == id:
 			newcomer = p
 		case inChain[p.ID]:
-		case p.PipelineStep == "ready" || p.PipelineStep == "matched":
+		case p.PipelineStep == "ready":
 			others = append(others, p)
 		}
 	}

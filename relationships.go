@@ -45,7 +45,7 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 	for _, side := range [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}} {
 		res, err := tx.Exec(`
 			UPDATE participants SET matched_with = ?, compat_score = ?, compat_reason = ?,
-			    red_flags = ?, green_flags = ?, icebreakers = ?, pipeline_step = 'matched'
+			    red_flags = ?, green_flags = ?, icebreakers = ?
 			WHERE id = ?`, side[1], m.Result.Score, m.Result.Reason, red, green, ice, side[0])
 		if err != nil {
 			return nil, err
@@ -92,8 +92,8 @@ func decodeList(raw string) []string {
 func (r *Relationships) UnpairAll() error {
 	_, err := r.db.db.Exec(`
 		UPDATE participants SET matched_with = '', compat_score = 0, compat_reason = '',
-		    red_flags = '[]', green_flags = '[]', icebreakers = '[]', pipeline_step = 'ready'
-		WHERE pipeline_step = 'matched' OR COALESCE(matched_with, '') != ''`)
+		    red_flags = '[]', green_flags = '[]', icebreakers = '[]'
+		WHERE COALESCE(matched_with, '') != ''`)
 	return err
 }
 
@@ -133,8 +133,7 @@ func partnerOf(tx *sql.Tx, id string) (string, error) {
 func unpair(tx *sql.Tx, id string) error {
 	_, err := tx.Exec(`
 		UPDATE participants SET matched_with = '', compat_score = 0, compat_reason = '',
-		    red_flags = '[]', green_flags = '[]', icebreakers = '[]',
-		    pipeline_step = CASE WHEN pipeline_step = 'matched' THEN 'ready' ELSE pipeline_step END
+		    red_flags = '[]', green_flags = '[]', icebreakers = '[]'
 		WHERE id = ?`, id)
 	return err
 }
