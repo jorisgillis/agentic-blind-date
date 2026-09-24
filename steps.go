@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,34 +36,19 @@ var previousStep = map[Step]Step{
 // unless the Participant is still being prepared (so a second, concurrent
 // preparation cannot swap the questions of a running Interview).
 func (db *DB) StartInterview(id string, profile *GitHubProfile, questions []Question) error {
-	profileJSON, err := json.Marshal(profile)
-	if err != nil {
-		return err
-	}
-	questionsJSON, err := json.Marshal(questions)
-	if err != nil {
-		return err
-	}
-	tx, err := db.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE participants SET pipeline_step = ?, profile_json = ?, questions = ?
-		WHERE id = ? AND pipeline_step = ?`, StepInterviewing, string(profileJSON), string(questionsJSON), id, StepFetchingGitHub)
-	if err != nil {
-		return err
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		return err
-	} else if n != 1 {
-		return fmt.Errorf("%w: %s is no longer being prepared", ErrIllegalTransition, id)
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	db.changed()
-	return nil
+	profileJSON, _ := json.Marshal(profile)     // plain data: cannot fail
+	questionsJSON, _ := json.Marshal(questions) // plain data: cannot fail
+	return db.inTx(func(tx *sql.Tx) error {
+		res, err := tx.Exec(`UPDATE participants SET pipeline_step = ?, profile_json = ?, questions = ?
+			WHERE id = ? AND pipeline_step = ?`, StepInterviewing, string(profileJSON), string(questionsJSON), id, StepFetchingGitHub)
+		if err != nil {
+			return err
+		}
+		if rowsAffected(res) != 1 {
+			return fmt.Errorf("%w: %s is no longer being prepared", ErrIllegalTransition, id)
+		}
+		return nil
+	})
 }
 
 // ErrIllegalTransition is returned when a Participant is not at the step that precedes the target.
@@ -80,9 +66,7 @@ func (db *DB) AdvanceStep(id string, to Step) error {
 	if err != nil {
 		return err
 	}
-	if n, err := res.RowsAffected(); err != nil {
-		return err
-	} else if n != 1 {
+	if rowsAffected(res) != 1 {
 		return fmt.Errorf("%w: %s is not at %s, cannot enter %s", ErrIllegalTransition, id, from, to)
 	}
 	db.changed()

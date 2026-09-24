@@ -237,3 +237,89 @@ func TestNewDB_MigratesTheOldMatchedPipelineStep(t *testing.T) {
 		t.Errorf("want step ready and partner kept, got %s / %q", a.PipelineStep, a.MatchedWith)
 	}
 }
+
+// snapshot records who is matched with whom, to check a failed change altered nothing.
+func snapshot(t *testing.T, db *DB) map[string]string {
+	t.Helper()
+	all, _ := db.GetAllParticipants()
+	out := map[string]string{}
+	for _, p := range all {
+		out[p.ID] = p.MatchedWith
+	}
+	return out
+}
+
+func assertUnchanged(t *testing.T, db *DB, before map[string]string) {
+	t.Helper()
+	after := snapshot(t, db)
+	for id, partner := range before {
+		if after[id] != partner {
+			t.Errorf("%s: matched with %q before the failure, %q after", id, partner, after[id])
+		}
+	}
+	if len(after) != len(before) {
+		t.Errorf("Participants: %d before, %d after", len(before), len(after))
+	}
+	assertInvariant(t, db)
+}
+
+func TestRelationships_FailedChangesLeaveEverythingAsItWas(t *testing.T) {
+	for name, tc := range map[string]struct {
+		fault  string
+		change func(rel *Relationships, db *DB) error
+	}{
+		"pair: breaking the old Match fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+			_, err := rel.Pair(Match{A: reload(t, db, "N"), B: reload(t, db, "A"), Result: assessment(70)})
+			return err
+		}},
+		"pair: recording the new Match fails": {failPairing, func(rel *Relationships, db *DB) error {
+			_, err := rel.Pair(Match{A: reload(t, db, "N"), B: reload(t, db, "A"), Result: assessment(70)})
+			return err
+		}},
+		"remove: freeing the partner fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+			return rel.Remove("A")
+		}},
+		"remove: deleting fails": {"DELETE", func(rel *Relationships, db *DB) error {
+			return rel.Remove("A")
+		}},
+		"unpair all fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+			return rel.UnpairAll()
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			db := newTestDB(t)
+			ps := readyParticipants(t, db, "A", "B", "N")
+			rel := NewRelationships(db)
+			rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
+			before := snapshot(t, db)
+			failOn(t, db, tc.fault)
+
+			if err := tc.change(rel, db); err == nil {
+				t.Fatal("want the failure reported")
+			}
+			assertUnchanged(t, db, before)
+		})
+	}
+}
+
+func TestRelationships_UnknownParticipantsAndABrokenDatabase(t *testing.T) {
+	db := newTestDB(t)
+	readyParticipants(t, db, "A", "B")
+	rel := NewRelationships(db)
+
+	if err := rel.Remove("ghost"); err == nil {
+		t.Error("removing an unknown Participant should fail")
+	}
+	if _, _, err := rel.PartnerOf("ghost"); err == nil {
+		t.Error("the partner of an unknown Participant should be an error")
+	}
+	db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'A'`)
+	if _, _, err := rel.PartnerOf("A"); err == nil {
+		t.Error("a partner that no longer exists should be an error")
+	}
+
+	breakDB(db)
+	if _, err := rel.Pair(Match{A: &Participant{ID: "A"}, B: &Participant{ID: "B"}, Result: assessment(1)}); err == nil {
+		t.Error("pairing against a broken database should fail")
+	}
+}

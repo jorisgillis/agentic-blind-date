@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"testing"
 )
 
@@ -282,5 +283,18 @@ func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
 	defer reopened.Close()
 	if !reload(t, reopened, "ng").HasGitHub {
 		t.Error("the backfill must only run once, when the column is introduced")
+	}
+}
+
+func TestInTx_ReportsAFailedCommit(t *testing.T) {
+	db := testDB(t)
+
+	err := db.inTx(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`ROLLBACK`) // the transaction ends early, so the commit fails
+		return err
+	})
+
+	if err == nil {
+		t.Error("want the failed commit reported")
 	}
 }

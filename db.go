@@ -205,35 +205,39 @@ const selectParticipant = `
 	FROM participants`
 
 func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
+	return db.inTx(func(tx *sql.Tx) error {
+		// Persona colour and symbol come from the Persona module, given current use.
+		rows, err := tx.Query(`SELECT persona_color, persona_symbol, COUNT(*) FROM participants GROUP BY persona_color, persona_symbol`)
+		if err != nil {
+			return err
+		}
+		uses := make(map[string]int)
+		for rows.Next() {
+			var c, s string
+			var n int
+			if rows.Scan(&c, &s, &n) == nil {
+				uses[c+"|"+s] = n
+			}
+		}
+		rows.Close()
+		color, symbol := nextLook(uses)
+
+		_, err = tx.Exec(
+			`INSERT INTO participants (id, github_handle, has_github, name, persona_color, persona_symbol, questions, interests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, handle, hasGitHub, name, color, symbol, "[]", "{}",
+		)
+		return err
+	})
+}
+
+// inTx runs fn in a transaction, commits when it succeeds, and announces the change.
+func (db *DB) inTx(fn func(tx *sql.Tx) error) error {
 	tx, err := db.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	// Persona colour and symbol come from the Persona module, given current use.
-	rows, err := tx.Query(`SELECT persona_color, persona_symbol, COUNT(*) FROM participants GROUP BY persona_color, persona_symbol`)
-	if err != nil {
-		return err
-	}
-	uses := make(map[string]int)
-	for rows.Next() {
-		var c, s string
-		var n int
-		if err := rows.Scan(&c, &s, &n); err != nil {
-			rows.Close()
-			return err
-		}
-		uses[c+"|"+s] = n
-	}
-	rows.Close()
-	color, symbol := nextLook(uses)
-
-	_, err = tx.Exec(
-		`INSERT INTO participants (id, github_handle, has_github, name, persona_color, persona_symbol, questions, interests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, handle, hasGitHub, name, color, symbol, "[]", "{}",
-	)
-	if err != nil {
+	if err := fn(tx); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -241,6 +245,13 @@ func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
 	}
 	db.changed()
 	return nil
+}
+
+// rowsAffected reads how many rows a statement changed. The SQLite driver
+// always knows, so there is no error to handle.
+func rowsAffected(res sql.Result) int64 {
+	n, _ := res.RowsAffected()
+	return n
 }
 
 func (db *DB) GetParticipant(id string) (*Participant, error) {

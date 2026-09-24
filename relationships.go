@@ -22,45 +22,35 @@ func NewRelationships(db *DB) *Relationships {
 // Any existing Match of either Participant is broken first; the partners left
 // behind are returned to the Pool and reported as displaced.
 func (r *Relationships) Pair(m Match) (displaced []string, err error) {
-	tx, err := r.db.db.Begin()
+	err = r.db.inTx(func(tx *sql.Tx) error {
+		sides := [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}}
+		for _, side := range sides {
+			former, err := partnerOf(tx, side[0])
+			if err != nil {
+				return err
+			}
+			if former != "" && former != side[1] {
+				if err := unpair(tx, former); err != nil {
+					return err
+				}
+				displaced = append(displaced, former)
+			}
+		}
+		// Both Participants exist: partnerOf found them in this transaction.
+		red, green, ice := encodeAssessment(m.Result)
+		for _, side := range sides {
+			if _, err := tx.Exec(`
+				UPDATE participants SET matched_with = ?, compat_score = ?, compat_reason = ?,
+				    red_flags = ?, green_flags = ?, icebreakers = ?
+				WHERE id = ?`, side[1], m.Result.Score, m.Result.Reason, red, green, ice, side[0]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
-
-	sides := [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}}
-	for _, side := range sides {
-		former, err := partnerOf(tx, side[0])
-		if err != nil {
-			return nil, err
-		}
-		if former != "" && former != side[1] {
-			if err := unpair(tx, former); err != nil {
-				return nil, err
-			}
-			displaced = append(displaced, former)
-		}
-	}
-
-	red, green, ice := encodeAssessment(m.Result)
-	for _, side := range sides {
-		res, err := tx.Exec(`
-			UPDATE participants SET matched_with = ?, compat_score = ?, compat_reason = ?,
-			    red_flags = ?, green_flags = ?, icebreakers = ?
-			WHERE id = ?`, side[1], m.Result.Score, m.Result.Reason, red, green, ice, side[0])
-		if err != nil {
-			return nil, err
-		}
-		if n, err := res.RowsAffected(); err != nil {
-			return nil, err
-		} else if n != 1 {
-			return nil, fmt.Errorf("pairing %s ↔ %s: participant %s not found", m.A.ID, m.B.ID, side[0])
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	r.db.changed()
 	return displaced, nil
 }
 
@@ -108,29 +98,19 @@ func (r *Relationships) UnpairAll() error {
 
 // Remove deletes a Participant. Their partner, if any, is returned to the Pool.
 func (r *Relationships) Remove(id string) error {
-	tx, err := r.db.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	partner, err := partnerOf(tx, id)
-	if err != nil {
-		return err
-	}
-	if partner != "" {
-		if err := unpair(tx, partner); err != nil {
+	return r.db.inTx(func(tx *sql.Tx) error {
+		partner, err := partnerOf(tx, id)
+		if err != nil {
 			return err
 		}
-	}
-	if _, err := tx.Exec(`DELETE FROM participants WHERE id = ?`, id); err != nil {
+		if partner != "" {
+			if err := unpair(tx, partner); err != nil {
+				return err
+			}
+		}
+		_, err = tx.Exec(`DELETE FROM participants WHERE id = ?`, id)
 		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	r.db.changed()
-	return nil
+	})
 }
 
 func partnerOf(tx *sql.Tx, id string) (string, error) {

@@ -26,18 +26,17 @@ func (mm *Matchmaking) Rematch() error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
-	if ready := mm.db.ReadyCount(); ready < 2 {
-		return fmt.Errorf("need at least 2 ready participants, got %d", ready)
+	participants, err := mm.db.GetAllByStep(StepReady)
+	if err != nil {
+		return err
+	}
+	if len(participants) < 2 {
+		return fmt.Errorf("need at least 2 ready participants, got %d", len(participants))
 	}
 	if err := mm.relations.UnpairAll(); err != nil {
 		return err
 	}
 	mm.db.LogActivity("🔮 The matchmaker agents are at work...")
-
-	participants, err := mm.db.GetAllByStep(StepReady)
-	if err != nil {
-		return err
-	}
 
 	for _, m := range mm.matcher.MatchPool(participants) {
 		if _, err := mm.store(m); err != nil {
@@ -49,14 +48,12 @@ func (mm *Matchmaking) Rematch() error {
 	return nil
 }
 
-// maxChain bounds a chain of take-overs. Each take-over raises the taken
-// Participant's Match score, so chains end anyway; this is a safety net.
-const maxChain = 100
-
 // MatchNewcomer is Continuous Matching for a Participant who just became ready:
 // they are matched against the other ready Participants, taking over a weaker
 // Match when needed. A partner displaced by a take-over is matched straight
 // away in the same way, but never with the pair that just displaced them.
+// Chains end: every take-over strictly raises the taken Participant's Match
+// score, and assessments are cached, so no Match can be taken over forever.
 func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
@@ -66,10 +63,7 @@ func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 		exclude map[string]bool // the pair that displaced them
 	}
 	queue := []pending{{id: newcomer.ID}}
-	for steps := 0; len(queue) > 0; steps++ {
-		if steps == maxChain {
-			return fmt.Errorf("matching %s: chain of take-overs longer than %d", newcomer.ID, maxChain)
-		}
+	for len(queue) > 0 {
 		next := queue[0]
 		queue = queue[1:]
 		m, displaced, err := mm.matchOne(next.id, next.exclude)

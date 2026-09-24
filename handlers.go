@@ -466,9 +466,9 @@ func (h *Handler) buildGraphPayload() map[string]any {
 		"phase":       event,
 		"phase_label": event.Label(),
 		"revealed":    event.IsRevealed(),
-		"nodes":    nodes,
-		"edges":    edges,
-		"activity": activity,
+		"nodes":       nodes,
+		"edges":       edges,
+		"activity":    activity,
 	}
 }
 

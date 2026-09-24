@@ -44,3 +44,38 @@ func TestAdvanceStep_RejectsIllegalTransitions(t *testing.T) {
 		})
 	}
 }
+
+func TestSteps_FailedWritesAndUnreachableSteps(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("p", "p", "P", true)
+
+	if err := db.AdvanceStep("p", StepFetchingGitHub); !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("nothing leads back to the first step: got %v", err)
+	}
+	restore := failWrites(t, db)
+	if err := db.AdvanceStep("p", StepInterviewing); err == nil || errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("a failed write is reported as such: got %v", err)
+	}
+	if err := db.StartInterview("p", &GitHubProfile{}, nil); err == nil || errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("a failed write is reported as such: got %v", err)
+	}
+	restore()
+	if got := reload(t, db, "p").PipelineStep; got != StepFetchingGitHub {
+		t.Errorf("failed writes change nothing: got %s", got)
+	}
+}
+
+func TestStartInterview_OnlyWhileBeingPrepared(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("p", "p", "P", true)
+	db.StartInterview("p", &GitHubProfile{}, []Question{{ID: "q1"}})
+
+	err := db.StartInterview("p", &GitHubProfile{}, []Question{{ID: "other"}})
+
+	if !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("a running Interview cannot be started again: got %v", err)
+	}
+	if qs := reload(t, db, "p").Questions; len(qs) != 1 || qs[0].ID != "q1" {
+		t.Errorf("the running Interview keeps its questions, got %+v", qs)
+	}
+}

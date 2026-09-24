@@ -40,6 +40,30 @@ func failWrites(t *testing.T, db *DB, columns ...string) (restore func()) {
 	return restore
 }
 
+// failOn makes writes to Participants matching event fail until restored, for
+// example "DELETE" or "UPDATE OF matched_with WHEN NEW.matched_with != ”".
+func failOn(t *testing.T, db *DB, event string) (restore func()) {
+	t.Helper()
+	parts := strings.SplitN(event, " WHEN ", 2)
+	stmt := `CREATE TRIGGER fail_on BEFORE ` + parts[0] + ` ON participants`
+	if len(parts) == 2 {
+		stmt += ` WHEN ` + parts[1]
+	}
+	stmt += ` BEGIN SELECT RAISE(ABORT, 'injected write failure'); END`
+	if _, err := db.db.Exec(stmt); err != nil {
+		t.Fatalf("installing write failure: %v", err)
+	}
+	restore = func() { db.db.Exec(`DROP TRIGGER IF EXISTS fail_on`) }
+	t.Cleanup(restore)
+	return restore
+}
+
+// Writes that fail only while breaking a Match, or only while making one.
+const (
+	failUnpairing = "UPDATE OF matched_with WHEN NEW.matched_with = ''"
+	failPairing   = "UPDATE OF matched_with WHEN NEW.matched_with != ''"
+)
+
 // breakDB makes every database call fail, reads included.
 func breakDB(db *DB) {
 	db.db.Close()

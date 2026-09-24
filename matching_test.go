@@ -375,3 +375,64 @@ func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain
 	}
 	assertInvariant(t, db)
 }
+
+func matchmakingWithPool(t *testing.T) (*Matchmaking, *DB, *fakeLLM) {
+	t.Helper()
+	db := newTestDB(t)
+	llm := newFakeLLM().on("matchmaker", `{"score": 70}`)
+	for _, id := range []string{"A", "B", "N"} {
+		seed(t, db, id, id, "ready")
+	}
+	return NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), NewRelationships(db)), db, llm
+}
+
+func TestMatchmaking_ReportsFailures(t *testing.T) {
+	t.Run("rematch: breaking the Matches fails", func(t *testing.T) {
+		mm, db, _ := matchmakingWithPool(t)
+		NewRelationships(db).Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
+		failOn(t, db, failUnpairing)
+		if err := mm.Rematch(); err == nil {
+			t.Error("want the failure reported")
+		}
+	})
+	t.Run("rematch: storing a Match fails", func(t *testing.T) {
+		mm, db, _ := matchmakingWithPool(t)
+		failOn(t, db, failPairing)
+		if err := mm.Rematch(); err == nil {
+			t.Error("want the failure reported")
+		}
+	})
+	t.Run("rematch: broken database", func(t *testing.T) {
+		mm, db, _ := matchmakingWithPool(t)
+		breakDB(db)
+		if err := mm.Rematch(); err == nil {
+			t.Error("want the failure reported")
+		}
+	})
+	t.Run("newcomer: storing the Match fails", func(t *testing.T) {
+		mm, db, _ := matchmakingWithPool(t)
+		failOn(t, db, failPairing)
+		if err := mm.MatchNewcomer(reload(t, db, "N")); err == nil {
+			t.Error("want the failure reported")
+		}
+	})
+	t.Run("newcomer: broken database", func(t *testing.T) {
+		mm, db, _ := matchmakingWithPool(t)
+		n := reload(t, db, "N")
+		breakDB(db)
+		if err := mm.MatchNewcomer(n); err == nil {
+			t.Error("want the failure reported")
+		}
+	})
+}
+
+func TestMatchmaking_ANewcomerWhoNoLongerExistsIsSkipped(t *testing.T) {
+	mm, _, llm := matchmakingWithPool(t)
+
+	if err := mm.MatchNewcomer(&Participant{ID: "gone"}); err != nil {
+		t.Fatal(err)
+	}
+	if llm.callsMatching("matchmaker") != 0 {
+		t.Error("nothing to assess for a Participant who is gone")
+	}
+}
