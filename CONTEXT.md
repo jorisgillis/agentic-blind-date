@@ -98,6 +98,19 @@ A named look for the application: colours, typography, shape, motion and sound. 
 ### Explore
 A Participant looking at their compatibility with another Participant who is not their Match. Any two different **ready** Participants may explore each other at any time. The page shows personas only, so before the Reveal it never reveals who either of them is.
 
+### Event Format
+How the event runs, chosen by the admin before the event starts:
+- **Classic flow**: each Participant goes through the Interview on their own phone, and Continuous Matching pairs them as they become ready.
+- **Game Show**: the Big Screen is the stage and phones are controllers. A Host runs the show in Rounds, and everyone is paired at once in the matchmaking segment.
+
+Both formats share registration, Personas, matching, Themes and the Reveal.
+
+### Host
+The admin running a Game Show from the host console: starting the show, opening and closing Rounds, starting the matchmaking segment, and the Reveal.
+
+### Round
+In a Game Show, one Fixed Question answered by every Participant at the same moment on their phone, with a countdown, while the Big Screen shows the room's answers live.
+
 ### Big Screen
 The public display for the event, showing:
 - All participants as a graph
