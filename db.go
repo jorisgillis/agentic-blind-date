@@ -23,7 +23,7 @@ type Participant struct {
 	Profile        *GitHubProfile
 	Questions      []Question
 	Answers        map[string]string
-	Interests      map[string]interface{}
+	Interests      Interests
 	PipelineStep   Step
 	MatchedWith    string
 	CompatScore    int
@@ -144,15 +144,19 @@ func (db *DB) SetMaxOpenConns(n int) {
 	db.db.SetMaxOpenConns(n)
 }
 
-// Reset starts the event over: no Participants, no activity, and back to before the Reveal.
+// Reset starts the event over: no Participants, no activity, and back to
+// before the Reveal — one transaction, so a failure leaves everything as it was.
 func (db *DB) Reset() error {
-	if _, err := db.db.Exec(`DELETE FROM participants`); err != nil {
+	return db.inTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM participants`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM activity_log`); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, BeforeReveal)
 		return err
-	}
-	if _, err := db.db.Exec(`DELETE FROM activity_log`); err != nil {
-		return err
-	}
-	return db.setEventState(BeforeReveal)
+	})
 }
 
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {

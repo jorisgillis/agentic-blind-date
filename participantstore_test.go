@@ -99,8 +99,7 @@ func TestParticipantStore_ChangeSetsTypedInterestsAndMatch(t *testing.T) {
 	}
 
 	got := reload(t, db, "p")
-	langs, _ := got.Interests["languages"].([]any)
-	if len(langs) != 1 || langs[0] != "Go" {
+	if len(got.Interests.Languages) != 1 || got.Interests.Languages[0] != "Go" {
 		t.Errorf("interests round trip: got %+v", got.Interests)
 	}
 	if got.CompatScore != 77 || got.CompatReason != "Both love Go" {
@@ -126,8 +125,8 @@ func TestParticipantStore_ChangeAppliesSeveralParticipantsInOneTransaction(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	langsA, _ := reload(t, db, "a").Interests["languages"].([]any)
-	langsB, _ := reload(t, db, "b").Interests["languages"].([]any)
+	langsA := reload(t, db, "a").Interests.Languages
+	langsB := reload(t, db, "b").Interests.Languages
 	if len(langsA) != 1 || langsA[0] != "Go" || len(langsB) != 1 || langsB[0] != "Rust" {
 		t.Errorf("both changes should apply: a=%v b=%v", langsA, langsB)
 	}
@@ -146,7 +145,7 @@ func TestParticipantStore_ChangeOfAnUnknownParticipantIsNotFoundAndAppliesNothin
 	if !errors.Is(err, ErrParticipantNotFound) {
 		t.Errorf("want ErrParticipantNotFound, got %v", err)
 	}
-	if got, _ := reload(t, db, "a").Interests["languages"].([]any); len(got) != 0 {
+	if got := reload(t, db, "a").Interests.Languages; len(got) != 0 {
 		t.Errorf("the whole transaction should roll back, got %v", got)
 	}
 }
@@ -211,6 +210,103 @@ func TestParticipantStore_ChangeOfNothingIsANoOpThatStillCommits(t *testing.T) {
 
 	if err := store.Change(); err != nil {
 		t.Errorf("an empty change list should just succeed, got %v", err)
+	}
+}
+
+func TestParticipantStore_ChangeAdvancesThePipelineStep(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	forceStep(db, "p", StepInterviewing)
+
+	if err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepCreatingPersona)}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := reload(t, db, "p").PipelineStep; got != StepCreatingPersona {
+		t.Errorf("want StepCreatingPersona, got %s", got)
+	}
+}
+
+func TestParticipantStore_ChangeRejectsAnUnreachablePipelineStep(t *testing.T) {
+	store := NewParticipantStore(newTestDB(t))
+
+	err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepFetchingGitHub)})
+
+	if !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("nothing leads back to the first step: got %v", err)
+	}
+}
+
+func TestParticipantStore_ChangeRejectsAPipelineStepFromTheWrongStep(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true) // starts at fetching_github
+
+	err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepReady)})
+
+	if !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("want ErrIllegalTransition, got %v", err)
+	}
+}
+
+func TestParticipantStore_ChangeReportsAFailureAdvancingTheStep(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	failWrites(t, db, "pipeline_step")
+
+	err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepInterviewing)})
+
+	if err == nil || errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("a failing update is a failure, not an illegal transition: got %v", err)
+	}
+}
+
+func TestParticipantStore_StartInterviewOpensTheInterview(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	questions := []Question{{ID: "q1", Text: "Tabs or spaces?"}}
+
+	if err := store.StartInterview("p", &GitHubProfile{Login: "p"}, questions); err != nil {
+		t.Fatal(err)
+	}
+
+	got := reload(t, db, "p")
+	if got.PipelineStep != StepInterviewing || len(got.Questions) != 1 || got.Questions[0].ID != "q1" || got.Profile.Login != "p" {
+		t.Errorf("want the Interview open with its questions and profile, got %+v", got)
+	}
+}
+
+func TestParticipantStore_StartInterviewOnlyWhileBeingPrepared(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	if err := store.StartInterview("p", &GitHubProfile{}, []Question{{ID: "q1"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := store.StartInterview("p", &GitHubProfile{}, []Question{{ID: "other"}})
+
+	if !errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("a running Interview cannot be started again: got %v", err)
+	}
+	if qs := reload(t, db, "p").Questions; len(qs) != 1 || qs[0].ID != "q1" {
+		t.Errorf("the running Interview keeps its questions, got %+v", qs)
+	}
+}
+
+func TestParticipantStore_StartInterviewReportsAFailure(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	failWrites(t, db)
+
+	err := store.StartInterview("p", &GitHubProfile{}, []Question{{ID: "q1"}})
+
+	if err == nil || errors.Is(err, ErrIllegalTransition) {
+		t.Errorf("a failing write is a failure, not an illegal transition: got %v", err)
 	}
 }
 

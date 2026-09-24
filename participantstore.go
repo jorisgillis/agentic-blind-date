@@ -19,8 +19,10 @@ type Interests struct {
 // interface, instead of DB's roughly two dozen one-line per-column methods.
 // It announces every change on DB's change feed and distinguishes a
 // Participant that does not exist (ErrParticipantNotFound) from a database
-// failure. This is the "expand" step of an expand-migrate-contract refactor
-// (#49): nothing else uses it yet, and DB's existing methods keep working.
+// failure. Introduced as the "expand" step of an expand-migrate-contract
+// refactor (#49); the Relationship, Onboarding and Interview modules now
+// migrate onto it in turn (#50, #51), while DB's old per-column methods
+// keep working until the final "contract" step removes them (#53).
 type ParticipantStore struct {
 	db *DB
 }
@@ -52,6 +54,15 @@ func (s *ParticipantStore) All() ([]*Participant, error) {
 	return p, nil
 }
 
+// GetByHandle reads one Participant by their GitHub handle.
+func (s *ParticipantStore) GetByHandle(handle string) (*Participant, error) {
+	p, err := s.db.GetParticipantByHandle(handle)
+	if err != nil {
+		return nil, notFoundOr(err, handle)
+	}
+	return p, nil
+}
+
 // Create registers a new Participant, picking a Persona colour and symbol
 // not yet overused.
 func (s *ParticipantStore) Create(id, handle, name string, hasGitHub bool) error {
@@ -61,15 +72,19 @@ func (s *ParticipantStore) Create(id, handle, name string, hasGitHub bool) error
 	return nil
 }
 
-// ParticipantChange changes one Participant: nil (or false, for Delete)
-// leaves that part alone. Delete removes the Participant outright; every
-// other field is ignored when it is set.
+// ParticipantChange changes one Participant: a nil (or false, for Delete)
+// field leaves that part alone. Delete removes the Participant outright;
+// every other field is ignored when it is set.
 type ParticipantChange struct {
-	ID          string
-	Delete      bool
-	Interests   *Interests
-	Match       *matchResult // the Participant's own side of their current Match
-	MatchedWith *string      // who they're matched with now; "" clears it
+	ID           string
+	Delete       bool
+	Interests    *Interests
+	Match        *matchResult // the Participant's own side of their current Match
+	MatchedWith  *string      // who they're matched with now; "" clears it
+	Persona      *Persona
+	Profile      *GitHubProfile
+	Answers      map[string]string
+	PipelineStep *Step // guarded exactly like DB.AdvanceStep: only from the step right before it
 }
 
 // Change applies one or more Participant changes in a single transaction,
@@ -105,6 +120,68 @@ func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 					return err
 				}
 			}
+			if c.Persona != nil {
+				if err := execFound(tx, c.ID, `UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`,
+					c.Persona.Name, c.Persona.Tagline, c.ID); err != nil {
+					return err
+				}
+			}
+			if c.Profile != nil {
+				encoded, _ := json.Marshal(c.Profile) // plain data: cannot fail
+				if err := execFound(tx, c.ID, `UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
+					return err
+				}
+			}
+			if c.Answers != nil {
+				encoded, _ := json.Marshal(c.Answers) // plain data: cannot fail
+				if err := execFound(tx, c.ID, `UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
+					return err
+				}
+			}
+			if c.PipelineStep != nil {
+				if err := advanceStep(tx, c.ID, *c.PipelineStep); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+// advanceStep moves a Participant to the next Pipeline Step, guarded like
+// DB.AdvanceStep: ErrIllegalTransition unless they are at the step directly
+// before it, so a step is entered at most once.
+func advanceStep(tx *sql.Tx, id string, to Step) error {
+	from, ok := previousStep[to]
+	if !ok {
+		return fmt.Errorf("%w: nothing leads to %s", ErrIllegalTransition, to)
+	}
+	res, err := tx.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ? AND pipeline_step = ?`, to, id, from)
+	if err != nil {
+		return err
+	}
+	if rowsAffected(res) != 1 {
+		return fmt.Errorf("%w: %s is not at %s, cannot enter %s", ErrIllegalTransition, id, from, to)
+	}
+	return nil
+}
+
+// StartInterview stores the profile and question set and opens the
+// Interview, all in one transaction, guarded like DB.StartInterview: it
+// fails with ErrIllegalTransition, writing nothing, unless the Participant
+// is still being prepared (so a second, concurrent preparation cannot swap
+// the questions of a running Interview).
+func (s *ParticipantStore) StartInterview(id string, profile *GitHubProfile, questions []Question) error {
+	profileJSON, _ := json.Marshal(profile)     // plain data: cannot fail
+	questionsJSON, _ := json.Marshal(questions) // plain data: cannot fail
+	return s.db.inTx(func(tx *sql.Tx) error {
+		res, err := tx.Exec(`UPDATE participants SET pipeline_step = ?, profile_json = ?, questions = ?
+			WHERE id = ? AND pipeline_step = ?`, StepInterviewing, string(profileJSON), string(questionsJSON), id, StepFetchingGitHub)
+		if err != nil {
+			return err
+		}
+		if rowsAffected(res) != 1 {
+			return fmt.Errorf("%w: %s is no longer being prepared", ErrIllegalTransition, id)
 		}
 		return nil
 	})

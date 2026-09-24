@@ -32,15 +32,11 @@ func TestDefaultMatchResult(t *testing.T) {
 const matchReply = `{"score": 87, "reason": "Both refuse to use tabs", "red_flags": ["argues about vim, emacs, and nano"], "green_flags": [], "icebreakers": ["Why Go?", "Monorepo, yes or no?"]}`
 
 func dev(id, persona string, langs ...string) *Participant {
-	anyLangs := make([]any, len(langs))
-	for i, l := range langs {
-		anyLangs[i] = l
-	}
 	return &Participant{
 		ID: id, GitHubHandle: id, HasGitHub: true, PersonaName: persona,
 		Profile:   &GitHubProfile{Login: id, Languages: langs},
 		Answers:   map[string]string{"fixed_0": "Tabs"},
-		Interests: map[string]interface{}{"languages": anyLangs}, // as decoded from the database
+		Interests: Interests{Languages: langs},
 	}
 }
 
