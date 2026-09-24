@@ -100,6 +100,7 @@ func mainLanguage(p *Participant) string {
 
 // paletteColor is one Persona colour, with its text colour and hex for every display.
 type paletteColor struct {
+	Name  string // what the Participant is told their colour is
 	Class string // Tailwind background class stored on the Participant
 	Text  string // readable Tailwind text class on that background
 	Hex   string // for the Big Screen graph
@@ -107,11 +108,11 @@ type paletteColor struct {
 
 // personaPalette is the one source of Persona colours.
 var personaPalette = []paletteColor{
-	{"bg-teal-400", "text-teal-900", "#2dd4bf"},
-	{"bg-red-400", "text-red-900", "#f87171"},
-	{"bg-purple-400", "text-purple-900", "#c084fc"},
-	{"bg-amber-400", "text-amber-900", "#fbbf24"},
-	{"bg-blue-400", "text-blue-900", "#60a5fa"},
+	{"teal", "bg-teal-400", "text-teal-900", "#2dd4bf"},
+	{"red", "bg-red-400", "text-red-900", "#f87171"},
+	{"purple", "bg-purple-400", "text-purple-900", "#c084fc"},
+	{"amber", "bg-amber-400", "text-amber-900", "#fbbf24"},
+	{"blue", "bg-blue-400", "text-blue-900", "#60a5fa"},
 }
 
 var personaSymbols = []string{"🦊", "🦁", "🐯", "🐺", "🦝", "🦔", "🐙", "🦈", "🦅", "🐸"}
@@ -146,12 +147,19 @@ func paletteHex() map[string]string {
 	return m
 }
 
-// paletteText returns the readable text class for a Persona colour class.
-func paletteText(class string) string {
+// paletteColorOf returns the palette entry for a Persona colour class; unknown
+// classes get a neutral grey.
+func paletteColorOf(class string) paletteColor {
 	for _, c := range personaPalette {
 		if c.Class == class {
-			return c.Text
+			return c
 		}
 	}
-	return "text-gray-900"
+	return paletteColor{Name: "grey", Class: class, Text: "text-gray-900", Hex: "#6b7280"}
 }
+
+// paletteText returns the readable text class for a Persona colour class.
+func paletteText(class string) string { return paletteColorOf(class).Text }
+
+// paletteName returns the name of a Persona colour class, such as "teal".
+func paletteName(class string) string { return paletteColorOf(class).Name }

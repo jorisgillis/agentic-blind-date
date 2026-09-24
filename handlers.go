@@ -89,26 +89,10 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
-		"percent": func(n, total int) int {
-			if total == 0 {
-				return 0
-			}
-			return n * 100 / total
-		},
-		"divInt": func(a, b int) int {
-			if b == 0 {
-				return 0
-			}
-			return a / b
-		},
-		"colorName": func(c string) string {
-			// "bg-teal-400" -> "teal"
-			c = strings.TrimPrefix(c, "bg-")
-			if idx := strings.LastIndex(c, "-"); idx != -1 {
-				return c[:idx]
-			}
-			return c
-		},
+		// Only called with a non-empty question set and constant divisors.
+		"percent":   func(n, total int) int { return n * 100 / total },
+		"divInt":    func(a, b int) int { return a / b },
+		"colorName": paletteName,
 		"textColor": paletteText,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
@@ -257,11 +241,11 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile := *p.Profile
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
+	profile := GitHubProfile{}
+	if p.Profile != nil {
+		profile = *p.Profile
 	}
+	answers := p.Answers // reading a nil map is fine
 	questions := p.Questions
 
 	type QAPair struct {
@@ -495,10 +479,6 @@ func (h *Handler) ScreenState(w http.ResponseWriter, r *http.Request) {
 
 // GET /data
 func (h *Handler) DataIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/data" && r.URL.Path != "/data/" {
-		http.NotFound(w, r)
-		return
-	}
 	event := h.db.EventState()
 	participants, _ := h.db.GetAllParticipants()
 	activity, _ := h.db.GetRecentActivity(20)
@@ -602,6 +582,7 @@ func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		if err := h.matchmaking.Rematch(); err != nil {
 			log.Printf("Rematch error: %v", err)
+			h.db.LogActivity("⚠️ Rematch failed: " + err.Error())
 		}
 	}()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
@@ -610,7 +591,10 @@ func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 // DELETE /data/participant/{id}
 func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.relations.Remove(id); err != nil {
+	if err := h.relations.Remove(id); errors.Is(err, ErrParticipantNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -641,8 +625,8 @@ func sseEvent(w http.ResponseWriter, name string) {
 	w.(http.Flusher).Flush()
 }
 
-// heartbeatEvery keeps idle SSE connections open through proxies.
-const heartbeatEvery = 25 * time.Second
+// heartbeatEvery keeps idle SSE connections open through proxies (tests shorten it).
+var heartbeatEvery = 25 * time.Second
 
 // watch calls check now and again after every change, until check reports it is
 // done or the client goes away. Nothing is polled: changes come from the change feed.

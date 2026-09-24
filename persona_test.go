@@ -36,6 +36,7 @@ func TestPersonasCreate_FallbackIsAnonymous(t *testing.T) {
 	}{
 		"llm fails, GitHub languages": {newFakeLLM().onErr("personality generator", fakeError("401")), octocat, "The Go Developer"},
 		"llm replies garbage":         {newFakeLLM().on("personality generator", "I am a teapot"), octocat, "The Go Developer"},
+		"llm reply without a name":    {newFakeLLM().on("personality generator", `{"tagline": "nameless"}`), octocat, "The Go Developer"},
 		"no languages at all": {newFakeLLM(), func() *Participant {
 			p := octocat()
 			p.Profile.Languages = nil
@@ -111,5 +112,14 @@ func TestPersonasCreate_FallbackCapitalisesNonASCIILanguages(t *testing.T) {
 
 	if got := NewPersonas(newFakeLLM()).Create(p).Name; got != "The Élixir Developer" {
 		t.Errorf("want The Élixir Developer, got %q", got)
+	}
+}
+
+func TestPersonaPalette_UnknownColoursAreNeutral(t *testing.T) {
+	if got := paletteText("bg-unknown-400"); got != "text-gray-900" {
+		t.Errorf("text colour: got %q", got)
+	}
+	if got := paletteName("bg-teal-400"); got != "teal" {
+		t.Errorf("name: got %q", got)
 	}
 }

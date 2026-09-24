@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -113,13 +114,15 @@ func (r *Relationships) Remove(id string) error {
 	})
 }
 
+// ErrParticipantNotFound is returned when a change names a Participant who does not exist.
+var ErrParticipantNotFound = errors.New("participant not found")
+
 func partnerOf(tx *sql.Tx, id string) (string, error) {
 	var partner string
-	err := tx.QueryRow(`SELECT COALESCE(matched_with, '') FROM participants WHERE id = ?`, id).Scan(&partner)
-	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("participant %s not found", id)
+	if err := tx.QueryRow(`SELECT COALESCE(matched_with, '') FROM participants WHERE id = ?`, id).Scan(&partner); err != nil {
+		return "", fmt.Errorf("%w: %s", ErrParticipantNotFound, id)
 	}
-	return partner, err
+	return partner, nil
 }
 
 // clearMatch is the SET clause that returns a Participant to the Pool.
