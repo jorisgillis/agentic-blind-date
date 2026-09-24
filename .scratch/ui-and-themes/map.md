@@ -1,0 +1,38 @@
+---
+label: wayfinder:map
+title: New UI and Themes
+status: open
+---
+
+# New UI and Themes
+
+This is a local-markdown tracker. Each ticket is a file in `issues/`, and the lines at the top of the file record its label (`wayfinder:<type>`), `status` (open/closed), `assignee` (the claim) and `blocked_by` (ticket files). The **frontier** is every open, unassigned ticket whose blockers are all closed.
+
+## Destination
+
+- **Themes built and shipped:** three Themes, each changing colours, typography, shape, motion and sound, all built on shared design tokens. Persona colours are the same in every Theme. Each Participant picks a Theme on their phone, and the admin picks the Big Screen's Theme.
+- **A build-ready spec for one radically different UI idea,** covering both the Participant's phone journey and the Big Screen.
+
+## Notes
+
+- **Domain:** use CONTEXT.md vocabulary (Participant, Persona, Theme, Big Screen, Reveal, Interview, Match, Explore). Update CONTEXT.md as terms are resolved, using the domain-modeling skill.
+- **Execution is in scope for the Themes.** Build them (test-first, using the tdd skill, at the handler and template seams) once their decisions are made. The UI idea stops at a build-ready spec.
+- **Standing decisions from charting (2026-09-24):**
+  - A Theme choice lives only on the Participant's device (browser storage); there is no server-side preference.
+  - The Big Screen's Theme is chosen by the admin from the same Themes.
+  - The first build ships three Themes.
+  - UI concepts may go beyond the current stack (Go templates, HTMX, Tailwind via CDN). The chosen concept's spec records the stack decision.
+  - Concepts are judged on these must-haves: fun and memorable, gets Participants to walk up to each other, and keeps anonymity until the Reveal. Tie-breakers: works on any phone in a noisy room, and buildable in a few days.
+- **Skills:** research, prototype, grilling + domain-modeling, tdd, codebase-design (for the spec's modules).
+
+## Decisions so far
+
+## Not yet specified
+
+- **How the Theme build splits into slices:** for example tokens on every page first, then the phone picker, then the Big Screen picker, then motion and sound. This is sharper once the token set and the three looks are decided.
+- **What the chosen UI concept's spec will surface:** likely its stack consequence (for example a JS front end, WebSockets, a PWA), how it's adopted (replacing the current UI or running alongside behind a switch), accessibility, and how it uses the Theme tokens. These can't be phrased yet, because they depend on which concept wins.
+
+## Out of scope
+
+- **LLM providers (Ollama, Scaleway)** are handled as a separate effort with no map, because every decision was already made at charting.
+- **Server-side or per-account Theme preferences,** and light/dark following the device, were ruled out at charting.
