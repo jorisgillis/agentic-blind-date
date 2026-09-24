@@ -33,9 +33,16 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
 - [What the three Themes look, move and sound like](issues/03-three-theme-looks.md): Classic (today's look, the default), Neon and Paper, chosen from a five-variant prototype (branch `prototype/themes`). Two roles added: text on a Persona colour, and a Persona outline that lets light Themes pass the 3:1 rule.
 - [Do Themes ship with a Tailwind build step instead of the Play CDN](issues/07-tailwind-build-step.md): no build step. Tailwind v4's browser build is vendored and pinned, and all front-end assets are self-hosted in `static/`, with no unstyled flash (ADR-0009).
 - [Which radically different UI idea should we spec](issues/05-radical-ui-concepts.md): the Game Show flow. The Big Screen is the stage, phones are controllers, everyone answers rounds at once, and the Reveal is a show segment. It borrows the Swipe Deck's card animations (prototype on branch `prototype/ui-concepts`).
+- [Spec the chosen UI concept](issues/06-spec-chosen-ui.md): the Game Show as a second Event Format beside the Classic flow.
+  - A Host runs six Rounds (the Fixed Questions) from a host console.
+  - Everyone answers 11 questions (6 Fixed and 5 personalised) in both formats.
+  - LLM assessment happens in the background after the Lobby, and everyone is paired at once in the matchmaking segment.
+  - The Reveal is pair by pair, and the Afterparty uses Continuous Matching.
+  - A new Show module, on the existing stack.
 
 ## Not yet specified
 
+Nothing: every decision toward the destination is made. What remains is building ("Build the Themes", GitHub #40–#44) and publishing the Game Show spec from the resolution of "Spec the chosen UI concept".
 
 ## Out of scope
 
