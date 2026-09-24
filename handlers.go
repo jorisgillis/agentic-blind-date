@@ -189,7 +189,7 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "onboard.html", p)
 }
 
-// GET /user/pipeline/{id}  — HTMX polled every 2s
+// GET /user/pipeline/{id}  — HTMX, refreshed when the pipeline stream says so
 func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 	p, err := h.db.GetParticipant(r.PathValue("id"))
 	if err != nil {
@@ -279,7 +279,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /user/wait-status/{id}  — HTMX polled every 3s
+// GET /user/wait-status/{id}  — HTMX, refreshed when the wait stream says so
 func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 	p, err := h.db.GetParticipant(r.PathValue("id"))
 	if err != nil {
@@ -628,88 +628,113 @@ func sseRedirect(w http.ResponseWriter, url string) {
 	w.(http.Flusher).Flush()
 }
 
+// sseEvent sends a named event with no data.
+func sseEvent(w http.ResponseWriter, name string) {
+	fmt.Fprintf(w, "event: %s\ndata: \n\n", name)
+	w.(http.Flusher).Flush()
+}
+
+// heartbeatEvery keeps idle SSE connections open through proxies.
+const heartbeatEvery = 25 * time.Second
+
+// watch calls check now and again after every change, until check reports it is
+// done or the client goes away. Nothing is polled: changes come from the change feed.
+func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (done bool)) {
+	changes, stop := h.db.Subscribe()
+	defer stop()
+	heartbeat := time.NewTicker(heartbeatEvery)
+	defer heartbeat.Stop()
+	for {
+		if check() {
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-changes:
+		case <-heartbeat.C:
+			fmt.Fprint(w, ": ping\n\n")
+			w.(http.Flusher).Flush()
+		}
+	}
+}
+
 // GET /user/pipeline-stream/{id}
-// Pushes a redirect event when the participant transitions to ready or matched.
-// Complements HTMX polling (which handles the spinner HTML updates).
+// Tells the onboarding page to refresh when the Participant's step changes
+// (the first question appears) and redirects once they belong elsewhere.
 func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.db.GetParticipant(id); err != nil {
+	first, err := h.db.GetParticipant(id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	if !sseHeaders(w) {
 		return
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			p, err := h.db.GetParticipant(id)
-			if err != nil {
-				return
-			}
-			if dest := h.destination(p); dest != "/user/onboard/"+p.ID {
-				sseRedirect(w, dest)
-				return
-			}
+	lastStep := first.PipelineStep
+	h.watch(w, r, func() bool {
+		p, err := h.db.GetParticipant(id)
+		if err != nil {
+			return true
 		}
-	}
+		if dest := h.destination(p); dest != "/user/onboard/"+id {
+			sseRedirect(w, dest)
+			return true
+		}
+		if p.PipelineStep != lastStep {
+			lastStep = p.PipelineStep
+			sseEvent(w, "refresh")
+		}
+		return false
+	})
 }
 
 // GET /user/wait-stream/{id}
-// Pushes a redirect event when the participant is matched.
+// Tells the wait page to refresh when what it shows changes (the ready count,
+// being matched) and redirects once the Participant belongs elsewhere.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.db.GetParticipant(id); err != nil {
+	first, err := h.db.GetParticipant(id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	if !sseHeaders(w) {
 		return
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			p, err := h.db.GetParticipant(id)
-			if err != nil {
-				return
-			}
-			if dest := h.destination(p); dest != "/user/wait/"+p.ID {
-				sseRedirect(w, dest)
-				return
-			}
-		}
+	type shown struct {
+		ready   int
+		matched bool
 	}
+	last := shown{h.db.ReadyCount(), first.IsMatched()}
+	h.watch(w, r, func() bool {
+		p, err := h.db.GetParticipant(id)
+		if err != nil {
+			return true
+		}
+		if dest := h.destination(p); dest != "/user/wait/"+id {
+			sseRedirect(w, dest)
+			return true
+		}
+		if now := (shown{h.db.ReadyCount(), p.IsMatched()}); now != last {
+			last = now
+			sseEvent(w, "refresh")
+		}
+		return false
+	})
 }
 
 // GET /bigscreen/stream
-// Pushes graph-data JSON for D3, replacing the JS setTimeout poll.
+// Pushes the graph now and after every change.
 func (h *Handler) ScreenStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	flusher := w.(http.Flusher)
-	sendData := func() {
+	h.watch(w, r, func() bool {
 		data, _ := json.Marshal(h.buildGraphPayload())
 		fmt.Fprintf(w, "data: %s\n\n", data)
-		flusher.Flush()
-	}
-	sendData()
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			sendData()
-		}
-	}
+		w.(http.Flusher).Flush()
+		return false
+	})
 }

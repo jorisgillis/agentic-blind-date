@@ -209,6 +209,7 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 // forceStep puts a Participant at any Pipeline Step, bypassing the guarded transitions (test setup only).
 func forceStep(db *DB, id string, step Step) {
 	db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
+	db.changed()
 }
 
 // eventually polls cond until it holds or the deadline passes.

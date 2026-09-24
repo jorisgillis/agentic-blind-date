@@ -3,7 +3,7 @@
 <div
   id="pipeline-area"
   hx-get="/user/pipeline/{{.ID}}"
-  hx-trigger="every 2s"
+  hx-trigger="refresh"
   hx-swap="outerHTML"
   class="space-y-4"
 >
@@ -144,14 +144,14 @@
 {{end}}
 
 
-{{/* Wait page status — polled every 3s */}}
+{{/* Wait page status — refreshed when the wait stream says so */}}
 {{define "fragment-wait-status.html"}}
 {{$p := .Participant}}
 {{if $p.MatchedWith}}
 <div
   id="wait-status"
   hx-get="/user/wait-status/{{$p.ID}}"
-  hx-trigger="every 3s"
+  hx-trigger="refresh"
   hx-swap="outerHTML"
   class="text-center space-y-4 py-4"
 >
@@ -163,7 +163,7 @@
 <div
   id="wait-status"
   hx-get="/user/wait-status/{{$p.ID}}"
-  hx-trigger="every 3s"
+  hx-trigger="refresh"
   hx-swap="outerHTML"
   class="text-center space-y-4"
 >

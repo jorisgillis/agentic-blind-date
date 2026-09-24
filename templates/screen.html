@@ -215,10 +215,7 @@ const es = new EventSource('/bigscreen/stream');
 es.addEventListener('message', e => {
   try { updateGraph(JSON.parse(e.data)); } catch(err) { console.warn('graph parse error:', err); }
 });
-es.onerror = () => {
-  // fall back to polling if SSE fails
-  setTimeout(() => fetch('/bigscreen/graph-data').then(r => r.json()).then(updateGraph).catch(() => {}), 5000);
-};
+// EventSource reconnects on its own if the connection drops.
 
 window.addEventListener('resize', () => {
   simulation.force('center', d3.forceCenter(w() / 2, h() / 2));

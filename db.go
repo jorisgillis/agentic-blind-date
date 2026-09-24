@@ -50,7 +50,8 @@ func (p *Participant) IsMatched() bool {
 
 // DB wraps the SQLite database connection and provides participant management operations.
 type DB struct {
-	db *sql.DB
+	db      *sql.DB
+	changes *changeFeed
 }
 
 // NewDB creates and initializes a new database connection.
@@ -135,7 +136,7 @@ func NewDB(path string) (*DB, error) {
 		sqlDB.Exec(`UPDATE participants SET has_github = 0 WHERE github_handle LIKE 'no-github-%'`)
 	}
 
-	return &DB{sqlDB}, nil
+	return &DB{db: sqlDB, changes: newChangeFeed()}, nil
 }
 
 func (db *DB) Close() error {
@@ -151,6 +152,9 @@ func (db *DB) Reset() error {
 		return err
 	}
 	_, err := db.db.Exec(`DELETE FROM activity_log`)
+	if err == nil {
+		db.changed()
+	}
 	return err
 }
 
@@ -233,7 +237,11 @@ func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
 	if err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	db.changed()
+	return nil
 }
 
 func (db *DB) GetParticipant(id string) (*Participant, error) {
@@ -252,6 +260,9 @@ func (db *DB) SetProfile(id string, profile *GitHubProfile) error {
 		return err
 	}
 	_, err = db.db.Exec(`UPDATE participants SET profile_json = ? WHERE id = ?`, string(profileJSON), id)
+	if err == nil {
+		db.changed()
+	}
 	return err
 }
 
@@ -262,12 +273,18 @@ func (db *DB) SetQuestions(id string, questions []Question) error {
 		return err
 	}
 	_, err = db.db.Exec(`UPDATE participants SET questions = ? WHERE id = ?`, string(questionsJSON), id)
+	if err == nil {
+		db.changed()
+	}
 	return err
 }
 
 // SetPersona saves the Participant's Persona name and tagline.
 func (db *DB) SetPersona(id, name, tagline string) error {
 	_, err := db.db.Exec(`UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`, name, tagline, id)
+	if err == nil {
+		db.changed()
+	}
 	return err
 }
 
@@ -277,6 +294,9 @@ func (db *DB) UpdateInterests(id string, interests map[string]interface{}) error
 		return err
 	}
 	_, err = db.db.Exec(`UPDATE participants SET interests = ? WHERE id = ?`, string(interestsJSON), id)
+	if err == nil {
+		db.changed()
+	}
 	return err
 }
 
@@ -286,6 +306,9 @@ func (db *DB) UpdateAnswers(id string, answers map[string]string) error {
 		return err
 	}
 	_, err = db.db.Exec(`UPDATE participants SET answers_json = ? WHERE id = ?`, string(answersJSON), id)
+	if err == nil {
+		db.changed()
+	}
 	return err
 }
 
@@ -324,13 +347,18 @@ func (db *DB) GetPhase() (string, error) {
 
 func (db *DB) SetPhase(phase string) error {
 	_, err := db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, phase)
+	if err == nil {
+		db.changed()
+	}
 	return err
 }
 
 func (db *DB) LogActivity(message string) {
 	if _, err := db.db.Exec(`INSERT INTO activity_log (message) VALUES (?)`, message); err != nil {
 		log.Printf("LogActivity: %v", err)
+		return
 	}
+	db.changed()
 }
 
 func (db *DB) GetRecentActivity(limit int) ([]string, error) {

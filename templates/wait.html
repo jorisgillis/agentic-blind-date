@@ -106,6 +106,7 @@
     }
     const _es = new EventSource('/user/wait-stream/{{$p.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
+    _es.addEventListener('refresh', () => htmx.trigger('#wait-status', 'refresh'));
     _es.onerror = () => _es.close();
   </script>
 </body>

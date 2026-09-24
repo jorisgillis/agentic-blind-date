@@ -41,5 +41,6 @@ func (db *DB) AdvanceStep(id string, to Step) error {
 	if n, _ := res.RowsAffected(); n != 1 {
 		return fmt.Errorf("%w: %s is not at %s, cannot enter %s", ErrIllegalTransition, id, from, to)
 	}
+	db.changed()
 	return nil
 }

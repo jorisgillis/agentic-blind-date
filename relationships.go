@@ -54,7 +54,11 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 			return nil, fmt.Errorf("pairing %s ↔ %s: participant %s not found", m.A.ID, m.B.ID, side[0])
 		}
 	}
-	return displaced, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	r.db.changed()
+	return displaced, nil
 }
 
 // PartnerOf returns a Participant's partner and the assessment of their Match,
@@ -94,6 +98,9 @@ func (r *Relationships) UnpairAll() error {
 		UPDATE participants SET matched_with = '', compat_score = 0, compat_reason = '',
 		    red_flags = '[]', green_flags = '[]', icebreakers = '[]'
 		WHERE COALESCE(matched_with, '') != ''`)
+	if err == nil {
+		r.db.changed()
+	}
 	return err
 }
 
@@ -117,7 +124,11 @@ func (r *Relationships) Remove(id string) error {
 	if _, err := tx.Exec(`DELETE FROM participants WHERE id = ?`, id); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	r.db.changed()
+	return nil
 }
 
 func partnerOf(tx *sql.Tx, id string) (string, error) {

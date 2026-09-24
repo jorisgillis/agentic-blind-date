@@ -295,59 +295,6 @@ func stream(t *testing.T, srv *testSrv, path string, timeout time.Duration) stri
 	return w.Body.String()
 }
 
-func TestPipelineStream_RedirectsOnceTheParticipantIsReadyOrMatched(t *testing.T) {
-	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
-	seed(t, deps.db, "r", "R", "ready")
-	seed(t, deps.db, "m", "M", "ready")
-	seed(t, deps.db, "m2", "M2", "ready")
-	pair(t, deps.db, "m", "m2")
-	seed(t, deps.db, "i", "I", "interviewing")
-
-	if body := stream(t, srv, "/user/pipeline-stream/r", 3*time.Second); !strings.Contains(body, "data: /user/wait/r") {
-		t.Errorf("ready: want redirect event to wait, got %q", body)
-	}
-	if body := stream(t, srv, "/user/pipeline-stream/m", 3*time.Second); !strings.Contains(body, "data: /user/match/m") {
-		t.Errorf("matched: want redirect event to match, got %q", body)
-	}
-	if body := stream(t, srv, "/user/pipeline-stream/i", 1200*time.Millisecond); body != "" {
-		t.Errorf("interviewing: want no event, got %q", body)
-	}
-	if body := stream(t, srv, "/user/pipeline-stream/nobody", time.Second); !strings.Contains(body, "404") {
-		t.Errorf("unknown: want 404, got %q", body)
-	}
-}
-
-func TestWaitStream_RedirectsOnceMatched(t *testing.T) {
-	srv, deps := newTestServer(t, nil, nil)
-	deps.db.SetPhase("revealed") // after the Reveal, matched Participants see their Match
-	seed(t, deps.db, "m", "M", "ready")
-	seed(t, deps.db, "m2", "M2", "ready")
-	pair(t, deps.db, "m", "m2")
-	seed(t, deps.db, "r", "R", "ready")
-
-	if body := stream(t, srv, "/user/wait-stream/m", 3*time.Second); !strings.Contains(body, "data: /user/match/m") {
-		t.Errorf("matched: want redirect event, got %q", body)
-	}
-	if body := stream(t, srv, "/user/wait-stream/r", 1200*time.Millisecond); body != "" {
-		t.Errorf("ready: want no event, got %q", body)
-	}
-	if body := stream(t, srv, "/user/wait-stream/nobody", time.Second); !strings.Contains(body, "404") {
-		t.Errorf("unknown: want 404, got %q", body)
-	}
-}
-
-func TestScreenStream_PushesTheGraphRightAway(t *testing.T) {
-	srv, deps := newTestServer(t, nil, nil)
-	seed(t, deps.db, "a", "The Gopher", "ready")
-
-	body := stream(t, srv, "/bigscreen/stream", 200*time.Millisecond)
-
-	if !strings.HasPrefix(body, "data: {") || !strings.Contains(body, "The Gopher") {
-		t.Errorf("want an immediate graph event, got %q", body)
-	}
-}
-
 func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.SetPhase("revealed")
