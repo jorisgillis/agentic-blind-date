@@ -295,3 +295,32 @@ func TestMatcherMatchNewcomer_WithAnEmptyPool(t *testing.T) {
 		t.Errorf("want no Match, got %v", match)
 	}
 }
+
+func TestMatcherMatchPool_OnlyAssessesHeuristicTopCandidates(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(nil))
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	// A and B share nothing, while both share a language with everyone else, so each
+	// ranks the other last among six others and neither makes the other's top 5.
+	pool := []*Participant{
+		ready(dev("A", "A", "Go")), ready(dev("B", "B", "Rust")),
+		ready(dev("C", "C", "Go", "Rust")), ready(dev("D", "D", "Go", "Rust")), ready(dev("E", "E", "Go", "Rust")),
+		ready(dev("F", "F", "Go", "Rust")), ready(dev("G", "G", "Go", "Rust")),
+	}
+
+	m.MatchPool(pool)
+
+	if llm.callsMatching("matchmaker") == 0 {
+		t.Fatal("no Pair was assessed at all")
+	}
+	for _, c := range llm.calls {
+		if strings.Contains(c.User, "DEVELOPER 1 (A)") && strings.Contains(c.User, "DEVELOPER 2 (B)") ||
+			strings.Contains(c.User, "DEVELOPER 1 (B)") && strings.Contains(c.User, "DEVELOPER 2 (A)") {
+			t.Error("A-B is outside both top-5 lists but was assessed by the LLM")
+		}
+	}
+}
+
+func ready(p *Participant) *Participant {
+	p.PipelineStep = "ready"
+	return p
+}

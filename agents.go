@@ -12,20 +12,20 @@ import (
 // It coordinates GitHub profile fetching, persona generation, interview questions,
 // and match scoring using LLM.
 type AgentPipeline struct {
-	db      *DB
-	github  GitHubAPI
-	mistral LLM
+	db        *DB
+	github    GitHubAPI
+	llm       LLM
 	matcher   *Matcher
 	interview *Interview
 	matchMu   sync.Mutex // Serializes matching operations to prevent race conditions
 }
 
 // NewAgentPipeline creates a new AgentPipeline with the given dependencies.
-func NewAgentPipeline(db *DB, github GitHubAPI, mistral LLM, matcher *Matcher, interview *Interview) *AgentPipeline {
+func NewAgentPipeline(db *DB, github GitHubAPI, llm LLM, matcher *Matcher, interview *Interview) *AgentPipeline {
 	return &AgentPipeline{
 		db:        db,
 		github:    github,
-		mistral:   mistral,
+		llm:       llm,
 		matcher:   matcher,
 		interview: interview,
 	}
@@ -35,7 +35,6 @@ type personaResult struct {
 	Name    string `json:"name"`
 	Tagline string `json:"tagline"`
 }
-
 
 // CompleteProfile combines all data about a participant for persona generation
 type CompleteProfile struct {
@@ -160,10 +159,6 @@ func (a *AgentPipeline) computeInterestsFromCompleteProfile(profile *CompletePro
 }
 
 func (a *AgentPipeline) generatePersonaFromCompleteProfile(profile *CompleteProfile) (*personaResult, error) {
-	if a.mistral == nil {
-		return nil, fmt.Errorf("mistral client not initialized")
-	}
-
 	system := `You are a fun tech personality generator for a programming meetup blind date event.
 Create a funny, tongue-in-cheek anonymous persona based on a developer's profile and interview answers.
 Respond with ONLY a valid JSON object — no markdown, no backticks:
@@ -171,7 +166,7 @@ Respond with ONLY a valid JSON object — no markdown, no backticks:
 
 	prompt := a.buildPersonaPrompt(profile)
 
-	response, err := a.mistral.Chat(system, prompt)
+	response, err := a.llm.Chat(system, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +251,9 @@ func (a *AgentPipeline) RunMatching() error {
 	}
 
 	for _, m := range a.matcher.MatchPool(participants) {
-		a.storeMatch(m)
+		if err := a.storeMatch(m); err != nil {
+			return err
+		}
 	}
 
 	a.db.SetPhase("revealed")
@@ -265,14 +262,18 @@ func (a *AgentPipeline) RunMatching() error {
 }
 
 // storeMatch records a Match on both Participants.
-func (a *AgentPipeline) storeMatch(m Match) {
+func (a *AgentPipeline) storeMatch(m Match) error {
 	result := m.Result
 	redJSON, _ := json.Marshal(nonNil(result.RedFlags))
 	greenJSON, _ := json.Marshal(nonNil(result.GreenFlags))
 	iceJSON, _ := json.Marshal(nonNil(result.Icebreakers))
-	a.db.SetMatched(m.A.ID, m.B.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
-	a.db.SetMatched(m.B.ID, m.A.ID, result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON))
+	for _, side := range [][2]string{{m.A.ID, m.B.ID}, {m.B.ID, m.A.ID}} {
+		if err := a.db.SetMatched(side[0], side[1], result.Score, result.Reason, string(redJSON), string(greenJSON), string(iceJSON)); err != nil {
+			return fmt.Errorf("storing match %s ↔ %s: %w", m.A.ID, m.B.ID, err)
+		}
+	}
 	a.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", m.A.PersonaName, m.B.PersonaName, result.Score))
+	return nil
 }
 
 // RunContinuousMatching matches a Participant who just became ready against the
@@ -300,12 +301,14 @@ func (a *AgentPipeline) RunContinuousMatching(newcomer *Participant) error {
 		return nil
 	}
 	if former := m.B.MatchedWith; former != "" {
-		a.db.UnmatchParticipant(former)
-		a.db.UnmatchParticipant(m.B.ID)
+		for _, id := range []string{former, m.B.ID} {
+			if err := a.db.UnmatchParticipant(id); err != nil {
+				return fmt.Errorf("breaking match of %s: %w", id, err)
+			}
+		}
 		a.db.LogActivity(fmt.Sprintf("🔄 Breaking %s's previous match to accommodate %s", m.B.PersonaName, newcomer.PersonaName))
 	}
-	a.storeMatch(*m)
-	return nil
+	return a.storeMatch(*m)
 }
 
 func extractJSON(s string) string {

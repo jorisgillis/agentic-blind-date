@@ -22,21 +22,21 @@ type matchResult struct {
 // compatibility assessment (prompt, parsing, validation) and the two-level
 // cache of assessments from ADR-0002.
 type Matcher struct {
-	db      *DB
-	github  GitHubAPI
-	mistral LLM
+	db     *DB
+	github GitHubAPI
+	llm    LLM
 
 	mu    sync.Mutex
 	cache map[string]*matchResult // in-memory level; the llm_cache table is the persistent level
 }
 
 // NewMatcher creates a new Matcher instance.
-func NewMatcher(db *DB, github GitHubAPI, mistral LLM) *Matcher {
+func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher {
 	return &Matcher{
-		db:      db,
-		github:  github,
-		mistral: mistral,
-		cache:   make(map[string]*matchResult),
+		db:     db,
+		github: github,
+		llm:    llm,
+		cache:  make(map[string]*matchResult),
 	}
 }
 
@@ -107,7 +107,7 @@ Respond with ONLY valid JSON — no markdown:
 	user := "Compare these two developers:\n\n" +
 		describeDeveloper(1, p1) + "\n\n" + describeDeveloper(2, p2) + m.followNote(p1, p2)
 
-	response, err := m.mistral.Chat(system, user)
+	response, err := m.llm.Chat(system, user)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +151,7 @@ func describeDeveloper(n int, p *Participant) string {
 }
 
 func (m *Matcher) followNote(p1, p2 *Participant) string {
-	if m.github == nil || p1.GitHubHandle == "" || p2.GitHubHandle == "" {
+	if p1.GitHubHandle == "" || p2.GitHubHandle == "" {
 		return ""
 	}
 	aFollowsB, bFollowsA := m.github.CheckMutualFollow(p1.GitHubHandle, p2.GitHubHandle)
@@ -295,8 +295,7 @@ func (m *Matcher) MatchPool(participants []*Participant) []Match {
 	}
 	candidates := m.candidatePairs(participants)
 	m.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidate pairs...", len(candidates)))
-	scored := m.assessAll(candidates)
-	sort.SliceStable(scored, func(i, j int) bool { return scored[i].Result.Score > scored[j].Result.Score })
+	scored := byScoreDesc(m.assessAll(candidates))
 
 	var matches []Match
 	taken := map[string]bool{}
@@ -347,14 +346,19 @@ func (m *Matcher) bestFor(newcomer *Participant, pool []*Participant, eligible f
 	for _, c := range m.topCandidates(newcomer, pool) {
 		pairs = append(pairs, [2]*Participant{newcomer, c})
 	}
-	scored := m.assessAll(pairs)
-	sort.SliceStable(scored, func(i, j int) bool { return scored[i].Result.Score > scored[j].Result.Score })
+	scored := byScoreDesc(m.assessAll(pairs))
 	for _, c := range scored {
 		if eligible(c) {
 			return &c
 		}
 	}
 	return nil
+}
+
+// byScoreDesc orders Matches by descending LLM score, keeping ties in candidate order.
+func byScoreDesc(matches []Match) []Match {
+	sort.SliceStable(matches, func(i, j int) bool { return matches[i].Result.Score > matches[j].Result.Score })
+	return matches
 }
 
 // assessAll assesses the Pairs, two LLM calls at a time, logging each to the activity ticker.

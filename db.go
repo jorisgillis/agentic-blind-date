@@ -27,7 +27,7 @@ type Participant struct {
 	PersonaSymbol  string
 	PersonaTagline string
 	Profile        *GitHubProfile
-	Questions     []Question
+	Questions      []Question
 	Answers        map[string]string
 	Interests      map[string]interface{}
 	PipelineStep   string
