@@ -71,6 +71,7 @@ type graphEdge struct {
 // Handler handles HTTP requests for the web application.
 type Handler struct {
 	db          *DB
+	store       *ParticipantStore
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -96,7 +97,11 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		"textColor": paletteText,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
-	return &Handler{db: db, onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking, tmpl: tmpl}
+	return &Handler{
+		db: db, store: NewParticipantStore(db),
+		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
+		tmpl: tmpl,
+	}
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
@@ -115,7 +120,7 @@ const cookieMaxAge = 7 * 24 * 60 * 60 // 7 days
 // GET /user
 func (h *Handler) Landing(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(cookieName); err == nil {
-		if p, err := h.db.GetParticipant(c.Value); err == nil {
+		if p, err := h.store.Get(c.Value); err == nil {
 			http.Redirect(w, r, "/user/onboard/"+p.ID, http.StatusSeeOther)
 			return
 		}
@@ -166,7 +171,7 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 
 // GET /user/onboard/{id}
 func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
-	p, err := h.db.GetParticipant(r.PathValue("id"))
+	p, err := h.store.Get(r.PathValue("id"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -180,7 +185,7 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 
 // GET /user/pipeline/{id}  — HTMX, refreshed when the pipeline stream says so
 func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
-	p, err := h.db.GetParticipant(r.PathValue("id"))
+	p, err := h.store.Get(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "not found", 404)
 		return
@@ -199,7 +204,7 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 
 // POST /user/answer/{id}
 func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
-	p, err := h.db.GetParticipant(r.PathValue("id"))
+	p, err := h.store.Get(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "not found", 404)
 		return
@@ -231,7 +236,7 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 
 // GET /user/wait/{id}
 func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
-	p, err := h.db.GetParticipant(r.PathValue("id"))
+	p, err := h.store.Get(r.PathValue("id"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -269,7 +274,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 
 // GET /user/wait-status/{id}  — HTMX, refreshed when the wait stream says so
 func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
-	p, err := h.db.GetParticipant(r.PathValue("id"))
+	p, err := h.store.Get(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "not found", 404)
 		return
@@ -286,7 +291,7 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 
 // GET /user/match/{id}
 func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
-	p, err := h.db.GetParticipant(r.PathValue("id"))
+	p, err := h.store.Get(r.PathValue("id"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -304,7 +309,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		result = &matchResult{RedFlags: []string{}, GreenFlags: []string{}, Icebreakers: []string{}}
 	}
 
-	all, _ := h.db.GetAllParticipants()
+	all, _ := h.store.All()
 	var others []*Participant
 	for _, op := range all {
 		if op.ID != p.ID && op.ID != p.MatchedWith {
@@ -328,12 +333,12 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 // an unknown Participant is 404, and exploring yourself or a Participant who
 // isn't ready is 400 — neither calls the LLM or GitHub.
 func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
-	me, err := h.db.GetParticipant(r.PathValue("myId"))
+	me, err := h.store.Get(r.PathValue("myId"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	other, err := h.db.GetParticipant(r.PathValue("otherId"))
+	other, err := h.store.Get(r.PathValue("otherId"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -373,7 +378,7 @@ func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) buildGraphPayload() map[string]any {
 	event := h.db.EventState()
-	participants, _ := h.db.GetAllParticipants()
+	participants, _ := h.store.All()
 	activity, _ := h.db.GetRecentActivity(3)
 
 	nodes := make([]graphNode, 0, len(participants))
@@ -476,7 +481,7 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 // GET /bigscreen/state  — HTMX polled every 3s
 func (h *Handler) ScreenState(w http.ResponseWriter, r *http.Request) {
 	event := h.db.EventState()
-	participants, _ := h.db.GetAllParticipants()
+	participants, _ := h.store.All()
 	activity, _ := h.db.GetRecentActivity(8)
 	h.render(w, "fragment-screen-state.html", map[string]any{
 		"Event":        event,
@@ -492,7 +497,7 @@ func (h *Handler) ScreenState(w http.ResponseWriter, r *http.Request) {
 // GET /data
 func (h *Handler) DataIndex(w http.ResponseWriter, r *http.Request) {
 	event := h.db.EventState()
-	participants, _ := h.db.GetAllParticipants()
+	participants, _ := h.store.All()
 	activity, _ := h.db.GetRecentActivity(20)
 	h.render(w, "data.html", map[string]any{
 		"Event":        event,
@@ -505,7 +510,7 @@ func (h *Handler) DataIndex(w http.ResponseWriter, r *http.Request) {
 
 // GET /data/participants
 func (h *Handler) DataParticipants(w http.ResponseWriter, r *http.Request) {
-	participants, err := h.db.GetAllParticipants()
+	participants, err := h.store.All()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -516,10 +521,10 @@ func (h *Handler) DataParticipants(w http.ResponseWriter, r *http.Request) {
 // GET /data/participant/{id}
 func (h *Handler) DataParticipant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, err := h.db.GetParticipant(id)
+	p, err := h.store.Get(id)
 	if err != nil {
 		// Try by GitHub handle
-		p, err = h.db.GetParticipantByHandle(id)
+		p, err = h.store.GetByHandle(id)
 		if err != nil {
 			http.Error(w, "not found", 404)
 			return
@@ -670,7 +675,7 @@ func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (do
 // (the first question appears) and redirects once they belong elsewhere.
 func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	first, err := h.db.GetParticipant(id)
+	first, err := h.store.Get(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -680,7 +685,7 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 	}
 	lastStep := first.PipelineStep
 	h.watch(w, r, func() bool {
-		p, err := h.db.GetParticipant(id)
+		p, err := h.store.Get(id)
 		if err != nil {
 			return true
 		}
@@ -701,7 +706,7 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 // being matched) and redirects once the Participant belongs elsewhere.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	first, err := h.db.GetParticipant(id)
+	first, err := h.store.Get(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -715,7 +720,7 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	}
 	last := shown{h.db.ReadyCount(), first.IsMatched()}
 	h.watch(w, r, func() bool {
-		p, err := h.db.GetParticipant(id)
+		p, err := h.store.Get(id)
 		if err != nil {
 			return true
 		}
