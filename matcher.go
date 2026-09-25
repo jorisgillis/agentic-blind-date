@@ -388,23 +388,34 @@ func (m *Matcher) assessOrDefault(a, b *Participant) (result *matchResult, genui
 	return result, true
 }
 
-// topCandidates returns up to 5 Participants from all with the highest PairScore against p.
-func (m *Matcher) topCandidates(p *Participant, all []*Participant) []*Participant {
-	type scored struct {
-		p     *Participant
-		score int
-	}
-	var candidates []scored
+// ScoredCandidate is another Participant ranked against one Participant by
+// the heuristic Pair score.
+type ScoredCandidate struct {
+	Participant *Participant
+	Score       int
+}
+
+// RankCandidates orders every other Participant in all against p by the
+// heuristic Pair score, best first. It is the one ranking behind Continuous
+// Matching's candidate selection and the Big Screen's potential-connection
+// preview, so the two never disagree (#55).
+func (m *Matcher) RankCandidates(p *Participant, all []*Participant) []ScoredCandidate {
+	var candidates []ScoredCandidate
 	for _, other := range all {
 		if other.ID != p.ID {
-			candidates = append(candidates, scored{other, m.PairScore(p, other)})
+			candidates = append(candidates, ScoredCandidate{other, m.PairScore(p, other)})
 		}
 	}
-	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].Score > candidates[j].Score })
+	return candidates
+}
 
+// topCandidates returns up to 5 Participants from all with the highest PairScore against p.
+func (m *Matcher) topCandidates(p *Participant, all []*Participant) []*Participant {
+	ranked := m.RankCandidates(p, all)
 	var out []*Participant
-	for i := 0; i < len(candidates) && i < 5; i++ {
-		out = append(out, candidates[i].p)
+	for i := 0; i < len(ranked) && i < 5; i++ {
+		out = append(out, ranked[i].Participant)
 	}
 	return out
 }

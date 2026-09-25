@@ -58,6 +58,9 @@ func NewPersonas(llm LLM) *Personas
 func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking
 func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding
 
+// Big Screen: the one Snapshot builder for the room, shared by every open screen (#55)
+func NewBigScreen(db *DB, matcher *Matcher) *BigScreen
+
 // HTTP handlers
 func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler
 ```

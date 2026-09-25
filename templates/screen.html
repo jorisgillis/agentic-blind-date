@@ -189,7 +189,7 @@ function updateGraph(data) {
 
   // Status labels
   const phaseEl = document.getElementById('phase-label');
-  phaseEl.textContent = data.phase_label;
+  phaseEl.textContent = data.label;
   document.getElementById('count-label').textContent =
     data.nodes.length + ' participant' + (data.nodes.length !== 1 ? 's' : '');
 

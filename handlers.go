@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
@@ -50,29 +49,12 @@ func computeBadges(p GitHubProfile) []Badge {
 	return out
 }
 
-type graphNode struct {
-	ID          string `json:"id"`
-	PersonaName string `json:"persona_name"`
-	Color       string `json:"color"`
-	Symbol      string `json:"symbol"`
-	Step        string `json:"step"`
-	Ready       bool   `json:"ready"`
-	Matched     bool   `json:"matched"`
-	Handle      string `json:"handle,omitempty"`
-}
-
-type graphEdge struct {
-	Source  string `json:"source"`
-	Target  string `json:"target"`
-	Score   int    `json:"score"`
-	Matched bool   `json:"matched"`
-}
-
 // Handler handles HTTP requests for the web application.
 type Handler struct {
 	db          *DB
 	store       *ParticipantStore
 	activity    *Activity
+	bigscreen   *BigScreen
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -99,7 +81,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{
-		db: db, store: NewParticipantStore(db), activity: NewActivity(db),
+		db: db, store: NewParticipantStore(db), activity: NewActivity(db), bigscreen: NewBigScreen(db, matcher),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl,
 	}
@@ -377,120 +359,14 @@ func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "screen.html", map[string]any{"Palette": paletteHex()})
 }
 
-func (h *Handler) buildGraphPayload() map[string]any {
-	event := h.db.EventState()
-	participants, _ := h.store.All()
-	activity, _ := h.db.GetRecentActivity(3)
-
-	nodes := make([]graphNode, 0, len(participants))
-	for _, p := range participants {
-		// Identities leave the server only after the Reveal.
-		handle := ""
-		if event.IsRevealed() {
-			handle = p.DisplayHandle()
-		}
-		nodes = append(nodes, graphNode{
-			ID:          p.ID,
-			PersonaName: p.PersonaName,
-			Color:       p.PersonaColor,
-			Symbol:      p.PersonaSymbol,
-			Step:        string(p.PipelineStep),
-			Ready:       p.PipelineStep.IsReady(),
-			Matched:     p.IsMatched(),
-			Handle:      handle,
-		})
-	}
-
-	edges := make([]graphEdge, 0)
-	seen := map[string]bool{}
-
-	for _, p := range participants {
-		if p.MatchedWith == "" {
-			continue
-		}
-		key := p.ID + ":" + p.MatchedWith
-		rev := p.MatchedWith + ":" + p.ID
-		if seen[key] || seen[rev] {
-			continue
-		}
-		seen[key] = true
-		edges = append(edges, graphEdge{
-			Source:  p.ID,
-			Target:  p.MatchedWith,
-			Score:   p.CompatScore,
-			Matched: true,
-		})
-	}
-
-	type scored struct {
-		id    string
-		score int
-	}
-	topEdges := map[string][]scored{}
-	for i, a := range participants {
-		for j, b := range participants {
-			if i >= j {
-				continue
-			}
-			key := a.ID + ":" + b.ID
-			rev := b.ID + ":" + a.ID
-			if seen[key] || seen[rev] {
-				continue
-			}
-			s := h.matcher.PairScore(a, b)
-			topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, s})
-			topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, s})
-		}
-	}
-	for _, p := range participants {
-		candidates := topEdges[p.ID]
-		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
-		if len(candidates) > 3 {
-			candidates = candidates[:3]
-		}
-		for _, c := range candidates {
-			key := p.ID + ":" + c.id
-			rev := c.id + ":" + p.ID
-			if seen[key] || seen[rev] {
-				continue
-			}
-			seen[key] = true
-			edges = append(edges, graphEdge{
-				Source:  p.ID,
-				Target:  c.id,
-				Score:   c.score,
-				Matched: false,
-			})
-		}
-	}
-
-	return map[string]any{
-		"phase":       event,
-		"phase_label": event.Label(),
-		"revealed":    event.IsRevealed(),
-		"nodes":       nodes,
-		"edges":       edges,
-		"activity":    activity,
-	}
-}
-
 // GET /bigscreen/graph-data  — kept as fallback; big screen now uses /bigscreen/stream
 func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, h.buildGraphPayload())
+	writeJSON(w, h.bigscreen.Snapshot())
 }
 
 // GET /bigscreen/state  — HTMX polled every 3s
 func (h *Handler) ScreenState(w http.ResponseWriter, r *http.Request) {
-	event := h.db.EventState()
-	participants, _ := h.store.All()
-	activity, _ := h.db.GetRecentActivity(8)
-	h.render(w, "fragment-screen-state.html", map[string]any{
-		"Event":        event,
-		"Participants": participants,
-		"Activity":     activity,
-		"Count":        len(participants),
-		"ReadyCount":   h.db.ReadyCount(),
-	})
+	h.render(w, "fragment-screen-state.html", h.bigscreen.Snapshot())
 }
 
 // ── /data ──────────────────────────────────────────────────────────────────
@@ -744,7 +620,7 @@ func (h *Handler) ScreenStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.watch(w, r, func() bool {
-		data, _ := json.Marshal(h.buildGraphPayload())
+		data, _ := json.Marshal(h.bigscreen.Snapshot())
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		w.(http.Flusher).Flush()
 		return false

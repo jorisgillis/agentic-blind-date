@@ -121,6 +121,8 @@ The public display for the event, showing:
 - Activity ticker
 - Event statistics
 
+The **Big Screen module** computes one Snapshot of the event for the room — Participants, Match edges, potential connections from the Matcher's ranking, stats and the latest ticker lines — once per change, shared by however many screens are open. Identity hiding (#45) is applied once, building the Snapshot, so every view (the graph, the state view, the stream) gets it for free instead of applying it separately.
+
 ### Activity ticker
 A running, public feed of what is happening in the pipeline and in matching, shown on the Big Screen at all times. The **Activity module** is the only place a ticker line is composed: each of its operations takes persona-safe data — a Persona name, a score, an error — never a GitHub handle, real name or internal ID, so a line can never name someone before the Reveal. Lines are ordered by the moment they happened, not by a second-resolution timestamp, so the latest line is always the most recent event even within a burst. A failed compatibility assessment is announced as a Match, never with the default score standing in for a real one.
 

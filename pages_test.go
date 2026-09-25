@@ -151,6 +151,18 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	}
 }
 
+func TestWait_ShowsTheAccountAgeInYears(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "r", "The Gopher", "ready")
+	setProfile(t, deps.db, "r", &GitHubProfile{Login: "r", Languages: []string{"Go"}, AccountAgeDays: 730})
+
+	body := readBody(t, get(t, srv, "/user/wait/r"))
+
+	if !strings.Contains(body, "2 yrs") {
+		t.Errorf("wait page should show the account age in years: %s", body)
+	}
+}
+
 func TestWaitStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.Reveal() // after the Reveal, matched Participants see their Match
@@ -275,8 +287,8 @@ func TestBigScreen_GraphHasMatchedAndPotentialEdges(t *testing.T) {
 	pair(t, deps.db, "a", "b")
 
 	var graph struct {
-		Nodes []graphNode `json:"nodes"`
-		Edges []graphEdge `json:"edges"`
+		Nodes []ScreenNode `json:"nodes"`
+		Edges []ScreenEdge `json:"edges"`
 	}
 	if err := json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &graph); err != nil {
 		t.Fatal(err)
@@ -377,7 +389,7 @@ func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t
 		t.Errorf("the partner's Match page should be gone, got redirect %q", loc)
 	}
 	var graph struct {
-		Edges []graphEdge `json:"edges"`
+		Edges []ScreenEdge `json:"edges"`
 	}
 	json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &graph)
 	for _, e := range graph.Edges {

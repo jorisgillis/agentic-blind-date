@@ -100,6 +100,7 @@ func TestReveal_TheBigScreenSendsNoIdentitiesBeforeTheReveal(t *testing.T) {
 	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
 	setPersona(t, deps.db, "ada", "The Analyst", "")
 	forceStep(deps.db, "ada", StepReady)
+	pair(t, deps.db, "g1", "ada") // a stored Match must not leak identity via the state view's match card (#55)
 
 	for _, path := range []string{"/bigscreen/graph-data", "/bigscreen/state"} {
 		body := readBody(t, get(t, srv, path))
