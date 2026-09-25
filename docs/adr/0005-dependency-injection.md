@@ -61,6 +61,9 @@ func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Per
 // Big Screen: the one Snapshot builder for the room, shared by every open screen (#55)
 func NewBigScreen(db *DB, matcher *Matcher) *BigScreen
 
+// Event administration: Reveal, Reset and Rematch, so handlers only call them (#57)
+func NewEventAdmin(db *DB, matcher *Matcher, matchmaking *Matchmaking) *EventAdmin
+
 // HTTP handlers
 func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler
 ```

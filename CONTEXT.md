@@ -227,6 +227,8 @@ Responsible for event management. Includes:
 - Monitoring
 - Configuration
 
+The **Event administration module** owns the admin's whole-event actions: the Reveal, Reset and Rematch. Reset takes the Matchmaking module's lock, so it cannot interleave with Continuous Matching; Rematch already has that guarantee from Matchmaking itself. Rematch runs in the background and returns a handle that reports its outcome once it finishes, so the admin page can render immediately and tests can wait on it instead of polling.
+
 ## Key Invariant
 
 A participant can only be matched with one other participant at a time. When a new match is formed, any existing match for either participant is broken.

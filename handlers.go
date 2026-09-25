@@ -55,6 +55,7 @@ type Handler struct {
 	store       *ParticipantStore
 	activity    *Activity
 	bigscreen   *BigScreen
+	admin       *EventAdmin
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -82,6 +83,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{
 		db: db, store: NewParticipantStore(db), activity: NewActivity(db), bigscreen: NewBigScreen(db, matcher),
+		admin:      NewEventAdmin(db, matcher, matchmaking),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl,
 	}
@@ -451,34 +453,25 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/reveal: the admin reveals every Match once everybody is seated.
 func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
-	if err := h.db.Reveal(); err != nil {
+	if err := h.admin.Reveal(); err != nil {
 		http.Error(w, "reveal failed: "+err.Error(), 500)
 		return
 	}
-	h.activity.Revealed()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 // POST /admin/reset
 func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
-	if err := h.db.Reset(); err != nil {
+	if err := h.admin.Reset(); err != nil {
 		http.Error(w, "reset failed: "+err.Error(), 500)
 		return
 	}
-	// Clear LLM cache when resetting event
-	h.matcher.ClearCache()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 // POST /admin/rematch
 func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
-	h.activity.RematchTriggered()
-	go func() {
-		if err := h.matchmaking.Rematch(); err != nil {
-			log.Printf("Rematch error: %v", err)
-			h.activity.RematchFailed(err)
-		}
-	}()
+	h.admin.Rematch()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 

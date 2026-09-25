@@ -5,7 +5,6 @@ import (
 	"sync"
 )
 
-
 // defaultMaxChain bounds a chain of take-overs. Take-overs usually end
 // quickly because they're cached and each one raises the taken Participant's
 // score, but a Reset clears the cache and LLM scores aren't perfectly
@@ -31,6 +30,15 @@ func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchma
 		participants: NewParticipantStore(db), activity: NewActivity(db),
 		matcher: matcher, relations: relations, maxChain: defaultMaxChain,
 	}
+}
+
+// WithLock runs fn as one matching operation: Continuous Matching cannot
+// interleave with it, the same guarantee Rematch gives itself. Event
+// administration uses this for Reset (#57).
+func (mm *Matchmaking) WithLock(fn func() error) error {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	return fn()
 }
 
 // Rematch breaks every Match and pairs all ready Participants again, as one
