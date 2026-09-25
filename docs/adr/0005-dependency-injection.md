@@ -43,7 +43,7 @@ func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *h
 // (never the process environment directly) and returns a configured LLM
 func SelectLLM(lookup func(string) string) (LLM, error)
 
-// Participant store: the only component that reads or writes Participant SQL
+// Participant store: the only component other modules use to read or write Participants
 func NewParticipantStore(db *DB) *ParticipantStore
 
 // Domain modules: upstream services are accepted through the LLM and GitHubAPI seams;
@@ -97,7 +97,7 @@ func main() {
 
 #### The Participant store
 
-`ParticipantStore` (`participantstore.go`) is the only component that touches Participant SQL: a small, typed interface (`Get`, `All`, `AllByStep`, `GetByHandle`, `Create`, `Change`, `StartInterview`) instead of one method per column. Every domain module that changes a Participant — `Relationships`, `Onboarding`, `Interview`, `Matchmaking` — builds its own store from the `*DB` it already receives, the same way each builds nothing else: `NewParticipantStore(db)` is called once per constructor, not threaded through as its own parameter. `Handler` does the same for reads. `DB` keeps the schema, the LLM cache and non-Participant concerns (activity, Event State, the change feed); it no longer has per-column Participant setters (`SetProfile`, `SetPersona`, `AdvanceStep`, ... — removed, #53). This was an expand–migrate–contract refactor (#49–#53, see `docs/adr/` commit history): the store was added beside the old methods, every caller migrated across, and the old methods were deleted last.
+`ParticipantStore` (`participantstore.go`) is the only component other modules use to read or write Participants: a small, typed interface (`Get`, `All`, `AllByStep`, `GetByHandle`, `Create`, `Change`, `StartInterview`) instead of one method per column. `DB` still holds the underlying SQL and scanning for those reads (`GetParticipant`, `GetAllParticipants`, ...) and for `Create`, but no other module calls them directly any more — every domain module that changes a Participant — `Relationships`, `Onboarding`, `Interview`, `Matchmaking` — builds its own store from the `*DB` it already receives, the same way each builds nothing else: `NewParticipantStore(db)` is called once per constructor, not threaded through as its own parameter. `Handler` does the same for reads. `DB` keeps the schema, the LLM cache and non-Participant concerns (activity, Event State, the change feed); it no longer has per-column Participant setters (`SetProfile`, `SetPersona`, `AdvanceStep`, ... — removed, #53). This was an expand–migrate–contract refactor (#49–#53, see `docs/adr/` commit history): the store was added beside the old methods, every caller migrated across, and the old methods were deleted last.
 
 ## Consequences
 

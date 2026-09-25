@@ -6,12 +6,14 @@ import (
 
 // failWrites makes Participant writes fail until the returned function is
 // called (or the test ends): every write, or, when tags are given, only
-// writes tagged with one of those. Tags name what a write is, not which SQL
-// column it touches: "create", "delete", "interests", "persona", "profile",
-// "questions", "answers", "pipeline_step", "start_interview", "pair" and
-// "unpair" (see ParticipantChange.tag and DB.checkFault's call sites). This
-// is a test-only hook on DB (see DB.failWrite), not a SQL trigger, so
-// production code needs no fault-injection hooks.
+// writes tagged with one of those. Tags name what a write (or, for
+// "persona_lookup" and "activity_read", a read) is, not which SQL column it
+// touches: "create", "persona_lookup", "delete", "interests", "persona",
+// "profile", "answers", "pipeline_step", "start_interview", "pair", "unpair",
+// "activity_read", "reset_participants", "reset_activity" and
+// "reset_event_state" (see ParticipantChange.tag and DB.checkFault's call
+// sites). This is a test-only hook on DB (see DB.failWrite), not a SQL
+// trigger, so production code needs no fault-injection hooks.
 func failWrites(t *testing.T, db *DB, tags ...string) (restore func()) {
 	t.Helper()
 	db.setFailWrite(func(tag string) error {

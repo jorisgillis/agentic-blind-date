@@ -3,13 +3,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 )
 
 // Relationships owns Relationship State: who is matched with whom, and the
 // assessment of each Match. It enforces the Key Invariant: a Participant has
-// at most one partner. Every change goes through the Participant store as a
-// single transaction.
+// at most one partner. Pair, Remove and UnpairAll each read the current
+// partner and then write the outcome as two separate store calls, so mu
+// serializes them against each other — without it, a Remove interleaved
+// between another goroutine's read and write could unpair or delete a
+// Participant the other goroutine still thinks is a valid partner.
 type Relationships struct {
+	mu    sync.Mutex
 	store *ParticipantStore
 }
 
@@ -25,6 +30,8 @@ func strPtr(s string) *string { return &s }
 // broken first; the partners left behind are returned to the Pool and
 // reported as displaced.
 func (r *Relationships) Pair(m Match) (displaced []string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	sides := [][2]*Participant{{m.A, m.B}, {m.B, m.A}}
 	var changes []ParticipantChange
 	for _, side := range sides {
@@ -79,6 +86,8 @@ func decodeList(raw string) []string {
 
 // UnpairAll breaks every Match at once, returning everyone to the Pool.
 func (r *Relationships) UnpairAll() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	all, err := r.store.All()
 	if err != nil {
 		return err
@@ -98,6 +107,8 @@ func (r *Relationships) UnpairAll() error {
 // Remove deletes a Participant. Their partner, if any, is returned to the
 // Pool, in the same transaction as the deletion.
 func (r *Relationships) Remove(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	p, err := r.store.Get(id)
 	if err != nil {
 		return err
