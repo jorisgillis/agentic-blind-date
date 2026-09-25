@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -27,11 +28,23 @@ func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Per
 	}
 }
 
+// NormalizeGitHubHandle turns whatever a Participant typed for their GitHub
+// handle into the bare handle: a leading "@", a full profile URL and a
+// trailing slash are all accepted (#59).
+func NormalizeGitHubHandle(handle string) string {
+	handle = strings.TrimSpace(handle)
+	handle = strings.TrimPrefix(handle, "@")
+	handle = strings.TrimPrefix(handle, "https://github.com/")
+	handle = strings.TrimSuffix(handle, "/")
+	return handle
+}
+
 // Register signs a Participant up and starts preparing their Interview in the
 // background. Registering a GitHub handle that is already known resumes that
 // Participant. Non-GitHub Users get a generated handle, which is only a key.
 func (o *Onboarding) Register(name, handle string, hasGitHub bool) (string, error) {
 	if hasGitHub {
+		handle = NormalizeGitHubHandle(handle)
 		if existing, err := o.store.GetByHandle(handle); err == nil {
 			o.resume(existing)
 			return existing.ID, nil

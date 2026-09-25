@@ -6,6 +6,25 @@ import (
 	"testing"
 )
 
+// TestNormalizeGitHubHandle covers #59: whatever shape a Participant's
+// GitHub handle input takes, it becomes the bare handle.
+func TestNormalizeGitHubHandle(t *testing.T) {
+	cases := map[string]string{
+		"octocat":                     "octocat",
+		"@octocat":                    "octocat",
+		"  @octocat  ":                "octocat",
+		"https://github.com/octocat":  "octocat",
+		"https://github.com/octocat/": "octocat",
+		"@":                           "",
+		"":                            "",
+	}
+	for in, want := range cases {
+		if got := NormalizeGitHubHandle(in); got != want {
+			t.Errorf("NormalizeGitHubHandle(%q): want %q, got %q", in, want, got)
+		}
+	}
+}
+
 func onboardingFor(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*Onboarding, *DB) {
 	t.Helper()
 	db := newTestDB(t)

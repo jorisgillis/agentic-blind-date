@@ -30,6 +30,24 @@ type QuestionData struct {
 	Question      Question
 }
 
+// QAPair is one answered Question, for rendering (#59).
+type QAPair struct {
+	Question string
+	Answer   string
+}
+
+// PairAnswers matches every question to its answer, in question order,
+// skipping any question not yet answered.
+func PairAnswers(questions []Question, answers map[string]string) []QAPair {
+	var pairs []QAPair
+	for _, q := range questions {
+		if ans, ok := answers[q.ID]; ok {
+			pairs = append(pairs, QAPair{Question: q.Text, Answer: ans})
+		}
+	}
+	return pairs
+}
+
 // ErrInterviewOver is returned when an answer is submitted after the last question.
 var ErrInterviewOver = errors.New("No more questions to answer")
 

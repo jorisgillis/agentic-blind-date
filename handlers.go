@@ -123,10 +123,7 @@ func setParticipantCookie(w http.ResponseWriter, id string) {
 
 // POST /user/join
 func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
-	handle := strings.TrimSpace(r.FormValue("github"))
-	handle = strings.TrimPrefix(handle, "@")
-	handle = strings.TrimPrefix(handle, "https://github.com/")
-	handle = strings.TrimSuffix(handle, "/")
+	handle := NormalizeGitHubHandle(r.FormValue("github"))
 	name := strings.TrimSpace(r.FormValue("name"))
 	noGitHub := r.FormValue("no_github") == "on"
 
@@ -231,25 +228,12 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	if p.Profile != nil {
 		profile = *p.Profile
 	}
-	answers := p.Answers // reading a nil map is fine
-	questions := p.Questions
 
-	type QAPair struct {
-		Question string
-		Answer   string
-	}
-	var qaPairs []QAPair
-	for _, q := range questions {
-		if ans, ok := answers[q.ID]; ok {
-			qaPairs = append(qaPairs, QAPair{Question: q.Text, Answer: ans})
-		}
-	}
-
-	h.render(w, "wait.html", map[string]any{
-		"Participant": p,
-		"Profile":     profile,
-		"QAPairs":     qaPairs,
-		"Count":       h.db.ReadyCount(),
+	h.render(w, "wait.html", WaitView{
+		Participant: p,
+		Profile:     profile,
+		QAPairs:     PairAnswers(p.Questions, p.Answers),
+		Count:       h.db.ReadyCount(),
 	})
 }
 
@@ -264,10 +248,7 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("HX-Redirect", dest)
 		return
 	}
-	h.render(w, "fragment-wait-status.html", map[string]any{
-		"Participant": p,
-		"Count":       h.db.ReadyCount(),
-	})
+	h.render(w, "fragment-wait-status.html", WaitStatusView{Participant: p, Count: h.db.ReadyCount()})
 }
 
 // GET /user/match/{id}
@@ -298,13 +279,10 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.render(w, "match.html", map[string]any{
-		"Me":          p,
-		"Match":       match,
-		"RedFlags":    result.RedFlags,
-		"GreenFlags":  result.GreenFlags,
-		"Icebreakers": result.Icebreakers,
-		"Others":      others,
+	h.render(w, "match.html", MatchView{
+		Me: p, Match: match,
+		RedFlags: result.RedFlags, GreenFlags: result.GreenFlags, Icebreakers: result.Icebreakers,
+		Others: others,
 	})
 }
 
@@ -339,14 +317,9 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.render(w, "explore.html", map[string]any{
-		"Me":          me,
-		"Other":       other,
-		"Score":       result.Score,
-		"Reason":      result.Reason,
-		"GreenFlags":  result.GreenFlags,
-		"RedFlags":    result.RedFlags,
-		"Icebreakers": result.Icebreakers,
+	h.render(w, "explore.html", ExploreView{
+		Me: me, Other: other, Score: result.Score, Reason: result.Reason,
+		GreenFlags: result.GreenFlags, RedFlags: result.RedFlags, Icebreakers: result.Icebreakers,
 	})
 }
 
@@ -354,7 +327,7 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 
 // GET /bigscreen
 func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "screen.html", map[string]any{"Palette": paletteHex()})
+	h.render(w, "screen.html", ScreenView{Palette: paletteHex()})
 }
 
 // GET /bigscreen/graph-data  — kept as fallback; big screen now uses /bigscreen/stream
@@ -374,12 +347,9 @@ func (h *Handler) DataIndex(w http.ResponseWriter, r *http.Request) {
 	event := h.db.EventState()
 	participants, _ := h.store.All()
 	activity, _ := h.db.GetRecentActivity(20)
-	h.render(w, "data.html", map[string]any{
-		"Event":        event,
-		"Participants": participants,
-		"Activity":     activity,
-		"Count":        len(participants),
-		"ReadyCount":   h.db.ReadyCount(),
+	h.render(w, "data.html", DataView{
+		Event: event, Participants: participants, Activity: activity,
+		Count: len(participants), ReadyCount: h.db.ReadyCount(),
 	})
 }
 
@@ -440,11 +410,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 // GET /admin
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 	event := h.db.EventState()
-	h.render(w, "admin.html", map[string]any{
-		"Event": event,
-		"Count": h.db.ParticipantCount(),
-		"Ready": h.db.ReadyCount(),
-	})
+	h.render(w, "admin.html", AdminView{Event: event, Count: h.db.ParticipantCount(), Ready: h.db.ReadyCount()})
 }
 
 // POST /admin/reveal: the admin reveals every Match once everybody is seated.
