@@ -43,7 +43,11 @@ func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *h
 // (never the process environment directly) and returns a configured LLM
 func SelectLLM(lookup func(string) string) (LLM, error)
 
-// Domain modules: upstream services are accepted through the LLM and GitHubAPI seams
+// Participant store: the only component that reads or writes Participant SQL
+func NewParticipantStore(db *DB) *ParticipantStore
+
+// Domain modules: upstream services are accepted through the LLM and GitHubAPI seams;
+// each builds its own Participant store from db rather than taking one as a parameter
 func NewInterview(db *DB, llm LLM) *Interview
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
 func NewRelationships(db *DB) *Relationships
@@ -90,6 +94,10 @@ func main() {
 #### Seams for upstream services
 
 `LLM` (one method: `Chat(system, user)`) and `GitHubAPI` (`FetchProfile`, `CheckMutualFollow`) are the only interfaces. Each has two adapters: the production client (`OpenAIClient`, `GitHubClient`) and an in-memory fake used by tests, so the test suite never reaches the real APIs. `OpenAIClient` is one OpenAI-compatible chat completions adapter, configured here for Mistral.
+
+#### The Participant store
+
+`ParticipantStore` (`participantstore.go`) is the only component that touches Participant SQL: a small, typed interface (`Get`, `All`, `AllByStep`, `GetByHandle`, `Create`, `Change`, `StartInterview`) instead of one method per column. Every domain module that changes a Participant — `Relationships`, `Onboarding`, `Interview`, `Matchmaking` — builds its own store from the `*DB` it already receives, the same way each builds nothing else: `NewParticipantStore(db)` is called once per constructor, not threaded through as its own parameter. `Handler` does the same for reads. `DB` keeps the schema, the LLM cache and non-Participant concerns (activity, Event State, the change feed); it no longer has per-column Participant setters (`SetProfile`, `SetPersona`, `AdvanceStep`, ... — removed, #53). This was an expand–migrate–contract refactor (#49–#53, see `docs/adr/` commit history): the store was added beside the old methods, every caller migrated across, and the old methods were deleted last.
 
 ## Consequences
 

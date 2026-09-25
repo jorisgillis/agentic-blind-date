@@ -56,12 +56,12 @@ type DB struct {
 	changes *changeFeed
 
 	// failWrite, set only by tests (faults_test.go), lets a test simulate a
-	// write failure without SQL triggers: it is asked to approve each kind
-	// of Participant write about to happen, tagged with what it is
-	// ("interests", "persona", "pair", "delete", ...); a non-nil result
-	// fails that write instead of performing it. Guarded by failWriteMu:
-	// onboarding runs writes on background goroutines, concurrently with
-	// the test that installs or restores this hook.
+	// failure without SQL triggers: it is asked to approve each database
+	// operation about to happen, tagged with what it is ("interests",
+	// "persona", "pair", "delete", "persona_lookup", ...); a non-nil result
+	// fails that operation instead of performing it. Guarded by
+	// failWriteMu: onboarding runs writes on background goroutines,
+	// concurrently with the test that installs or restores this hook.
 	failWriteMu sync.Mutex
 	failWrite   func(tag string) error
 
@@ -283,19 +283,25 @@ func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
 	}
 	return db.inTx(func(tx *sql.Tx) error {
 		// Persona colour and symbol come from the Persona module, given current use.
-		rows, err := tx.Query(`SELECT persona_color, persona_symbol, COUNT(*) FROM participants GROUP BY persona_color, persona_symbol`)
+		rows, err := tx.QueryContext(db.execCtx(), `SELECT persona_color, persona_symbol, COUNT(*) FROM participants GROUP BY persona_color, persona_symbol`)
 		if err != nil {
+			return err
+		}
+		if err := db.checkFault("persona_lookup"); err != nil {
+			rows.Close()
 			return err
 		}
 		uses := make(map[string]int)
 		for rows.Next() {
 			var c, s string
 			var n int
-			if rows.Scan(&c, &s, &n) == nil {
-				uses[c+"|"+s] = n
-			}
+			rows.Scan(&c, &s, &n) // rows.Err(), checked below, reports a row that fails to scan
+			uses[c+"|"+s] = n
 		}
 		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
 		color, symbol := nextLook(uses)
 
 		_, err = tx.Exec(
@@ -340,45 +346,6 @@ func (db *DB) GetParticipantByHandle(handle string) (*Participant, error) {
 	return scanParticipant(row)
 }
 
-func (db *DB) SetProfile(id string, profile *GitHubProfile) error {
-	encoded, _ := json.Marshal(profile) // plain data: cannot fail
-	return db.write("profile", `UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), id)
-}
-
-// SetQuestions saves the Participant's interview question set.
-func (db *DB) SetQuestions(id string, questions []Question) error {
-	encoded, _ := json.Marshal(questions) // plain data: cannot fail
-	return db.write("questions", `UPDATE participants SET questions = ? WHERE id = ?`, string(encoded), id)
-}
-
-// SetPersona saves the Participant's Persona name and tagline.
-func (db *DB) SetPersona(id, name, tagline string) error {
-	return db.write("persona", `UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`, name, tagline, id)
-}
-
-// write checks the test-only fault hook, then runs one statement and
-// announces the change when it succeeds.
-func (db *DB) write(tag, query string, args ...any) error {
-	if err := db.checkFault(tag); err != nil {
-		return err
-	}
-	_, err := db.db.Exec(query, args...)
-	if err == nil {
-		db.changed()
-	}
-	return err
-}
-
-func (db *DB) UpdateInterests(id string, interests map[string]interface{}) error {
-	encoded, _ := json.Marshal(interests) // plain data: cannot fail
-	return db.write("interests", `UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), id)
-}
-
-func (db *DB) UpdateAnswers(id string, answers map[string]string) error {
-	encoded, _ := json.Marshal(answers) // plain data: cannot fail
-	return db.write("answers", `UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), id)
-}
-
 func (db *DB) GetAllParticipants() ([]*Participant, error) {
 	return db.queryParticipants(`ORDER BY created_at`)
 }
@@ -415,18 +382,20 @@ func (db *DB) LogActivity(message string) {
 }
 
 func (db *DB) GetRecentActivity(limit int) ([]string, error) {
-	rows, err := db.db.Query(`SELECT message FROM activity_log ORDER BY created_at DESC LIMIT ?`, limit)
+	rows, err := db.db.QueryContext(db.execCtx(), `SELECT message FROM activity_log ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	if err := db.checkFault("activity_read"); err != nil {
+		return nil, err
+	}
 
 	var msgs []string
 	for rows.Next() {
 		var m string
-		if rows.Scan(&m) == nil { // a TEXT column always scans into a string
-			msgs = append(msgs, m)
-		}
+		rows.Scan(&m) // rows.Err(), returned below, reports a row that fails to scan
+		msgs = append(msgs, m)
 	}
 	return msgs, rows.Err()
 }

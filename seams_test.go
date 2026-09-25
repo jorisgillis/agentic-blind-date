@@ -223,7 +223,7 @@ func TestFinalSetup_SavingThePersonaKeepsAProfileChangeMadeMeanwhile(t *testing.
 		// While the LLM is thinking, someone else updates the profile.
 		p, _ := db.GetParticipant("p1")
 		p.Profile.Bio = "updated meanwhile"
-		db.SetProfile("p1", p.Profile)
+		NewParticipantStore(db).Change(ParticipantChange{ID: "p1", Profile: p.Profile})
 		return `{"name": "The Gopher", "tagline": "Ships"}`, nil
 	})
 	_, deps := newTestServer(t, llm, nil)

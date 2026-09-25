@@ -17,11 +17,11 @@ func seed(t *testing.T, db *DB, id, persona string, step Step) *Participant {
 		t.Fatal(err)
 	}
 	questions := []Question{{ID: "fixed_0", Text: "Tabs or spaces?"}}
-	db.SetProfile(id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
-	db.SetPersona(id, persona, "Ships things")
-	db.SetQuestions(id, questions)
+	setProfile(t, db, id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
+	setPersona(t, db, id, persona, "Ships things")
+	forceQuestions(db, id, questions)
 	if step != "interviewing" && step != "fetching_github" {
-		db.UpdateAnswers(id, map[string]string{"fixed_0": "Tabs"})
+		updateAnswers(t, db, id, map[string]string{"fixed_0": "Tabs"})
 	}
 	forceStep(db, id, step)
 	return reload(t, db, id)
@@ -31,7 +31,7 @@ func seed(t *testing.T, db *DB, id, persona string, step Step) *Participant {
 func awaitingPersona(t *testing.T, db *DB, id string) {
 	t.Helper()
 	db.CreateParticipant(id, id, id, true)
-	db.SetProfile(id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
+	setProfile(t, db, id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
 	forceStep(db, id, StepCreatingPersona)
 }
 
@@ -112,7 +112,7 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	seed(t, deps.db, "m2", "M2", "ready")
 	pair(t, deps.db, "m", "m2")
 	seed(t, deps.db, "done", "D", "interviewing")
-	deps.db.UpdateAnswers("done", map[string]string{"fixed_0": "Tabs"}) // every question answered
+	updateAnswers(t, deps.db, "done", map[string]string{"fixed_0": "Tabs"}) // every question answered
 
 	if body := readBody(t, get(t, srv, "/user/pipeline/f")); !strings.Contains(body, "Preparing your interview questions") {
 		t.Errorf("fetching_github: want the preparing state")
@@ -249,10 +249,10 @@ func TestExplore_ShowsPersonasOnlyNotHandlesOrNames(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
 	srv, deps := newTestServer(t, llm, nil)
 	deps.db.CreateParticipant("p1", "octocat-handle", "Real Name One", true)
-	deps.db.SetPersona("p1", "The Gopher", "Ships things")
+	setPersona(t, deps.db, "p1", "The Gopher", "Ships things")
 	forceStep(deps.db, "p1", StepReady)
 	deps.db.CreateParticipant("p2", "ferris-handle", "Real Name Two", true)
-	deps.db.SetPersona("p2", "The Crab", "Loves Rust")
+	setPersona(t, deps.db, "p2", "The Crab", "Loves Rust")
 	forceStep(deps.db, "p2", StepReady)
 
 	body := readBody(t, get(t, srv, "/user/explore/p1/p2"))
@@ -391,13 +391,13 @@ func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.Reveal()
 	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
-	deps.db.SetProfile("ada", &GitHubProfile{})
-	deps.db.SetPersona("ada", "The Analyst", "Computes")
+	setProfile(t, deps.db, "ada", &GitHubProfile{})
+	setPersona(t, deps.db, "ada", "The Analyst", "Computes")
 	forceStep(deps.db, "ada", "ready")
 	seed(t, deps.db, "octo", "The Gopher", "ready")
 	pair(t, deps.db, "ada", "octo")
 	deps.db.CreateParticipant("zed", "no-github-5678efgh", "Zed", false)
-	deps.db.SetQuestions("zed", ExtraQuestions)
+	forceQuestions(deps.db, "zed", ExtraQuestions)
 	forceStep(deps.db, "zed", "interviewing")
 
 	for _, path := range []string{"/user/onboard/zed", "/user/match/ada", "/user/match/octo", "/data", "/bigscreen/graph-data"} {

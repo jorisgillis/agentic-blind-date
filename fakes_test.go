@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -226,6 +227,39 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 func forceStep(db *DB, id string, step Step) {
 	db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
 	db.changed()
+}
+
+// forceQuestions sets a Participant's question set directly, bypassing the
+// store (test setup only, like forceStep): no production code sets
+// Questions on its own outside StartInterview's guarded, combined write.
+func forceQuestions(db *DB, id string, questions []Question) {
+	encoded, _ := json.Marshal(questions)
+	db.db.Exec(`UPDATE participants SET questions = ? WHERE id = ?`, string(encoded), id)
+	db.changed()
+}
+
+// setProfile, setPersona and updateAnswers are test-setup conveniences that
+// write through the Participant store, now that DB's own per-column setters
+// are gone (#53).
+func setProfile(t *testing.T, db *DB, id string, profile *GitHubProfile) {
+	t.Helper()
+	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Profile: profile}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setPersona(t *testing.T, db *DB, id, name, tagline string) {
+	t.Helper()
+	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Persona: &Persona{Name: name, Tagline: tagline}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func updateAnswers(t *testing.T, db *DB, id string, answers map[string]string) {
+	t.Helper()
+	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Answers: answers}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // eventually polls cond until it holds or the deadline passes.
