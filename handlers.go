@@ -72,6 +72,7 @@ type graphEdge struct {
 type Handler struct {
 	db          *DB
 	store       *ParticipantStore
+	activity    *Activity
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -98,7 +99,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{
-		db: db, store: NewParticipantStore(db),
+		db: db, store: NewParticipantStore(db), activity: NewActivity(db),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl,
 	}
@@ -578,7 +579,7 @@ func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "reveal failed: "+err.Error(), 500)
 		return
 	}
-	h.db.LogActivity("🎉 The matches are revealed!")
+	h.activity.Revealed()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -595,11 +596,11 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/rematch
 func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
-	h.db.LogActivity("🔄 Admin triggered full rematch")
+	h.activity.RematchTriggered()
 	go func() {
 		if err := h.matchmaking.Rematch(); err != nil {
 			log.Printf("Rematch error: %v", err)
-			h.db.LogActivity("⚠️ Rematch failed: " + err.Error())
+			h.activity.RematchFailed(err)
 		}
 	}()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)

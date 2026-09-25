@@ -22,9 +22,10 @@ type matchResult struct {
 // compatibility assessment (prompt, parsing, validation) and the two-level
 // cache of assessments from ADR-0002.
 type Matcher struct {
-	db     *DB
-	github GitHubAPI
-	llm    LLM
+	db       *DB
+	activity *Activity
+	github   GitHubAPI
+	llm      LLM
 
 	mu    sync.Mutex
 	cache map[string]*matchResult // in-memory level; the llm_cache table is the persistent level
@@ -33,10 +34,11 @@ type Matcher struct {
 // NewMatcher creates a new Matcher instance.
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher {
 	return &Matcher{
-		db:     db,
-		github: github,
-		llm:    llm,
-		cache:  make(map[string]*matchResult),
+		db:       db,
+		activity: NewActivity(db),
+		github:   github,
+		llm:      llm,
+		cache:    make(map[string]*matchResult),
 	}
 }
 
@@ -268,8 +270,9 @@ func (m *Matcher) PairScore(a, b *Participant) int {
 
 // Match is a Pair chosen by the Matcher, with its LLM assessment.
 type Match struct {
-	A, B   *Participant
-	Result *matchResult
+	A, B    *Participant
+	Result  *matchResult
+	Genuine bool // false when Result is the default fallback after a failed LLM assessment (#54)
 }
 
 // MatchPool pairs the Participants using the three-phase algorithm from ADR-0001:
@@ -284,7 +287,7 @@ func (m *Matcher) MatchPool(participants []*Participant) []Match {
 		return nil
 	}
 	candidates := m.candidatePairs(participants)
-	m.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidate pairs...", len(candidates)))
+	m.activity.EvaluatingCandidates(len(candidates))
 	scored := byScoreDesc(m.assessAll(candidates))
 
 	var matches []Match
@@ -362,23 +365,27 @@ func (m *Matcher) assessAll(pairs [][2]*Participant) []Match {
 		go func() {
 			defer wg.Done()
 			sem <- struct{}{}
-			result := m.assessOrDefault(pair[0], pair[1])
+			result, genuine := m.assessOrDefault(pair[0], pair[1])
 			<-sem
-			out[i] = Match{A: pair[0], B: pair[1], Result: result}
-			m.db.LogActivity(fmt.Sprintf("🤝 %s ↔ %s: %d%%", pair[0].PersonaName, pair[1].PersonaName, result.Score))
+			out[i] = Match{A: pair[0], B: pair[1], Result: result, Genuine: genuine}
+			if genuine {
+				m.activity.Assessed(pair[0].PersonaName, pair[1].PersonaName, result.Score)
+			}
 		}()
 	}
 	wg.Wait()
 	return out
 }
 
-func (m *Matcher) assessOrDefault(a, b *Participant) *matchResult {
+// assessOrDefault scores a Pair, or falls back to a default assessment when
+// the LLM call fails; genuine is false in that case (#54).
+func (m *Matcher) assessOrDefault(a, b *Participant) (result *matchResult, genuine bool) {
 	result, err := m.ScorePair(a, b)
 	if err != nil {
 		log.Printf("Match scoring error for %s/%s: %v", a.GitHubHandle, b.GitHubHandle, err)
-		return defaultMatchResult()
+		return defaultMatchResult(), false
 	}
-	return result
+	return result, true
 }
 
 // topCandidates returns up to 5 Participants from all with the highest PairScore against p.

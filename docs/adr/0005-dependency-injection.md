@@ -46,8 +46,11 @@ func SelectLLM(lookup func(string) string) (LLM, error)
 // Participant store: the only component other modules use to read or write Participants
 func NewParticipantStore(db *DB) *ParticipantStore
 
+// Activity: the only component that composes an activity ticker line (#54)
+func NewActivity(db *DB) *Activity
+
 // Domain modules: upstream services are accepted through the LLM and GitHubAPI seams;
-// each builds its own Participant store from db rather than taking one as a parameter
+// each builds its own Participant store and Activity from db rather than taking them as parameters
 func NewInterview(db *DB, llm LLM) *Interview
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
 func NewRelationships(db *DB) *Relationships

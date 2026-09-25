@@ -5,6 +5,7 @@ import (
 	"sync"
 )
 
+
 // defaultMaxChain bounds a chain of take-overs. Take-overs usually end
 // quickly because they're cached and each one raises the taken Participant's
 // score, but a Reset clears the cache and LLM scores aren't perfectly
@@ -16,8 +17,8 @@ const defaultMaxChain = 100
 // admin's Rematch, and Continuous Matching for a Participant who just became
 // ready. The Matcher decides who fits; the Relationship module records it.
 type Matchmaking struct {
-	db           *DB
 	participants *ParticipantStore
+	activity     *Activity
 	matcher      *Matcher
 	relations    *Relationships
 	maxChain     int        // a field, not a const, so a test can shrink it
@@ -27,7 +28,7 @@ type Matchmaking struct {
 // NewMatchmaking creates the Matchmaking module.
 func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking {
 	return &Matchmaking{
-		db: db, participants: NewParticipantStore(db),
+		participants: NewParticipantStore(db), activity: NewActivity(db),
 		matcher: matcher, relations: relations, maxChain: defaultMaxChain,
 	}
 }
@@ -48,7 +49,7 @@ func (mm *Matchmaking) Rematch() error {
 	if err := mm.relations.UnpairAll(); err != nil {
 		return err
 	}
-	mm.db.LogActivity("🔮 The matchmaker agents are at work...")
+	mm.activity.MatchmakingStarted()
 
 	for _, m := range mm.matcher.MatchPool(participants) {
 		if _, err := mm.store(m); err != nil {
@@ -56,7 +57,7 @@ func (mm *Matchmaking) Rematch() error {
 		}
 	}
 
-	mm.db.LogActivity("💞 Rematch complete")
+	mm.activity.RematchComplete()
 	return nil
 }
 
@@ -111,11 +112,11 @@ func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []s
 	if newcomer == nil {
 		return nil, nil, nil
 	}
-	mm.db.LogActivity(fmt.Sprintf("🔮 Matching %s against existing pool...", newcomer.PersonaName))
+	mm.activity.MatchingAgainstPool(newcomer.PersonaName)
 
 	m := mm.matcher.MatchNewcomer(newcomer, others)
 	if m == nil {
-		mm.db.LogActivity(fmt.Sprintf("⏳ %s is ready but no match available yet", newcomer.PersonaName))
+		mm.activity.NoMatchYet(newcomer.PersonaName)
 		return nil, nil, nil
 	}
 	displaced, err := mm.store(*m)
@@ -123,7 +124,7 @@ func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []s
 		return nil, nil, err
 	}
 	if len(displaced) > 0 {
-		mm.db.LogActivity(fmt.Sprintf("🔄 %s took over %s's previous match", newcomer.PersonaName, m.B.PersonaName))
+		mm.activity.TookOver(newcomer.PersonaName, m.B.PersonaName)
 	}
 	return m, displaced, nil
 }
@@ -135,6 +136,6 @@ func (mm *Matchmaking) store(m Match) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("storing match %s ↔ %s: %w", m.A.ID, m.B.ID, err)
 	}
-	mm.db.LogActivity(fmt.Sprintf("💘 %s ↔ %s (%d%%)", m.A.PersonaName, m.B.PersonaName, m.Result.Score))
+	mm.activity.Matched(m.A.PersonaName, m.B.PersonaName, m.Result.Score, m.Genuine)
 	return displaced, nil
 }

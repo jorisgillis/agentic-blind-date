@@ -382,7 +382,10 @@ func (db *DB) LogActivity(message string) {
 }
 
 func (db *DB) GetRecentActivity(limit int) ([]string, error) {
-	rows, err := db.db.QueryContext(db.execCtx(), `SELECT message FROM activity_log ORDER BY created_at DESC LIMIT ?`, limit)
+	// Ordered by id, not created_at: created_at has second resolution, so
+	// bursts within the same second would otherwise come back in an
+	// arbitrary order (#54).
+	rows, err := db.db.QueryContext(db.execCtx(), `SELECT message FROM activity_log ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -151,15 +151,17 @@ func TestActivityLog(t *testing.T) {
 		t.Errorf("expected 2 messages (limit), got %d", len(msgs))
 	}
 
-	// All three accessible with limit=10
+	// All three accessible with limit=10, latest first. This must hold even
+	// when every insert lands in the same wall-clock second (#54): ordering
+	// by id, not the second-resolution created_at, is what makes it exact.
 	all, _ := db.GetRecentActivity(10)
-	if len(all) != 3 {
-		t.Errorf("expected 3 total messages, got %d", len(all))
+	want := []string{"event three", "event two", "event one"}
+	if len(all) != len(want) {
+		t.Fatalf("expected %d total messages, got %d", len(want), len(all))
 	}
-	want := map[string]bool{"event one": true, "event two": true, "event three": true}
-	for _, m := range all {
-		if !want[m] {
-			t.Errorf("unexpected message: %s", m)
+	for i, m := range all {
+		if m != want[i] {
+			t.Errorf("message %d: want %q, got %q (%v)", i, want[i], m, all)
 		}
 	}
 }

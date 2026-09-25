@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/google/uuid"
@@ -12,8 +11,8 @@ import (
 // creates the Persona, computes Interests, makes them ready and hands them to
 // Continuous Matching. Preparation and finishing run in the background.
 type Onboarding struct {
-	db          *DB // activity only; every Participant read or write goes through store
 	store       *ParticipantStore
+	activity    *Activity
 	github      GitHubAPI
 	interview   *Interview
 	personas    *Personas
@@ -23,7 +22,7 @@ type Onboarding struct {
 // NewOnboarding creates the Onboarding module.
 func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding {
 	return &Onboarding{
-		db: db, store: NewParticipantStore(db),
+		store: NewParticipantStore(db), activity: NewActivity(db),
 		github: github, interview: interview, personas: personas, matchmaking: matchmaking,
 	}
 }
@@ -72,7 +71,7 @@ func (o *Onboarding) prepare(participantID string) {
 	if p.HasGitHub {
 		handle := p.GitHubHandle
 		profile = &GitHubProfile{Login: handle, Name: handle}
-		o.db.LogActivity("🔍 Fetching a GitHub profile...")
+		o.activity.FetchingGitHubProfile()
 		fetched, err := o.github.FetchProfile(handle)
 		if err != nil {
 			log.Printf("Failed to fetch GitHub profile for @%s: %v", handle, err)
@@ -80,15 +79,15 @@ func (o *Onboarding) prepare(participantID string) {
 			profile = fetched
 		}
 	} else {
-		o.db.LogActivity("📝 Processing non-GitHub user...")
+		o.activity.ProcessingNonGitHubUser()
 	}
-	o.db.LogActivity("📝 Preparing interview questions...")
+	o.activity.PreparingQuestions()
 
 	if err := o.interview.Start(p, profile); err != nil {
 		log.Printf("Starting interview for %s failed: %v", participantID, err)
 		return
 	}
-	o.db.LogActivity("✅ Ready for the interview!")
+	o.activity.ReadyForInterview()
 }
 
 // Resume restarts onboarding work that was interrupted, for example by a
@@ -127,7 +126,7 @@ func (o *Onboarding) finish(p *Participant) {
 // and hands them to Continuous Matching. Failures to save the Persona or
 // Interests are logged rather than leaving the Participant stuck.
 func (o *Onboarding) becomeReady(p *Participant) {
-	o.db.LogActivity("🎭 Crafting a new persona...")
+	o.activity.CraftingPersona()
 	if p.Profile == nil {
 		p.Profile = &GitHubProfile{}
 	}
@@ -142,7 +141,7 @@ func (o *Onboarding) becomeReady(p *Participant) {
 		log.Printf("Onboarding: %v", err)
 		return
 	}
-	o.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))
+	o.activity.ParticipantReady(persona.Name)
 
 	if err := o.matchmaking.MatchNewcomer(p); err != nil {
 		log.Printf("Continuous matching for %s failed: %v", p.ID, err)
