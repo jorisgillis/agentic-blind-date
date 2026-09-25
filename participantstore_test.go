@@ -316,62 +316,31 @@ func TestParticipantStore_StartInterviewReportsAFailure(t *testing.T) {
 	}
 }
 
-func TestParticipantStore_ChangeDeleteReportsAGenuineDatabaseFailure(t *testing.T) {
-	db := newTestDB(t)
-	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
-	breakOnFault(t, db, "delete")
-
-	if err := store.Change(ParticipantChange{ID: "p", Delete: true}); err == nil {
-		t.Error("want a failure")
+func TestParticipantStore_ChangeReportsAGenuineDatabaseFailure(t *testing.T) {
+	cases := []struct {
+		name   string
+		tag    string
+		change ParticipantChange
+	}{
+		{"delete", "delete", ParticipantChange{Delete: true}},
+		{"matched with", "pair", ParticipantChange{MatchedWith: strPtr("q")}},
+		{"profile", "profile", ParticipantChange{Profile: &GitHubProfile{}}},
+		{"answers", "answers", ParticipantChange{Answers: map[string]string{"a": "b"}}},
+		{"advance step", "pipeline_step", ParticipantChange{PipelineStep: stepPtr(StepInterviewing)}},
 	}
-}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			db := newTestDB(t)
+			store := NewParticipantStore(db)
+			db.CreateParticipant("p", "p", "P", true)
+			breakOnFault(t, db, c.tag)
 
-func TestParticipantStore_ChangeMatchedWithReportsAGenuineDatabaseFailure(t *testing.T) {
-	db := newTestDB(t)
-	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
-	breakOnFault(t, db, "pair")
-
-	err := store.Change(ParticipantChange{ID: "p", MatchedWith: strPtr("q")})
-
-	if err == nil {
-		t.Error("want a failure")
-	}
-}
-
-func TestParticipantStore_ChangeProfileReportsAGenuineDatabaseFailure(t *testing.T) {
-	db := newTestDB(t)
-	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
-	breakOnFault(t, db, "profile")
-
-	if err := store.Change(ParticipantChange{ID: "p", Profile: &GitHubProfile{}}); err == nil {
-		t.Error("want a failure")
-	}
-}
-
-func TestParticipantStore_ChangeAnswersReportsAGenuineDatabaseFailure(t *testing.T) {
-	db := newTestDB(t)
-	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
-	breakOnFault(t, db, "answers")
-
-	if err := store.Change(ParticipantChange{ID: "p", Answers: map[string]string{"a": "b"}}); err == nil {
-		t.Error("want a failure")
-	}
-}
-
-func TestParticipantStore_ChangeAdvanceStepReportsAGenuineDatabaseFailure(t *testing.T) {
-	db := newTestDB(t)
-	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
-	breakOnFault(t, db, "pipeline_step")
-
-	err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepInterviewing)})
-
-	if err == nil {
-		t.Error("want a failure")
+			change := c.change
+			change.ID = "p"
+			if err := store.Change(change); err == nil {
+				t.Error("want a failure")
+			}
+		})
 	}
 }
 
