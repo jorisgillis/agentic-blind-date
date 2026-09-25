@@ -95,10 +95,10 @@ func TestRematch_KeepsTheEventState(t *testing.T) {
 func TestReveal_TheBigScreenSendsNoIdentitiesBeforeTheReveal(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.CreateParticipant("g1", "octocat", "Octo Cat", true)
-	deps.db.SetPersona("g1", "The Gopher", "")
+	setPersona(t, deps.db, "g1", "The Gopher", "")
 	forceStep(deps.db, "g1", StepReady)
 	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
-	deps.db.SetPersona("ada", "The Analyst", "")
+	setPersona(t, deps.db, "ada", "The Analyst", "")
 	forceStep(deps.db, "ada", StepReady)
 
 	for _, path := range []string{"/bigscreen/graph-data", "/bigscreen/state"} {

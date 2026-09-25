@@ -92,8 +92,8 @@ func TestOnboarding_SubmittingTheLastAnswerTwiceCreatesOnePersona(t *testing.T) 
 	llm := newFakeLLM().on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`)
 	o, db := onboardingFor(t, llm, newFakeGitHub())
 	db.CreateParticipant("p", "p", "P", true)
-	db.SetProfile("p", &GitHubProfile{})
-	db.SetQuestions("p", []Question{{ID: "q1", Text: "Last one?"}})
+	setProfile(t, db, "p", &GitHubProfile{})
+	forceQuestions(db, "p", []Question{{ID: "q1", Text: "Last one?"}})
 	forceStep(db, "p", StepInterviewing)
 
 	var wg sync.WaitGroup

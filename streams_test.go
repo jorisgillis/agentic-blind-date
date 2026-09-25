@@ -87,7 +87,7 @@ func sentNothingNew(t *testing.T, s *liveStream, checks int, before, what string
 func TestPipelineStream_RefreshesWhenTheInterviewStartsAndRedirectsWhenDone(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.CreateParticipant("p", "p", "P", true)
-	deps.db.SetQuestions("p", []Question{{ID: "q1", Text: "Tabs?"}})
+	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
 
 	s := open(t, srv, "/user/pipeline-stream/p")
 	sentNothingNew(t, s, 1, "", "while preparing")
@@ -99,7 +99,7 @@ func TestPipelineStream_RefreshesWhenTheInterviewStartsAndRedirectsWhenDone(t *t
 	deps.db.LogActivity("someone else did something")
 	sentNothingNew(t, s, 3, before, "a change that does not concern this Participant")
 
-	deps.db.UpdateAnswers("p", map[string]string{"q1": "yes"})
+	updateAnswers(t, deps.db, "p", map[string]string{"q1": "yes"})
 	waitFor(t, s, "event: redirect\ndata: /user/wait/p")
 	eventually(t, "stream ends after redirecting", s.ended)
 }

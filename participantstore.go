@@ -55,6 +55,16 @@ func (s *ParticipantStore) All() ([]*Participant, error) {
 	return p, nil
 }
 
+// AllByStep reads every Participant at the given Pipeline Step, in the order
+// they registered.
+func (s *ParticipantStore) AllByStep(step Step) ([]*Participant, error) {
+	p, err := s.db.GetAllByStep(step)
+	if err != nil {
+		return nil, fmt.Errorf("participant store: %w", err)
+	}
+	return p, nil
+}
+
 // GetByHandle reads one Participant by their GitHub handle.
 func (s *ParticipantStore) GetByHandle(handle string) (*Participant, error) {
 	p, err := s.db.GetParticipantByHandle(handle)

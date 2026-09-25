@@ -61,9 +61,11 @@ func breakOnFault(t *testing.T, db *DB, tag string) {
 func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
 	db := newTestDB(t)
 	db.CreateParticipant("p", "p", "P", true)
+	store := NewParticipantStore(db)
 
 	restore := failWrites(t, db)
-	if err := db.SetPersona("p", "The Gopher", ""); err == nil || err.Error() != "injected write failure" {
+	err := store.Change(ParticipantChange{ID: "p", Persona: &Persona{Name: "The Gopher"}})
+	if err == nil || err.Error() != "injected write failure" {
 		t.Fatalf("want an injected failure, got %v", err)
 	}
 	if err := db.CreateParticipant("q", "q", "Q", true); err == nil {
@@ -71,7 +73,7 @@ func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
 	}
 
 	restore()
-	if err := db.SetPersona("p", "The Gopher", ""); err != nil {
+	if err := store.Change(ParticipantChange{ID: "p", Persona: &Persona{Name: "The Gopher"}}); err != nil {
 		t.Errorf("after restoring, writes succeed: %v", err)
 	}
 	if got := reload(t, db, "p").PersonaName; got != "The Gopher" {
@@ -82,12 +84,13 @@ func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
 func TestFailWrites_CanTargetATag(t *testing.T) {
 	db := newTestDB(t)
 	db.CreateParticipant("p", "p", "P", true)
+	store := NewParticipantStore(db)
 	failWrites(t, db, "persona")
 
-	if err := db.SetPersona("p", "The Gopher", ""); err == nil {
+	if err := store.Change(ParticipantChange{ID: "p", Persona: &Persona{Name: "The Gopher"}}); err == nil {
 		t.Error("the targeted tag should fail")
 	}
-	if err := db.SetQuestions("p", nil); err != nil {
+	if err := store.Change(ParticipantChange{ID: "p", Interests: &Interests{Languages: []string{"Go"}}}); err != nil {
 		t.Errorf("other tags stay writable: %v", err)
 	}
 }

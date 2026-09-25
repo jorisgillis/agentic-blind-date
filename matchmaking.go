@@ -16,16 +16,20 @@ const defaultMaxChain = 100
 // admin's Rematch, and Continuous Matching for a Participant who just became
 // ready. The Matcher decides who fits; the Relationship module records it.
 type Matchmaking struct {
-	db        *DB
-	matcher   *Matcher
-	relations *Relationships
-	maxChain  int        // a field, not a const, so a test can shrink it
-	mu        sync.Mutex // one matching operation at a time
+	db           *DB
+	participants *ParticipantStore
+	matcher      *Matcher
+	relations    *Relationships
+	maxChain     int        // a field, not a const, so a test can shrink it
+	mu           sync.Mutex // one matching operation at a time
 }
 
 // NewMatchmaking creates the Matchmaking module.
 func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking {
-	return &Matchmaking{db: db, matcher: matcher, relations: relations, maxChain: defaultMaxChain}
+	return &Matchmaking{
+		db: db, participants: NewParticipantStore(db),
+		matcher: matcher, relations: relations, maxChain: defaultMaxChain,
+	}
 }
 
 // Rematch breaks every Match and pairs all ready Participants again, as one
@@ -34,7 +38,7 @@ func (mm *Matchmaking) Rematch() error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
-	participants, err := mm.db.GetAllByStep(StepReady)
+	participants, err := mm.participants.AllByStep(StepReady)
 	if err != nil {
 		return err
 	}
@@ -89,7 +93,7 @@ func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 // matchOne finds a partner for one Participant among the ready Participants
 // not excluded, stores the Match, and returns it with whoever it displaced.
 func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []string, error) {
-	all, err := mm.db.GetAllParticipants()
+	all, err := mm.participants.All()
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetAllParticipants: %w", err)
 	}

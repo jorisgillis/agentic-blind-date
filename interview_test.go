@@ -17,9 +17,7 @@ func participantInInterview(t *testing.T, db *DB, questions []Question) *Partici
 	if err := db.CreateParticipant("p-1", "someone", "Someone", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetQuestions("p-1", questions); err != nil {
-		t.Fatal(err)
-	}
+	forceQuestions(db, "p-1", questions)
 	forceStep(db, "p-1", "interviewing")
 	p, err := db.GetParticipant("p-1")
 	if err != nil {

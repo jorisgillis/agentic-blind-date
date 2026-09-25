@@ -231,8 +231,8 @@ func TestMatchNewcomer_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *
 	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), NewRelationships(db))
 	for _, id := range []string{"A", "B", "N"} {
 		db.CreateParticipant(id, id, id, true)
-		db.SetProfile(id, &GitHubProfile{Login: id})
-		db.SetPersona(id, id, "")
+		setProfile(t, db, id, &GitHubProfile{Login: id})
+		setPersona(t, db, id, id, "")
 		forceStep(db, id, "ready")
 	}
 	NewRelationships(db).Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40, Reason: "meh"}})

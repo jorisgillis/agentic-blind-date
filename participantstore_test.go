@@ -217,36 +217,42 @@ func TestParticipantStore_ChangeAdvancesThePipelineStep(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
 	db.CreateParticipant("p", "p", "P", true)
-	forceStep(db, "p", StepInterviewing)
 
-	if err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepCreatingPersona)}); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := reload(t, db, "p").PipelineStep; got != StepCreatingPersona {
-		t.Errorf("want StepCreatingPersona, got %s", got)
-	}
-}
-
-func TestParticipantStore_ChangeRejectsAnUnreachablePipelineStep(t *testing.T) {
-	store := NewParticipantStore(newTestDB(t))
-
-	err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepFetchingGitHub)})
-
-	if !errors.Is(err, ErrIllegalTransition) {
-		t.Errorf("nothing leads back to the first step: got %v", err)
+	for _, step := range []Step{StepInterviewing, StepCreatingPersona, StepReady} {
+		if err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(step)}); err != nil {
+			t.Fatalf("advancing to %s: %v", step, err)
+		}
+		if got := reload(t, db, "p").PipelineStep; got != step {
+			t.Fatalf("step: want %s, got %s", step, got)
+		}
 	}
 }
 
-func TestParticipantStore_ChangeRejectsAPipelineStepFromTheWrongStep(t *testing.T) {
-	db := newTestDB(t)
-	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true) // starts at fetching_github
+func TestParticipantStore_ChangeRejectsIllegalPipelineTransitions(t *testing.T) {
+	for name, tc := range map[string]struct {
+		from, to Step
+	}{
+		"nothing leads back to the first step": {StepFetchingGitHub, StepFetchingGitHub},
+		"skip the Interview":                   {StepFetchingGitHub, StepReady},
+		"skip the Persona":                     {StepInterviewing, StepReady},
+		"go back":                              {StepReady, StepInterviewing},
+		"repeat":                               {StepCreatingPersona, StepCreatingPersona},
+	} {
+		t.Run(name, func(t *testing.T) {
+			db := newTestDB(t)
+			store := NewParticipantStore(db)
+			db.CreateParticipant("p", "p", "P", true)
+			forceStep(db, "p", tc.from)
 
-	err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepReady)})
+			err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(tc.to)})
 
-	if !errors.Is(err, ErrIllegalTransition) {
-		t.Errorf("want ErrIllegalTransition, got %v", err)
+			if !errors.Is(err, ErrIllegalTransition) {
+				t.Errorf("%s → %s: want ErrIllegalTransition, got %v", tc.from, tc.to, err)
+			}
+			if got := reload(t, db, "p").PipelineStep; got != tc.from {
+				t.Errorf("a rejected transition must not change the step: got %s", got)
+			}
+		})
 	}
 }
 

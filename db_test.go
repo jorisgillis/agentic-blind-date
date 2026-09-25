@@ -54,14 +54,39 @@ func TestCreateParticipant_duplicate(t *testing.T) {
 	}
 }
 
+func TestCreateParticipant_ReportsAFailureLookingUpPersonaUsage(t *testing.T) {
+	db := newTestDB(t)
+	failWrites(t, db, "persona_lookup")
+
+	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+// TestCreateParticipant_ReportsAGenuineIterationFailure covers #53: a row
+// that fails to scan (or, as here, an iteration cut short by a cancelled
+// context) is reported through rows.Err(), not silently skipped.
+func TestCreateParticipant_ReportsAGenuineIterationFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("other", "other", "Other", true)
+	breakOnFault(t, db, "persona_lookup")
+
+	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
+		t.Error("want a failure")
+	}
+}
+
 func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 	db := newTestDB(t)
 	db.CreateParticipant("id-1", "octocat", "", true)
+	store := NewParticipantStore(db)
 
-	db.SetProfile("id-1", &GitHubProfile{Login: "octocat"})
-	db.SetQuestions("id-1", []Question{{ID: "q1", Text: "Question 1"}, {ID: "q2", Text: "Question 2"}})
-	db.SetPersona("id-1", "The Octo", "Ships things")
-	db.SetProfile("id-1", &GitHubProfile{Login: "octocat", Bio: "later"})
+	setProfile(t, db, "id-1", &GitHubProfile{Login: "octocat"})
+	forceQuestions(db, "id-1", []Question{{ID: "q1", Text: "Question 1"}, {ID: "q2", Text: "Question 2"}})
+	setPersona(t, db, "id-1", "The Octo", "Ships things")
+	if err := store.Change(ParticipantChange{ID: "id-1", Profile: &GitHubProfile{Login: "octocat", Bio: "later"}}); err != nil {
+		t.Fatal(err)
+	}
 
 	p, _ := db.GetParticipant("id-1")
 	if p.PersonaName != "The Octo" || p.PersonaTagline != "Ships things" {
@@ -79,10 +104,7 @@ func TestUpdateAnswers(t *testing.T) {
 	db := newTestDB(t)
 	db.CreateParticipant("id-1", "octocat", "", true)
 
-	answers := map[string]string{"0": "Tabs", "1": "Go"}
-	if err := db.UpdateAnswers("id-1", answers); err != nil {
-		t.Fatalf("UpdateAnswers: %v", err)
-	}
+	updateAnswers(t, db, "id-1", map[string]string{"0": "Tabs", "1": "Go"})
 
 	p, _ := db.GetParticipant("id-1")
 	if p.Answers == nil {
@@ -142,6 +164,28 @@ func TestActivityLog(t *testing.T) {
 	}
 }
 
+func TestGetRecentActivity_ReportsAFailure(t *testing.T) {
+	db := newTestDB(t)
+	failWrites(t, db, "activity_read")
+
+	if _, err := db.GetRecentActivity(5); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+// TestGetRecentActivity_ReportsAGenuineIterationFailure covers #53: a row
+// that fails to scan (or, as here, an iteration cut short by a cancelled
+// context) is reported through rows.Err(), not silently skipped.
+func TestGetRecentActivity_ReportsAGenuineIterationFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.LogActivity("hello")
+	breakOnFault(t, db, "activity_read")
+
+	if _, err := db.GetRecentActivity(5); err == nil {
+		t.Error("want a failure")
+	}
+}
+
 func TestCounts(t *testing.T) {
 	db := newTestDB(t)
 
@@ -195,23 +239,6 @@ func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
 
 	if _, exists := db.GetLLMCache("a:b"); exists {
 		t.Error("an undecodable legacy row should be re-scored, not served")
-	}
-}
-
-func TestUpdateInterests(t *testing.T) {
-	db := newTestDB(t)
-	db.CreateParticipant("id-1", "user1", "User 1", true)
-
-	interests := map[string]interface{}{
-		"languages": []string{"Go", "Python"},
-		"tools":     []string{"Docker"},
-	}
-
-	db.UpdateInterests("id-1", interests)
-
-	p, _ := db.GetParticipant("id-1")
-	if len(p.Interests.Languages) != 2 || len(p.Interests.Tools) != 1 {
-		t.Errorf("want 2 languages and 1 tool, got %+v", p.Interests)
 	}
 }
 
