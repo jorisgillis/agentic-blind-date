@@ -310,6 +310,76 @@ func TestParticipantStore_StartInterviewReportsAFailure(t *testing.T) {
 	}
 }
 
+func TestParticipantStore_ChangeDeleteReportsAGenuineDatabaseFailure(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "delete")
+
+	if err := store.Change(ParticipantChange{ID: "p", Delete: true}); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestParticipantStore_ChangeMatchedWithReportsAGenuineDatabaseFailure(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "pair")
+
+	err := store.Change(ParticipantChange{ID: "p", MatchedWith: strPtr("q")})
+
+	if err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestParticipantStore_ChangeProfileReportsAGenuineDatabaseFailure(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "profile")
+
+	if err := store.Change(ParticipantChange{ID: "p", Profile: &GitHubProfile{}}); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestParticipantStore_ChangeAnswersReportsAGenuineDatabaseFailure(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "answers")
+
+	if err := store.Change(ParticipantChange{ID: "p", Answers: map[string]string{"a": "b"}}); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestParticipantStore_ChangeAdvanceStepReportsAGenuineDatabaseFailure(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "pipeline_step")
+
+	err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepInterviewing)})
+
+	if err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestParticipantStore_StartInterviewReportsAGenuineDatabaseFailure(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "start_interview")
+
+	if err := store.StartInterview("p", &GitHubProfile{}, nil); err == nil {
+		t.Error("want a failure")
+	}
+}
+
 func TestDecodeMatchResult_AnyUndecodableListInvalidatesTheWholeAssessment(t *testing.T) {
 	if _, err := decodeMatchResult(1, "x", "not json", "[]", "[]"); err == nil {
 		t.Error("want an error when a list cannot be decoded")

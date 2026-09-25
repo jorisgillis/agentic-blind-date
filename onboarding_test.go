@@ -141,14 +141,6 @@ func TestOnboarding_ResumeFinishesAPersonaThatWasInterrupted(t *testing.T) {
 	}
 }
 
-// awaitingPersona puts a Participant at the persona step, as if their Interview just completed.
-func awaitingPersona(t *testing.T, db *DB, id string) {
-	t.Helper()
-	db.CreateParticipant(id, id, id, true)
-	db.SetProfile(id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
-	forceStep(db, id, StepCreatingPersona)
-}
-
 func TestOnboarding_RegistrationThatCannotBeSavedIsAnError(t *testing.T) {
 	o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
 	failWrites(t, db)
@@ -163,7 +155,7 @@ func TestOnboarding_AFailedInterviewStartWritesNothing(t *testing.T) {
 	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`)
 	o, db := onboardingFor(t, llm, gh)
 	db.CreateParticipant("p", "octo", "Octo", true)
-	restore := failWrites(t, db, "questions")
+	restore := failWrites(t, db, "start_interview")
 
 	o.Resume()
 	eventually(t, "the interview start to be attempted", func() bool { return llm.callsMatching("interviewer") == 1 })
@@ -179,11 +171,11 @@ func TestOnboarding_AFailedInterviewStartWritesNothing(t *testing.T) {
 }
 
 func TestOnboarding_AParticipantBecomesReadyEvenIfPersonaOrInterestsCannotBeSaved(t *testing.T) {
-	for _, column := range []string{"persona_name", "interests"} {
-		t.Run(column, func(t *testing.T) {
+	for _, tag := range []string{"persona", "interests"} {
+		t.Run(tag, func(t *testing.T) {
 			o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
 			awaitingPersona(t, db, "p")
-			failWrites(t, db, column)
+			failWrites(t, db, tag)
 
 			o.Resume()
 
@@ -261,7 +253,7 @@ func TestOnboarding_AFailedMatchLeavesTheParticipantReadyAndUnmatched(t *testing
 	o, db := onboardingFor(t, llm, newFakeGitHub())
 	awaitingPersona(t, db, "p")
 	seed(t, db, "q", "Q", "ready")
-	failWrites(t, db, "matched_with")
+	failWrites(t, db, "pair")
 
 	o.Resume()
 

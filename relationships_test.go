@@ -288,21 +288,21 @@ func TestRelationships_FailedChangesLeaveEverythingAsItWas(t *testing.T) {
 		fault  string
 		change func(rel *Relationships, db *DB) error
 	}{
-		"pair: breaking the old Match fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+		"pair: breaking the old Match fails": {"unpair", func(rel *Relationships, db *DB) error {
 			_, err := rel.Pair(Match{A: reload(t, db, "N"), B: reload(t, db, "A"), Result: assessment(70)})
 			return err
 		}},
-		"pair: recording the new Match fails": {failPairing, func(rel *Relationships, db *DB) error {
+		"pair: recording the new Match fails": {"pair", func(rel *Relationships, db *DB) error {
 			_, err := rel.Pair(Match{A: reload(t, db, "N"), B: reload(t, db, "A"), Result: assessment(70)})
 			return err
 		}},
-		"remove: freeing the partner fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+		"remove: freeing the partner fails": {"unpair", func(rel *Relationships, db *DB) error {
 			return rel.Remove("A")
 		}},
-		"remove: deleting fails": {"DELETE", func(rel *Relationships, db *DB) error {
+		"remove: deleting fails": {"delete", func(rel *Relationships, db *DB) error {
 			return rel.Remove("A")
 		}},
-		"unpair all fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+		"unpair all fails": {"unpair", func(rel *Relationships, db *DB) error {
 			return rel.UnpairAll()
 		}},
 	} {
@@ -312,7 +312,7 @@ func TestRelationships_FailedChangesLeaveEverythingAsItWas(t *testing.T) {
 			rel := NewRelationships(db)
 			rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
 			before := snapshot(t, db)
-			failOn(t, db, tc.fault)
+			failWrites(t, db, tc.fault)
 
 			if err := tc.change(rel, db); err == nil {
 				t.Fatal("want the failure reported")

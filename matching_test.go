@@ -7,54 +7,6 @@ import (
 	"testing"
 )
 
-func makeParticipant(id string, langs []string, answers map[string]string) *Participant {
-	return &Participant{
-		ID:           id,
-		GitHubHandle: id,
-		PersonaName:  "The " + id,
-		Profile:      &GitHubProfile{Login: id, Languages: langs},
-		Answers:      answers,
-	}
-}
-
-func makeParticipantWithTopics(id string, langs []string, topics []string, answers map[string]string) *Participant {
-	return &Participant{
-		ID:           id,
-		GitHubHandle: id,
-		PersonaName:  "The " + id,
-		Profile:      &GitHubProfile{Login: id, Languages: langs, TopTopics: topics},
-		Answers:      answers,
-	}
-}
-
-func makeParticipantWithProjectType(id string, langs []string, projectType string, answers map[string]string) *Participant {
-	profile := GitHubProfile{Login: id, Languages: langs}
-	if projectType != "" {
-		profile.ExtraAnswers = &ExtraAnswers{ProjectType: projectType}
-	}
-	return &Participant{
-		ID:           id,
-		GitHubHandle: id,
-		PersonaName:  "The " + id,
-		Profile:      &profile,
-		Answers:      answers,
-	}
-}
-
-func makeParticipantWithDevEnv(id string, langs []string, devEnv []string, answers map[string]string) *Participant {
-	profile := GitHubProfile{Login: id, Languages: langs}
-	if len(devEnv) > 0 {
-		profile.ExtraAnswers = &ExtraAnswers{DevEnvironment: devEnv}
-	}
-	return &Participant{
-		ID:           id,
-		GitHubHandle: id,
-		PersonaName:  "The " + id,
-		Profile:      &profile,
-		Answers:      answers,
-	}
-}
-
 func TestPairKey(t *testing.T) {
 	a := &Participant{ID: "aaa"}
 	b := &Participant{ID: "bbb"}
@@ -72,15 +24,15 @@ func TestPairKey(t *testing.T) {
 
 func TestPairScore_languages(t *testing.T) {
 	matcher := &Matcher{}
-	a := makeParticipant("a", []string{"Go", "Python"}, nil)
-	b := makeParticipant("b", []string{"Go", "Rust"}, nil)
+	a := testParticipant("a", "The a", []string{"Go", "Python"})
+	b := testParticipant("b", "The b", []string{"Go", "Rust"})
 
 	score := matcher.PairScore(a, b)
 	if score != 3 {
 		t.Errorf("expected 3 (one shared language), got %d", score)
 	}
 
-	c := makeParticipant("c", []string{"Go", "Python"}, nil)
+	c := testParticipant("c", "The c", []string{"Go", "Python"})
 	score2 := matcher.PairScore(a, c)
 	if score2 != 6 {
 		t.Errorf("expected 6 (two shared languages), got %d", score2)
@@ -89,8 +41,8 @@ func TestPairScore_languages(t *testing.T) {
 
 func TestPairScore_answers(t *testing.T) {
 	matcher := &Matcher{}
-	a := makeParticipant("a", nil, map[string]string{"0": "Tabs", "1": "Go"})
-	b := makeParticipant("b", nil, map[string]string{"0": "Tabs", "1": "Python"})
+	a := testParticipant("a", "The a", nil, participantOpts{answers: map[string]string{"0": "Tabs", "1": "Go"}})
+	b := testParticipant("b", "The b", nil, participantOpts{answers: map[string]string{"0": "Tabs", "1": "Python"}})
 
 	score := matcher.PairScore(a, b)
 	if score != 1 {
@@ -100,8 +52,8 @@ func TestPairScore_answers(t *testing.T) {
 
 func TestPairScore_combined(t *testing.T) {
 	matcher := &Matcher{}
-	a := makeParticipant("a", []string{"Go"}, map[string]string{"0": "Tabs"})
-	b := makeParticipant("b", []string{"Go"}, map[string]string{"0": "Tabs"})
+	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
+	b := testParticipant("b", "The b", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
 
 	score := matcher.PairScore(a, b)
 	if score != 4 {
@@ -111,8 +63,8 @@ func TestPairScore_combined(t *testing.T) {
 
 func TestPairScore_noOverlap(t *testing.T) {
 	matcher := &Matcher{}
-	a := makeParticipant("a", []string{"Go"}, map[string]string{"0": "Tabs"})
-	b := makeParticipant("b", []string{"Rust"}, map[string]string{"0": "Spaces"})
+	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
+	b := testParticipant("b", "The b", []string{"Rust"}, participantOpts{answers: map[string]string{"0": "Spaces"}})
 
 	if score := matcher.PairScore(a, b); score != 0 {
 		t.Errorf("expected 0, got %d", score)
@@ -124,8 +76,8 @@ func TestPairScore_noOverlap(t *testing.T) {
 
 func TestPairScore_topics(t *testing.T) {
 	matcher := &Matcher{}
-	a := makeParticipantWithTopics("a", []string{"Go"}, []string{"web", "api"}, nil)
-	b := makeParticipantWithTopics("b", []string{"Python"}, []string{"web", "data"}, nil)
+	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{topics: []string{"web", "api"}})
+	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{topics: []string{"web", "data"}})
 
 	score := matcher.PairScore(a, b)
 	expected := 2 // 1 shared topic (web) * 2 points
@@ -133,7 +85,7 @@ func TestPairScore_topics(t *testing.T) {
 		t.Errorf("expected %d (one shared topic), got %d", expected, score)
 	}
 
-	c := makeParticipantWithTopics("c", []string{"Rust"}, []string{"web", "api"}, nil)
+	c := testParticipant("c", "The c", []string{"Rust"}, participantOpts{topics: []string{"web", "api"}})
 	score2 := matcher.PairScore(a, c)
 	expected2 := 4 // 2 shared topics * 2 points
 	if score2 != expected2 {
@@ -143,8 +95,8 @@ func TestPairScore_topics(t *testing.T) {
 
 func TestPairScore_projectTypes(t *testing.T) {
 	matcher := &Matcher{}
-	a := makeParticipantWithProjectType("a", []string{"Go"}, "Web", nil)
-	b := makeParticipantWithProjectType("b", []string{"Python"}, "Web", nil)
+	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{projectType: "Web"})
+	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{projectType: "Web"})
 
 	score := matcher.PairScore(a, b)
 	expected := 2 // shared project type
@@ -152,7 +104,7 @@ func TestPairScore_projectTypes(t *testing.T) {
 		t.Errorf("expected %d (shared project type), got %d", expected, score)
 	}
 
-	c := makeParticipantWithProjectType("c", []string{"Rust"}, "Backend", nil)
+	c := testParticipant("c", "The c", []string{"Rust"}, participantOpts{projectType: "Backend"})
 	score2 := matcher.PairScore(a, c)
 	if score2 != 0 {
 		t.Errorf("expected 0 (different project types), got %d", score2)
@@ -161,8 +113,8 @@ func TestPairScore_projectTypes(t *testing.T) {
 
 func TestPairScore_devEnvironments(t *testing.T) {
 	matcher := &Matcher{}
-	a := makeParticipantWithDevEnv("a", []string{"Go"}, []string{"IDE", "VIM"}, nil)
-	b := makeParticipantWithDevEnv("b", []string{"Python"}, []string{"IDE", "Cloud"}, nil)
+	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{devEnv: []string{"IDE", "VIM"}})
+	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{devEnv: []string{"IDE", "Cloud"}})
 
 	score := matcher.PairScore(a, b)
 	expected := 1 // 1 shared dev environment
@@ -170,7 +122,7 @@ func TestPairScore_devEnvironments(t *testing.T) {
 		t.Errorf("expected %d (one shared dev env), got %d", expected, score)
 	}
 
-	c := makeParticipantWithDevEnv("c", []string{"Rust"}, []string{"IDE", "VIM"}, nil)
+	c := testParticipant("c", "The c", []string{"Rust"}, participantOpts{devEnv: []string{"IDE", "VIM"}})
 	score2 := matcher.PairScore(a, c)
 	expected2 := 2 // 2 shared dev environments
 	if score2 != expected2 {
@@ -397,14 +349,14 @@ func TestMatchmaking_ReportsFailures(t *testing.T) {
 	t.Run("rematch: breaking the Matches fails", func(t *testing.T) {
 		mm, db, _ := matchmakingWithPool(t)
 		NewRelationships(db).Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
-		failOn(t, db, failUnpairing)
+		failWrites(t, db, "unpair")
 		if err := mm.Rematch(); err == nil {
 			t.Error("want the failure reported")
 		}
 	})
 	t.Run("rematch: storing a Match fails", func(t *testing.T) {
 		mm, db, _ := matchmakingWithPool(t)
-		failOn(t, db, failPairing)
+		failWrites(t, db, "pair")
 		if err := mm.Rematch(); err == nil {
 			t.Error("want the failure reported")
 		}
@@ -418,7 +370,7 @@ func TestMatchmaking_ReportsFailures(t *testing.T) {
 	})
 	t.Run("newcomer: storing the Match fails", func(t *testing.T) {
 		mm, db, _ := matchmakingWithPool(t)
-		failOn(t, db, failPairing)
+		failWrites(t, db, "pair")
 		if err := mm.MatchNewcomer(reload(t, db, "N")); err == nil {
 			t.Error("want the failure reported")
 		}

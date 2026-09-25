@@ -27,6 +27,14 @@ func seed(t *testing.T, db *DB, id, persona string, step Step) *Participant {
 	return reload(t, db, id)
 }
 
+// awaitingPersona puts a Participant at the persona step, as if their Interview just completed.
+func awaitingPersona(t *testing.T, db *DB, id string) {
+	t.Helper()
+	db.CreateParticipant(id, id, id, true)
+	db.SetProfile(id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
+	forceStep(db, id, StepCreatingPersona)
+}
+
 func pair(t *testing.T, db *DB, a, b string) {
 	t.Helper()
 	result := &matchResult{Score: 91, Reason: "Both love tabs", RedFlags: []string{"hogs the whiteboard"}, GreenFlags: []string{"tabs"}, Icebreakers: []string{"Why tabs?"}}

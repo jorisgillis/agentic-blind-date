@@ -20,7 +20,7 @@ func TestHandlers_ReportFailedSavesAsErrors(t *testing.T) {
 	t.Run("answering", func(t *testing.T) {
 		srv, deps := newTestServer(t, nil, nil)
 		seed(t, deps.db, "p", "P", "interviewing")
-		failWrites(t, deps.db, "answers_json")
+		failWrites(t, deps.db, "answers")
 		if resp := post(t, srv, "/user/answer/p", url.Values{"answer": {"Tabs"}}); resp.StatusCode != 500 {
 			t.Errorf("want 500, got %d", resp.StatusCode)
 		}
@@ -28,7 +28,7 @@ func TestHandlers_ReportFailedSavesAsErrors(t *testing.T) {
 	t.Run("deleting", func(t *testing.T) {
 		srv, deps := newTestServer(t, nil, nil)
 		seed(t, deps.db, "p", "P", "ready")
-		failOn(t, deps.db, "DELETE")
+		failWrites(t, deps.db, "delete")
 		if resp := del(t, srv, "/data/participant/p"); resp.StatusCode != 500 {
 			t.Errorf("want 500, got %d", resp.StatusCode)
 		}
@@ -36,7 +36,7 @@ func TestHandlers_ReportFailedSavesAsErrors(t *testing.T) {
 	t.Run("resetting", func(t *testing.T) {
 		srv, deps := newTestServer(t, nil, nil)
 		seed(t, deps.db, "p", "P", "ready")
-		failOn(t, deps.db, "DELETE")
+		failWrites(t, deps.db, "reset_participants")
 		if resp := post(t, srv, "/admin/reset", nil); resp.StatusCode != 500 {
 			t.Errorf("want 500, got %d", resp.StatusCode)
 		}
