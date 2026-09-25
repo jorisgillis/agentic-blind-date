@@ -342,25 +342,16 @@ func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
 	}
 }
 
-func TestReset_ReportsWhenActivityCannotBeCleared(t *testing.T) {
-	db := newTestDB(t)
-	db.LogActivity("hello")
-	db.db.Exec(`CREATE TRIGGER keep_activity BEFORE DELETE ON activity_log BEGIN SELECT RAISE(ABORT, 'injected'); END`)
-
-	if err := db.Reset(); err == nil {
-		t.Error("want the failure reported")
-	}
-}
-
 // TestReset_IsOneTransaction covers #51: a Reset that fails partway through
-// must not leave Participants deleted, activity cleared or the Event State
-// changed — the three writes commit together or not at all.
+// (here, clearing activity) must not leave Participants deleted, activity
+// cleared or the Event State changed — the three writes commit together or
+// not at all.
 func TestReset_IsOneTransaction(t *testing.T) {
 	db := newTestDB(t)
 	db.CreateParticipant("p", "p", "P", true)
 	db.LogActivity("hello")
 	db.Reveal()
-	db.db.Exec(`CREATE TRIGGER keep_activity BEFORE DELETE ON activity_log BEGIN SELECT RAISE(ABORT, 'injected'); END`)
+	failWrites(t, db, "reset_activity")
 
 	if err := db.Reset(); err == nil {
 		t.Fatal("want the failure reported")
@@ -374,6 +365,35 @@ func TestReset_IsOneTransaction(t *testing.T) {
 	}
 	if db.EventState() != Revealed {
 		t.Errorf("Event State should be untouched, got %s", db.EventState())
+	}
+}
+
+func TestReset_ReportsAGenuineParticipantsDeleteFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "reset_participants")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestReset_ReportsAGenuineActivityDeleteFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.LogActivity("hello")
+	breakOnFault(t, db, "reset_activity")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestReset_ChecksTheEventStateWriteToo(t *testing.T) {
+	db := newTestDB(t)
+	failWrites(t, db, "reset_event_state")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
 	}
 }
 

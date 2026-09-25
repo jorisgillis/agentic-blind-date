@@ -40,10 +40,13 @@ var previousStep = map[Step]Step{
 // unless the Participant is still being prepared (so a second, concurrent
 // preparation cannot swap the questions of a running Interview).
 func (db *DB) StartInterview(id string, profile *GitHubProfile, questions []Question) error {
+	if err := db.checkFault("start_interview"); err != nil {
+		return err
+	}
 	profileJSON, _ := json.Marshal(profile)     // plain data: cannot fail
 	questionsJSON, _ := json.Marshal(questions) // plain data: cannot fail
 	return db.inTx(func(tx *sql.Tx) error {
-		res, err := tx.Exec(`UPDATE participants SET pipeline_step = ?, profile_json = ?, questions = ?
+		res, err := tx.ExecContext(db.execCtx(), `UPDATE participants SET pipeline_step = ?, profile_json = ?, questions = ?
 			WHERE id = ? AND pipeline_step = ?`, StepInterviewing, string(profileJSON), string(questionsJSON), id, StepFetchingGitHub)
 		if err != nil {
 			return err
@@ -66,7 +69,10 @@ func (db *DB) AdvanceStep(id string, to Step) error {
 	if !ok {
 		return fmt.Errorf("%w: nothing leads to %s", ErrIllegalTransition, to)
 	}
-	res, err := db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ? AND pipeline_step = ?`, to, id, from)
+	if err := db.checkFault("pipeline_step"); err != nil {
+		return err
+	}
+	res, err := db.db.ExecContext(db.execCtx(), `UPDATE participants SET pipeline_step = ? WHERE id = ? AND pipeline_step = ?`, to, id, from)
 	if err != nil {
 		return err
 	}

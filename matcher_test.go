@@ -31,19 +31,36 @@ func TestDefaultMatchResult(t *testing.T) {
 
 const matchReply = `{"score": 87, "reason": "Both refuse to use tabs", "red_flags": ["argues about vim, emacs, and nano"], "green_flags": [], "icebreakers": ["Why Go?", "Monorepo, yes or no?"]}`
 
-func dev(id, persona string, langs ...string) *Participant {
+// participantOpts customizes testParticipant beyond ID, persona and languages.
+type participantOpts struct {
+	topics      []string
+	projectType string
+	devEnv      []string
+	answers     map[string]string
+}
+
+// testParticipant builds a bare, in-memory Participant for Matcher unit
+// tests (PairScore, ScorePair), which never touch a database. langs sets
+// both the GitHub profile's languages and Interests.
+func testParticipant(id, persona string, langs []string, opts ...participantOpts) *Participant {
+	var o participantOpts
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	profile := &GitHubProfile{Login: id, Languages: langs, TopTopics: o.topics}
+	if o.projectType != "" || len(o.devEnv) > 0 {
+		profile.ExtraAnswers = &ExtraAnswers{ProjectType: o.projectType, DevEnvironment: o.devEnv}
+	}
 	return &Participant{
 		ID: id, GitHubHandle: id, HasGitHub: true, PersonaName: persona,
-		Profile:   &GitHubProfile{Login: id, Languages: langs},
-		Answers:   map[string]string{"fixed_0": "Tabs"},
-		Interests: Interests{Languages: langs},
+		Profile: profile, Answers: o.answers, Interests: Interests{Languages: langs},
 	}
 }
 
 func TestMatcherScorePair_ScoresAPairOnceInEitherOrder(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", matchReply)
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
-	a, b := dev("a", "The Gopher", "Go"), dev("b", "The Crab", "Rust")
+	a, b := testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"})
 
 	first, err := m.ScorePair(a, b)
 	if err != nil {
@@ -65,7 +82,7 @@ func TestMatcherScorePair_ScoresAPairOnceInEitherOrder(t *testing.T) {
 func TestMatcherScorePair_CachedResultSurvivesARestartExactly(t *testing.T) {
 	db := newTestDB(t)
 	llm := newFakeLLM().on("matchmaker", matchReply)
-	a, b := dev("a", "The Gopher", "Go"), dev("b", "The Crab", "Rust")
+	a, b := testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"})
 	if _, err := NewMatcher(db, newFakeGitHub(), llm).ScorePair(a, b); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +110,7 @@ func TestMatcherScorePair_CachedResultSurvivesARestartExactly(t *testing.T) {
 func TestMatcherScorePair_FailuresAreNotCached(t *testing.T) {
 	llm := newFakeLLM().onErr("matchmaker", fakeError("mistral HTTP 429"))
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
-	a, b := dev("a", "The Gopher", "Go"), dev("b", "The Crab", "Rust")
+	a, b := testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"})
 
 	if _, err := m.ScorePair(a, b); err == nil {
 		t.Fatal("want error")
@@ -110,7 +127,7 @@ func TestMatcherScorePair_PromptDescribesEachDeveloperWithTheirOwnInterestsAndFo
 	gh := newFakeGitHub().withFollow("a", "b")
 	m := NewMatcher(newTestDB(t), gh, llm)
 
-	m.ScorePair(dev("a", "The Gopher", "Go"), dev("b", "The Crab", "Rust"))
+	m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"}))
 
 	call, _ := llm.lastCallMatching("matchmaker")
 	dev1, dev2, found := strings.Cut(call.User, "DEVELOPER 2")
@@ -138,7 +155,7 @@ func TestMatcherScorePair_AHungFollowCheckStillCompletesTheAssessment(t *testing
 	m := NewMatcher(newTestDB(t), gh, llm)
 
 	start := time.Now()
-	result, err := m.ScorePair(dev("a", "The Gopher", "Go"), dev("b", "The Crab", "Rust"))
+	result, err := m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"}))
 
 	if err != nil {
 		t.Fatalf("assessment should still complete, got %v", err)
@@ -163,7 +180,7 @@ func TestMatcherScorePair_ClampsOutOfRangeScores(t *testing.T) {
 		llm := newFakeLLM().on("matchmaker", reply)
 		m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
 
-		got, err := m.ScorePair(dev("a", "A"), dev("b", "B"))
+		got, err := m.ScorePair(testParticipant("a", "A", nil), testParticipant("b", "B", nil))
 
 		if err != nil || got.Score != want {
 			t.Errorf("%s: want score %d, got %+v (err %v)", reply, want, got, err)
@@ -175,7 +192,7 @@ func TestMatcherScorePair_RejectsRepliesWithoutAScore(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", `{"reason": "forgot the number"}`)
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
 
-	if _, err := m.ScorePair(dev("a", "A"), dev("b", "B")); err == nil {
+	if _, err := m.ScorePair(testParticipant("a", "A", nil), testParticipant("b", "B", nil)); err == nil {
 		t.Error("a reply without a score should be an error")
 	}
 }
@@ -213,7 +230,7 @@ func pairsOf(matches []Match) []string {
 }
 
 func readyDev(id string) *Participant {
-	p := dev(id, id, "Go")
+	p := testParticipant(id, id, []string{"Go"})
 	p.PipelineStep = "ready"
 	return p
 }
@@ -272,7 +289,7 @@ func TestMatcherMatchPool_NeedsTwoParticipants(t *testing.T) {
 }
 
 func matchedDev(id, partner string, score int) *Participant {
-	p := dev(id, id, "Go")
+	p := testParticipant(id, id, []string{"Go"})
 	p.PipelineStep, p.MatchedWith, p.CompatScore = "matched", partner, score
 	return p
 }
@@ -327,9 +344,9 @@ func TestMatcherMatchPool_OnlyAssessesHeuristicTopCandidates(t *testing.T) {
 	// A and B share nothing, while both share a language with everyone else, so each
 	// ranks the other last among six others and neither makes the other's top 5.
 	pool := []*Participant{
-		ready(dev("A", "A", "Go")), ready(dev("B", "B", "Rust")),
-		ready(dev("C", "C", "Go", "Rust")), ready(dev("D", "D", "Go", "Rust")), ready(dev("E", "E", "Go", "Rust")),
-		ready(dev("F", "F", "Go", "Rust")), ready(dev("G", "G", "Go", "Rust")),
+		ready(testParticipant("A", "A", []string{"Go"})), ready(testParticipant("B", "B", []string{"Rust"})),
+		ready(testParticipant("C", "C", []string{"Go", "Rust"})), ready(testParticipant("D", "D", []string{"Go", "Rust"})), ready(testParticipant("E", "E", []string{"Go", "Rust"})),
+		ready(testParticipant("F", "F", []string{"Go", "Rust"})), ready(testParticipant("G", "G", []string{"Go", "Rust"})),
 	}
 
 	m.MatchPool(pool)
@@ -363,7 +380,7 @@ func TestMatcherScorePair_PromptMentionsMutualAndReverseFollows(t *testing.T) {
 			llm := newFakeLLM().on("matchmaker", matchReply)
 			m := NewMatcher(newTestDB(t), tc.gh, llm)
 
-			m.ScorePair(dev("a", "The Gopher", "Go"), dev("b", "The Crab", "Rust"))
+			m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"}))
 
 			call, _ := llm.lastCallMatching("matchmaker")
 			if tc.want == "" && strings.Contains(call.User, "follow") {
@@ -389,9 +406,9 @@ func TestMatcherMatchPool_PairsParticipantsLeftOutOfEveryCandidatePair(t *testin
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
 	// A and B are outside each other's top 5, and everyone they are a candidate with
 	// is taken by a 90, so they are only paired by the leftover heuristic pass.
-	pool := []*Participant{ready(dev("A", "A", "Go")), ready(dev("B", "B", "Rust"))}
+	pool := []*Participant{ready(testParticipant("A", "A", []string{"Go"})), ready(testParticipant("B", "B", []string{"Rust"}))}
 	for _, id := range others {
-		pool = append(pool, ready(dev(id, id, "Go", "Rust")))
+		pool = append(pool, ready(testParticipant(id, id, []string{"Go", "Rust"})))
 	}
 
 	matches := m.MatchPool(pool)
@@ -406,10 +423,10 @@ func TestMatcherScorePair_NoFollowLookupsForNonGitHubUsers(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", matchReply)
 	gh := newFakeGitHub()
 	m := NewMatcher(newTestDB(t), gh, llm)
-	ada := dev("no-github-1234", "The Ada")
+	ada := testParticipant("no-github-1234", "The Ada", nil)
 	ada.HasGitHub = false
 
-	m.ScorePair(dev("a", "The Gopher", "Go"), ada)
+	m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), ada)
 
 	if n := gh.followLookups(); n != 0 {
 		t.Errorf("follow lookups for a Non-GitHub User: want 0, got %d", n)
@@ -419,7 +436,7 @@ func TestMatcherScorePair_NoFollowLookupsForNonGitHubUsers(t *testing.T) {
 func TestMatcherScorePair_AnUnreadableReplyIsAnError(t *testing.T) {
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), newFakeLLM().on("matchmaker", "I refuse to score humans"))
 
-	if _, err := m.ScorePair(dev("a", "A"), dev("b", "B")); err == nil {
+	if _, err := m.ScorePair(testParticipant("a", "A", nil), testParticipant("b", "B", nil)); err == nil {
 		t.Error("want an error")
 	}
 }
@@ -429,13 +446,13 @@ func TestMatcher_ParticipantsWithoutProfileOrAnswers(t *testing.T) {
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
 	bare := &Participant{ID: "bare", PersonaName: "The Blank"}
 
-	if _, err := m.ScorePair(dev("a", "A", "Go"), bare); err != nil {
+	if _, err := m.ScorePair(testParticipant("a", "A", []string{"Go"}), bare); err != nil {
 		t.Fatal(err)
 	}
-	if got := m.PairScore(bare, dev("a", "A", "Go")); got != 0 {
+	if got := m.PairScore(bare, testParticipant("a", "A", []string{"Go"})); got != 0 {
 		t.Errorf("no profile scores 0, got %d", got)
 	}
-	if got := m.PairScore(dev("a", "A", "Go"), bare); got != 0 {
+	if got := m.PairScore(testParticipant("a", "A", []string{"Go"}), bare); got != 0 {
 		t.Errorf("no profile scores 0, got %d", got)
 	}
 }
@@ -448,7 +465,7 @@ func TestMatcher_TheNewcomerIsNotTheirOwnCandidateAndOnlyReadyParticipantsArePai
 	if match := m.MatchNewcomer(n, []*Participant{n, readyDev("A")}); match == nil || match.B.ID != "A" {
 		t.Errorf("want N-A, got %+v", match)
 	}
-	busy := dev("I", "I", "Go")
+	busy := testParticipant("I", "I", []string{"Go"})
 	busy.PipelineStep = StepInterviewing
 	for _, match := range m.MatchPool([]*Participant{readyDev("A"), readyDev("B"), busy}) {
 		if match.A.ID == "I" || match.B.ID == "I" {

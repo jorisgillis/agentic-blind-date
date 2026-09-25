@@ -65,6 +65,26 @@ func TestSteps_FailedWritesAndUnreachableSteps(t *testing.T) {
 	}
 }
 
+func TestAdvanceStep_ReportsAGenuineDatabaseFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "pipeline_step")
+
+	if err := db.AdvanceStep("p", StepInterviewing); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestStartInterview_ReportsAGenuineDatabaseFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "start_interview")
+
+	if err := db.StartInterview("p", &GitHubProfile{}, nil); err == nil {
+		t.Error("want a failure")
+	}
+}
+
 func TestStartInterview_OnlyWhileBeingPrepared(t *testing.T) {
 	db := newTestDB(t)
 	db.CreateParticipant("p", "p", "P", true)

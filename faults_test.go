@@ -1,72 +1,61 @@
 package main
 
 import (
-	"strings"
 	"testing"
 )
 
-// failWrites makes writes to Participants fail until the returned function is
-// called (or the test ends): every insert, update and delete, or, when columns
-// are given, only updates of those columns. It uses SQLite triggers created
-// only here, so production code needs no fault-injection hooks.
-func failWrites(t *testing.T, db *DB, columns ...string) (restore func()) {
+// failWrites makes Participant writes fail until the returned function is
+// called (or the test ends): every write, or, when tags are given, only
+// writes tagged with one of those. Tags name what a write is, not which SQL
+// column it touches: "create", "delete", "interests", "persona", "profile",
+// "questions", "answers", "pipeline_step", "start_interview", "pair" and
+// "unpair" (see ParticipantChange.tag and DB.checkFault's call sites). This
+// is a test-only hook on DB (see DB.failWrite), not a SQL trigger, so
+// production code needs no fault-injection hooks.
+func failWrites(t *testing.T, db *DB, tags ...string) (restore func()) {
 	t.Helper()
-	triggers := map[string]string{
-		"fail_insert": "INSERT",
-		"fail_update": "UPDATE",
-		"fail_delete": "DELETE",
-	}
-	if len(columns) > 0 {
-		triggers = map[string]string{"fail_update_of": "UPDATE OF " + strings.Join(columns, ", ")}
-	}
-	for name, event := range triggers {
-		stmt := `CREATE TRIGGER ` + name + ` BEFORE ` + event +
-			` ON participants BEGIN SELECT RAISE(ABORT, 'injected write failure'); END`
-		if _, err := db.db.Exec(stmt); err != nil {
-			t.Fatalf("installing write failure: %v", err)
+	db.setFailWrite(func(tag string) error {
+		if len(tags) == 0 {
+			return fakeError("injected write failure")
 		}
-	}
+		for _, want := range tags {
+			if tag == want {
+				return fakeError("injected write failure")
+			}
+		}
+		return nil
+	})
 	restored := false
 	restore = func() {
 		if restored {
 			return
 		}
 		restored = true
-		for name := range triggers {
-			db.db.Exec(`DROP TRIGGER IF EXISTS ` + name)
-		}
+		db.setFailWrite(nil)
 	}
 	t.Cleanup(restore)
 	return restore
 }
-
-// failOn makes writes to Participants matching event fail until restored, for
-// example "DELETE" or "UPDATE OF matched_with WHEN NEW.matched_with != ”".
-func failOn(t *testing.T, db *DB, event string) (restore func()) {
-	t.Helper()
-	parts := strings.SplitN(event, " WHEN ", 2)
-	stmt := `CREATE TRIGGER fail_on BEFORE ` + parts[0] + ` ON participants`
-	if len(parts) == 2 {
-		stmt += ` WHEN ` + parts[1]
-	}
-	stmt += ` BEGIN SELECT RAISE(ABORT, 'injected write failure'); END`
-	if _, err := db.db.Exec(stmt); err != nil {
-		t.Fatalf("installing write failure: %v", err)
-	}
-	restore = func() { db.db.Exec(`DROP TRIGGER IF EXISTS fail_on`) }
-	t.Cleanup(restore)
-	return restore
-}
-
-// Writes that fail only while breaking a Match, or only while making one.
-const (
-	failUnpairing = "UPDATE OF matched_with WHEN NEW.matched_with = ''"
-	failPairing   = "UPDATE OF matched_with WHEN NEW.matched_with != ''"
-)
 
 // breakDB makes every database call fail, reads included.
 func breakDB(db *DB) {
 	db.db.Close()
+}
+
+// breakOnFault cancels the write tagged tag the moment it is about to
+// happen, so that write fails as a genuine database error, not just the
+// fault hook's own check — for the branch that handles a write which passed
+// every guard but then failed in the database itself. Not a SQL trigger:
+// DB.execCtx's context is cancelled for that one write, then replaced.
+func breakOnFault(t *testing.T, db *DB, tag string) {
+	t.Helper()
+	db.setFailWrite(func(got string) error {
+		if got == tag {
+			db.cancelCurrentWrite()
+		}
+		return nil
+	})
+	t.Cleanup(func() { db.setFailWrite(nil) })
 }
 
 func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
@@ -74,7 +63,7 @@ func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
 	db.CreateParticipant("p", "p", "P", true)
 
 	restore := failWrites(t, db)
-	if err := db.SetPersona("p", "The Gopher", ""); err == nil || !strings.Contains(err.Error(), "injected write failure") {
+	if err := db.SetPersona("p", "The Gopher", ""); err == nil || err.Error() != "injected write failure" {
 		t.Fatalf("want an injected failure, got %v", err)
 	}
 	if err := db.CreateParticipant("q", "q", "Q", true); err == nil {
@@ -90,15 +79,15 @@ func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
 	}
 }
 
-func TestFailWrites_CanTargetColumns(t *testing.T) {
+func TestFailWrites_CanTargetATag(t *testing.T) {
 	db := newTestDB(t)
 	db.CreateParticipant("p", "p", "P", true)
-	failWrites(t, db, "persona_name")
+	failWrites(t, db, "persona")
 
 	if err := db.SetPersona("p", "The Gopher", ""); err == nil {
-		t.Error("updating the targeted column should fail")
+		t.Error("the targeted tag should fail")
 	}
 	if err := db.SetQuestions("p", nil); err != nil {
-		t.Errorf("other columns stay writable: %v", err)
+		t.Errorf("other tags stay writable: %v", err)
 	}
 }

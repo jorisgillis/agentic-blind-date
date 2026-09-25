@@ -206,7 +206,7 @@ func TestInterview_CompletingFailsWhenExtraAnswersCannotBeSaved(t *testing.T) {
 	db := newTestDB(t)
 	iv := NewInterview(db, newFakeLLM())
 	p := participantInInterview(t, db, []Question{{ID: "extra_1", Text: "Project type?"}})
-	failWrites(t, db, "profile_json")
+	failWrites(t, db, "profile")
 
 	if _, err := iv.Submit(p, "Backend Services"); err == nil {
 		t.Error("want the failure reported")

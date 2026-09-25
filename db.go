@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -52,6 +54,65 @@ func (p *Participant) IsMatched() bool {
 type DB struct {
 	db      *sql.DB
 	changes *changeFeed
+
+	// failWrite, set only by tests (faults_test.go), lets a test simulate a
+	// write failure without SQL triggers: it is asked to approve each kind
+	// of Participant write about to happen, tagged with what it is
+	// ("interests", "persona", "pair", "delete", ...); a non-nil result
+	// fails that write instead of performing it. Guarded by failWriteMu:
+	// onboarding runs writes on background goroutines, concurrently with
+	// the test that installs or restores this hook.
+	failWriteMu sync.Mutex
+	failWrite   func(tag string) error
+
+	// ctxMu guards ctx/cancel: writes go through execCtx's context, which
+	// tests can cancel (via breakOnFault, faults_test.go) to make one
+	// specific write fail as a genuine database error, not just a value the
+	// fault hook made up — without a SQL trigger.
+	ctxMu  sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// execCtx returns the context the next write should use. If it was
+// cancelled (cancelCurrentWrite), that write is handed the cancelled
+// context to fail with, and a fresh, live one is put in its place so later
+// writes are unaffected.
+func (db *DB) execCtx() context.Context {
+	db.ctxMu.Lock()
+	defer db.ctxMu.Unlock()
+	ctx := db.ctx
+	if ctx.Err() != nil {
+		db.ctx, db.cancel = context.WithCancel(context.Background())
+	}
+	return ctx
+}
+
+// cancelCurrentWrite cancels whatever write next asks execCtx for its
+// context — a real, immediate failure for it.
+func (db *DB) cancelCurrentWrite() {
+	db.ctxMu.Lock()
+	defer db.ctxMu.Unlock()
+	db.cancel()
+}
+
+// setFailWrite installs (or, given nil, clears) the test-only failWrite hook.
+func (db *DB) setFailWrite(f func(tag string) error) {
+	db.failWriteMu.Lock()
+	defer db.failWriteMu.Unlock()
+	db.failWrite = f
+}
+
+// checkFault asks the test-only failWrite hook whether to fail a write
+// tagged tag. Outside tests, failWrite is nil and every write proceeds.
+func (db *DB) checkFault(tag string) error {
+	db.failWriteMu.Lock()
+	f := db.failWrite
+	db.failWriteMu.Unlock()
+	if f != nil {
+		return f(tag)
+	}
+	return nil
 }
 
 // NewDB creates and initializes a new database connection.
@@ -133,7 +194,8 @@ func NewDB(path string) (*DB, error) {
 		sqlDB.Exec(`UPDATE participants SET has_github = 0 WHERE github_handle LIKE 'no-github-%'`)
 	}
 
-	return &DB{db: sqlDB, changes: newChangeFeed()}, nil
+	ctx, cancel := context.WithCancel(context.Background())
+	return &DB{db: sqlDB, changes: newChangeFeed(), ctx: ctx, cancel: cancel}, nil
 }
 
 func (db *DB) Close() error {
@@ -148,13 +210,22 @@ func (db *DB) SetMaxOpenConns(n int) {
 // before the Reveal — one transaction, so a failure leaves everything as it was.
 func (db *DB) Reset() error {
 	return db.inTx(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`DELETE FROM participants`); err != nil {
+		if err := db.checkFault("reset_participants"); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`DELETE FROM activity_log`); err != nil {
+		if _, err := tx.ExecContext(db.execCtx(), `DELETE FROM participants`); err != nil {
 			return err
 		}
-		_, err := tx.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, BeforeReveal)
+		if err := db.checkFault("reset_activity"); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(db.execCtx(), `DELETE FROM activity_log`); err != nil {
+			return err
+		}
+		if err := db.checkFault("reset_event_state"); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(db.execCtx(), `INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, BeforeReveal)
 		return err
 	})
 }
@@ -207,6 +278,9 @@ const selectParticipant = `
 	FROM participants`
 
 func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
+	if err := db.checkFault("create"); err != nil {
+		return err
+	}
 	return db.inTx(func(tx *sql.Tx) error {
 		// Persona colour and symbol come from the Persona module, given current use.
 		rows, err := tx.Query(`SELECT persona_color, persona_symbol, COUNT(*) FROM participants GROUP BY persona_color, persona_symbol`)
@@ -268,22 +342,26 @@ func (db *DB) GetParticipantByHandle(handle string) (*Participant, error) {
 
 func (db *DB) SetProfile(id string, profile *GitHubProfile) error {
 	encoded, _ := json.Marshal(profile) // plain data: cannot fail
-	return db.write(`UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), id)
+	return db.write("profile", `UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), id)
 }
 
 // SetQuestions saves the Participant's interview question set.
 func (db *DB) SetQuestions(id string, questions []Question) error {
 	encoded, _ := json.Marshal(questions) // plain data: cannot fail
-	return db.write(`UPDATE participants SET questions = ? WHERE id = ?`, string(encoded), id)
+	return db.write("questions", `UPDATE participants SET questions = ? WHERE id = ?`, string(encoded), id)
 }
 
 // SetPersona saves the Participant's Persona name and tagline.
 func (db *DB) SetPersona(id, name, tagline string) error {
-	return db.write(`UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`, name, tagline, id)
+	return db.write("persona", `UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`, name, tagline, id)
 }
 
-// write runs one statement and announces the change when it succeeds.
-func (db *DB) write(query string, args ...any) error {
+// write checks the test-only fault hook, then runs one statement and
+// announces the change when it succeeds.
+func (db *DB) write(tag, query string, args ...any) error {
+	if err := db.checkFault(tag); err != nil {
+		return err
+	}
 	_, err := db.db.Exec(query, args...)
 	if err == nil {
 		db.changed()
@@ -293,12 +371,12 @@ func (db *DB) write(query string, args ...any) error {
 
 func (db *DB) UpdateInterests(id string, interests map[string]interface{}) error {
 	encoded, _ := json.Marshal(interests) // plain data: cannot fail
-	return db.write(`UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), id)
+	return db.write("interests", `UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), id)
 }
 
 func (db *DB) UpdateAnswers(id string, answers map[string]string) error {
 	encoded, _ := json.Marshal(answers) // plain data: cannot fail
-	return db.write(`UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), id)
+	return db.write("answers", `UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), id)
 }
 
 func (db *DB) GetAllParticipants() ([]*Participant, error) {
