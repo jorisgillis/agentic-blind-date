@@ -25,9 +25,10 @@ We will adopt a **100% test coverage** target with the following approach:
 - **100% code coverage** for all production code, **except `main()`**: it is the composition root (wiring and starting the server) and is not unit-tested
 - Coverage is measured using Go's built-in coverage tooling
 - CI/CD enforces this target: `scripts/check-coverage.sh` fails the build when any function other than `main()` is below 100%
-- Error paths are covered with test-only fault injection (SQLite triggers that make writes fail, a closed database for reads, failing HTTP transports), not with hooks in production code; checks that cannot fail (for example `json.Marshal` of plain data) are removed rather than tested
+- Error paths and timing are covered with test-only fault injection and test doubles, always as an explicit constructor dependency or a narrow setter reserved for tests — never a package-level variable or a struct field a test reaches in and sets after construction. In this codebase that means: `DB.setFailWrite`/`checkFault` to fail a specific write, a cancellable context to fail one already in flight, a closed database for reads, failing HTTP transports, and an injected `Clock` for time-based behaviour (the SSE streams' heartbeat, #58). Checks that cannot fail (for example `json.Marshal` of plain data) are removed rather than tested.
 
 > Amended 2026-09-24: the `main()` exclusion and the gate script.
+> Amended 2026-09-25: corrected "not with hooks in production code" — `DB.checkFault` and `Watcher` are hooks in production code, just constructor-supplied ones, not globals or post-construction setters (#58).
 
 ### Testing Pyramid
 

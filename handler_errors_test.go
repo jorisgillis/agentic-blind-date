@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestHandlers_ReportFailedSavesAsErrors(t *testing.T) {
@@ -164,19 +163,21 @@ func TestStreams_EndWhenTheParticipantIsRemoved(t *testing.T) {
 	eventually(t, "the wait stream to end", wait.ended)
 }
 
+// TestStreams_SendAHeartbeatWhenIdle covers #58: the heartbeat comes from an
+// injected Clock a test fires by hand, not a wall-clock wait.
 func TestStreams_SendAHeartbeatWhenIdle(t *testing.T) {
-	defer func(d time.Duration) { heartbeatEvery = d }(heartbeatEvery)
-	heartbeatEvery = 10 * time.Millisecond
 	srv, _ := newTestServer(t, nil, nil)
 
 	s := open(t, srv, "/bigscreen/stream")
+	srv.awaitChecks(t, "/bigscreen/stream", 1)
+	srv.clock.fire()
 
 	waitFor(t, s, ": ping")
 }
 
 func TestRender_AMissingTemplateIsAnError(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
-	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking)
+	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, NewWatcher())
 	rec := httptest.NewRecorder()
 
 	h.render(rec, "no-such-template.html", nil)

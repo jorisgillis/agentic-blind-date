@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // Badge represents a visual badge displayed on participant cards.
@@ -62,15 +61,12 @@ type Handler struct {
 	relations   *Relationships
 	matchmaking *Matchmaking
 	tmpl        *template.Template
-
-	// streamChecked, when set (tests only), is told each time a stream has
-	// looked at the current state, so tests can wait for a stream to catch up.
-	streamChecked func(path string)
+	watcher     *Watcher
 }
 
 // NewHandler creates a new Handler with the given dependencies.
 // It initializes the templates and takes the modules the pages use.
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler {
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, watcher *Watcher) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -85,7 +81,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		db: db, store: NewParticipantStore(db), activity: NewActivity(db), bigscreen: NewBigScreen(db, matcher),
 		admin:      NewEventAdmin(db, matcher, matchmaking),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
-		tmpl: tmpl,
+		tmpl: tmpl, watcher: watcher,
 	}
 }
 
@@ -512,28 +508,23 @@ func sseEvent(w http.ResponseWriter, name string) {
 	w.(http.Flusher).Flush()
 }
 
-// heartbeatEvery keeps idle SSE connections open through proxies (tests shorten it).
-var heartbeatEvery = 25 * time.Second
-
 // watch calls check now and again after every change, until check reports it is
 // done or the client goes away. Nothing is polled: changes come from the change feed.
 func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (done bool)) {
 	changes, stop := h.db.Subscribe()
 	defer stop()
-	heartbeat := time.NewTicker(heartbeatEvery)
-	defer heartbeat.Stop()
+	heartbeat, stopHeartbeat := h.watcher.heartbeat()
+	defer stopHeartbeat()
 	for {
 		if check() {
 			return
 		}
-		if h.streamChecked != nil {
-			h.streamChecked(r.URL.Path)
-		}
+		h.watcher.caughtUp(r.URL.Path)
 		select {
 		case <-r.Context().Done():
 			return
 		case <-changes:
-		case <-heartbeat.C:
+		case <-heartbeat:
 			fmt.Fprint(w, ": ping\n\n")
 			w.(http.Flusher).Flush()
 		}

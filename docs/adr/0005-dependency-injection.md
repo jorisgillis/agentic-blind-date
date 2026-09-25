@@ -64,8 +64,11 @@ func NewBigScreen(db *DB, matcher *Matcher) *BigScreen
 // Event administration: Reveal, Reset and Rematch, so handlers only call them (#57)
 func NewEventAdmin(db *DB, matcher *Matcher, matchmaking *Matchmaking) *EventAdmin
 
+// Watcher: the SSE streams' heartbeat Clock and catch-up signal (#58)
+func NewWatcher() *Watcher
+
 // HTTP handlers
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, watcher *Watcher) *Handler
 ```
 
 #### Composition Root
@@ -93,7 +96,7 @@ func main() {
     relations := NewRelationships(db)
     matchmaking := NewMatchmaking(db, matcher, relations)
     onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
-    h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
+    h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, NewWatcher())
 
     // Start server
     log.Fatal(http.ListenAndServe(addr, buildMux(h)))

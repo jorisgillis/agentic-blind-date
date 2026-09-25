@@ -66,7 +66,7 @@ func main() {
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, NewWatcher())
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)

@@ -149,18 +149,52 @@ func (g *fakeGitHub) followLookups() int {
 
 // testSrv serves the mux in-process: no port is bound and nothing leaves the process.
 type testSrv struct {
-	URL string
-	h   http.Handler
+	URL   string
+	h     http.Handler
+	clock *fakeClock
 
 	mu     sync.Mutex
+	cond   *sync.Cond
 	checks map[string]int // how often each stream has looked at the current state
 }
 
-// streamChecks reports how many times the stream at path has looked at the current state.
-func (s *testSrv) streamChecks(path string) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.checks[path]
+// awaitChecks blocks until the stream at path has looked at the current
+// state at least n times, or fails the test after a timeout. This is the
+// Watcher's catch-up signal (#58): a real wait, not a polling loop.
+func (s *testSrv) awaitChecks(t *testing.T, path string, n int) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		s.mu.Lock()
+		for s.checks[path] < n {
+			s.cond.Wait()
+		}
+		s.mu.Unlock()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s to catch up %d time(s)", path, n)
+	}
+}
+
+// fakeClock is a Clock a test fires by hand, so a heartbeat test needs no
+// wall-clock wait (#58).
+type fakeClock struct {
+	ticks chan time.Time
+}
+
+func newFakeClock() *fakeClock {
+	return &fakeClock{ticks: make(chan time.Time, 1)}
+}
+
+func (c *fakeClock) NewTicker(time.Duration) (<-chan time.Time, func()) {
+	return c.ticks, func() {}
+}
+
+func (c *fakeClock) fire() {
+	c.ticks <- time.Now()
 }
 
 func (s *testSrv) Client() *http.Client {
@@ -213,13 +247,16 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations)
 	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking)
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
-	srv := &testSrv{URL: "http://test", h: buildMux(h), checks: map[string]int{}}
-	h.streamChecked = func(path string) {
+	srv := &testSrv{URL: "http://test", clock: newFakeClock(), checks: map[string]int{}}
+	srv.cond = sync.NewCond(&srv.mu)
+	watcher := &Watcher{clock: srv.clock, heartbeatEvery: time.Second, onCheck: func(path string) {
 		srv.mu.Lock()
 		srv.checks[path]++
+		srv.cond.Broadcast()
 		srv.mu.Unlock()
-	}
+	}}
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, watcher)
+	srv.h = buildMux(h)
 	return srv, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
 }
 

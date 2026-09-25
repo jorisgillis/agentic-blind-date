@@ -75,10 +75,11 @@ func waitFor(t *testing.T, s *liveStream, want string) {
 }
 
 // sentNothingNew waits until the stream has handled its checks-th change (its
-// first look counts as one) and asserts it sent nothing beyond before.
+// first look counts as one) and asserts it sent nothing beyond before. The
+// wait is the Watcher's catch-up signal (#58), not a polling loop.
 func sentNothingNew(t *testing.T, s *liveStream, checks int, before, what string) {
 	t.Helper()
-	eventually(t, "the stream to catch up", func() bool { return s.srv.streamChecks(s.path) >= checks })
+	s.srv.awaitChecks(t, s.path, checks)
 	if after := s.String(); after != before {
 		t.Errorf("%s: unexpected events %q", what, strings.TrimPrefix(after, before))
 	}
