@@ -127,10 +127,10 @@ The **Big Screen module** computes one Snapshot of the event for the room — Pa
 A running, public feed of what is happening in the pipeline and in matching, shown on the Big Screen at all times. The **Activity module** is the only place a ticker line is composed: each of its operations takes persona-safe data — a Persona name, a score, an error — never a GitHub handle, real name or internal ID, so a line can never name someone before the Reveal. Lines are ordered by the moment they happened, not by a second-resolution timestamp, so the latest line is always the most recent event even within a burst. A failed compatibility assessment is announced as a Match, never with the default score standing in for a real one.
 
 ### Interview
-The question-and-answer process where participants provide information about themselves. Consists of:
+The question-and-answer process where participants provide information about themselves. Every Participant answers 11 questions: all 6 Fixed Questions, plus 5 personalised ones (Custom Questions for GitHub users, Extra Questions for everyone else). Consists of:
 - **Fixed Questions**: Standard questions all participants answer
-- **Custom Questions**: LLM-generated questions tailored to GitHub profile (GitHub users only)
-- **Extra Questions**: Manual questions for non-GitHub users
+- **Custom Questions**: LLM-generated questions tailored to GitHub profile (GitHub users only), asked for 5 and topped up with Extra Questions when the LLM returns fewer or fails
+- **Extra Questions**: Manual questions for non-GitHub users, and the Custom Questions top-up for GitHub users
 
 The **Interview module** owns a Participant's progress through the Interview: the next unanswered question, validating and recording answers (including multi-select), and signalling completion.
 

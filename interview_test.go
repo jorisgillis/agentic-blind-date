@@ -128,17 +128,31 @@ func questionIDs(qs []Question) []string {
 	return ids
 }
 
-func TestInterviewStart_GitHubUserGetsFixedPlusCustomQuestions(t *testing.T) {
-	llm := newFakeLLM().on("interviewer", `{"questions": ["Why Go?", "Favourite repo?", "Tabs?"]}`)
+func TestInterviewStart_GitHubUserGetsFixedPlusFiveCustomQuestions(t *testing.T) {
+	llm := newFakeLLM().on("interviewer", `{"questions": ["Why Go?", "Favourite repo?", "Tabs?", "Vim or Emacs?", "Best framework?"]}`)
 
 	qs := startedQuestions(t, llm, true)
 
-	want := []string{"fixed_0", "fixed_1", "fixed_2", "fixed_3", "fixed_4", "fixed_5", "custom_0", "custom_1", "custom_2"}
+	want := []string{"fixed_0", "fixed_1", "fixed_2", "fixed_3", "fixed_4", "fixed_5", "custom_0", "custom_1", "custom_2", "custom_3", "custom_4"}
 	if got := questionIDs(qs); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("question IDs:\n got %v\nwant %v", got, want)
 	}
 	if qs[6].Text != "Why Go?" {
 		t.Errorf("first Custom Question text: got %q", qs[6].Text)
+	}
+}
+
+// TestInterviewStart_FewerCustomQuestionsAreToppedUpWithExtraQuestions covers
+// #76: when the LLM returns fewer than 5 Custom Questions, Extra Questions
+// fill the rest, so every Participant still answers exactly 11 questions.
+func TestInterviewStart_FewerCustomQuestionsAreToppedUpWithExtraQuestions(t *testing.T) {
+	llm := newFakeLLM().on("interviewer", `{"questions": ["Why Go?", "Favourite repo?", "Tabs?"]}`)
+
+	qs := startedQuestions(t, llm, true)
+
+	want := []string{"fixed_0", "fixed_1", "fixed_2", "fixed_3", "fixed_4", "fixed_5", "custom_0", "custom_1", "custom_2", "extra_0", "extra_1"}
+	if got := questionIDs(qs); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("question IDs:\n got %v\nwant %v", got, want)
 	}
 }
 
@@ -156,12 +170,15 @@ func TestInterviewStart_GitHubUserFallsBackToExtraQuestionsWhenTheLLMFails(t *te
 	}
 }
 
-func TestInterviewStart_NonGitHubUserGetsExtraQuestionsAndFixedWithoutGoToLanguage(t *testing.T) {
+// TestInterviewStart_NonGitHubUserGetsAllFixedQuestionsPlusExtraQuestions
+// covers #76: every Participant answers all 6 Fixed Questions, including
+// "go-to language" — the rule that skipped it for Non-GitHub Users is gone.
+func TestInterviewStart_NonGitHubUserGetsAllFixedQuestionsPlusExtraQuestions(t *testing.T) {
 	llm := newFakeLLM()
 
 	qs := startedQuestions(t, llm, false)
 
-	want := []string{"extra_0", "extra_1", "extra_2", "extra_3", "extra_4", "fixed_0", "fixed_2", "fixed_3", "fixed_4", "fixed_5"}
+	want := []string{"extra_0", "extra_1", "extra_2", "extra_3", "extra_4", "fixed_0", "fixed_1", "fixed_2", "fixed_3", "fixed_4", "fixed_5"}
 	if got := questionIDs(qs); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("question IDs:\n got %v\nwant %v", got, want)
 	}

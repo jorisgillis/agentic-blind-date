@@ -14,8 +14,8 @@ const (
 type Question struct {
 	ID            string
 	Text          string
-	Options       []string // nil = free text input
-	MaxSelections int      // 0 or 1 = single select, >1 = multiselect
+	Options       []string      // nil = free text input
+	MaxSelections int           // 0 or 1 = single select, >1 = multiselect
 	Mode          SelectionMode // SingleSelect or MultiSelect
 }
 
@@ -60,9 +60,11 @@ var FixedQuestions = []Question{
 
 var TotalFixedQuestions = len(FixedQuestions)
 
-const TotalCustomQuestions = 3
+// PersonalizedQuestions is how many Custom or Extra Questions a Participant
+// answers, alongside every Fixed Question, in both Event Formats (#76).
+const PersonalizedQuestions = 5
 
-var TotalQuestions = TotalFixedQuestions + TotalCustomQuestions
+var TotalQuestionsPerParticipant = TotalFixedQuestions + PersonalizedQuestions
 
 var ExtraQuestions = []Question{
 	{
