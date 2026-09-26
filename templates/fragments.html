@@ -150,6 +150,7 @@
 {{if $p.MatchedWith}}
 <div
   id="wait-status"
+  data-matched="true"
   hx-get="/user/wait-status/{{$p.ID}}"
   hx-trigger="refresh"
   hx-swap="outerHTML"

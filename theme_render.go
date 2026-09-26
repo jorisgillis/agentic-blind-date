@@ -19,6 +19,19 @@ func themeKeysJSON() template.JS {
 	return template.JS(data)
 }
 
+// themeSoundsJSON renders every Theme's sound cues, keyed by Theme key then
+// cue name, for the shared sound module to look up the current Theme's
+// recipe for a cue without a round trip to the server (#44). A Theme that
+// leaves a cue silent simply has no entry for it.
+func themeSoundsJSON() template.JS {
+	byTheme := make(map[string]map[SoundCue]ToneRecipe, len(Themes))
+	for _, t := range Themes {
+		byTheme[t.Key] = t.Sounds
+	}
+	data, _ := json.Marshal(byTheme) // Theme keys and cue recipes are Go literals: this cannot fail
+	return template.JS(data)
+}
+
 // themeStyleBlock renders the Theme catalogue as CSS: one @theme inline
 // mapping (the same for every Theme, so Tailwind compiles utilities that
 // read a CSS variable) and, for each Theme, a [data-theme="…"] block setting

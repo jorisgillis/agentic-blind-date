@@ -1,0 +1,66 @@
+{{/* fragment-theme-sound.html: the phone's sound module (#44). Sound is off
+     by default; turning it on unlocks one shared AudioContext on that tap.
+     The choice is remembered on the device (like the Theme choice, #41) so
+     it survives navigating from onboarding to the wait page to the match
+     page, but each of those is a fresh page load, and browsers require a
+     fresh user gesture to unlock audio on each one — so once a Participant
+     has opted in, any tap on the page (not just the toggle) re-unlocks the
+     shared context. Every cue is optional: a Theme may leave it silent, and
+     nothing in the app depends on sound playing. */}}
+{{define "fragment-theme-sound.html"}}
+<script>
+window.agenticBlindDateSound = (function(){
+  var STORAGE_KEY = 'sound';
+  var sounds = {{themeSoundsJSON}};
+  var ctx = null;
+
+  function enabled() {
+    try { return localStorage.getItem(STORAGE_KEY) === 'on'; } catch (e) { return false; }
+  }
+
+  function unlock() {
+    if (!enabled()) return null;
+    if (!ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  // Any tap keeps the shared context unlocked once sound is on, since a
+  // fresh page load always starts with a fresh, suspended context.
+  document.addEventListener('pointerdown', unlock, {capture: true});
+
+  return {
+    isEnabled: enabled,
+    enable: function() {
+      try { localStorage.setItem(STORAGE_KEY, 'on'); } catch (e) { /* the choice just won't survive a reload */ }
+      unlock();
+    },
+    disable: function() {
+      try { localStorage.setItem(STORAGE_KEY, 'off'); } catch (e) {}
+    },
+    // play sounds cue for the current Theme, or does nothing when sound is
+    // off or the Theme leaves that cue silent.
+    play: function(cue) {
+      var c = unlock();
+      if (!c) return;
+      var themeKey = document.documentElement.getAttribute('data-theme');
+      var recipe = sounds[themeKey] && sounds[themeKey][cue];
+      if (!recipe) return;
+      var osc = c.createOscillator();
+      var gain = c.createGain();
+      osc.type = recipe.Waveform;
+      osc.frequency.value = recipe.Hz;
+      gain.gain.setValueAtTime(0.15, c.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + recipe.Seconds);
+      osc.connect(gain).connect(c.destination);
+      osc.start();
+      osc.stop(c.currentTime + recipe.Seconds);
+    },
+  };
+})();
+</script>
+{{end}}

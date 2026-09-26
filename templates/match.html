@@ -7,6 +7,7 @@
   <title>Agentic Blind Date — Your Match!</title>
   {{template "fragment-theme-head.html" .}}
   {{template "fragment-theme-device-choice.html" .}}
+  {{template "fragment-theme-sound.html" .}}
   <script src="/static/marked-12.0.2.min.js"></script>
 </head>
 <body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10">
@@ -131,6 +132,9 @@
       });
     }
     document.addEventListener('DOMContentLoaded', renderMd);
+    {{if .Match}}
+    document.addEventListener('DOMContentLoaded', () => agenticBlindDateSound.play('your_match')); // the Reveal (#44)
+    {{end}}
     const qr = document.getElementById('qr');
     if (qr) {
       qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.href);

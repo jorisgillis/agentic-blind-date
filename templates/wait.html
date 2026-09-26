@@ -7,6 +7,7 @@
   <title>Agentic Blind Date — Waiting</title>
   {{template "fragment-theme-head.html" .}}
   {{template "fragment-theme-device-choice.html" .}}
+  {{template "fragment-theme-sound.html" .}}
   <script src="/static/htmx-1.9.12.min.js"></script>
   <script src="/static/marked-12.0.2.min.js"></script>
 </head>
@@ -102,6 +103,15 @@
     }
     document.addEventListener('DOMContentLoaded', renderMd);
     document.addEventListener('htmx:afterSwap', renderMd);
+    // "Matched" (#44): only the moment #wait-status first shows the matched
+    // state, not every refresh while already matched.
+    let wasMatched = document.getElementById('wait-status').dataset.matched === 'true';
+    document.body.addEventListener('htmx:afterSwap', e => {
+      if (e.detail.target.id !== 'wait-status') return;
+      const isMatched = e.detail.target.dataset.matched === 'true';
+      if (isMatched && !wasMatched) agenticBlindDateSound.play('your_match');
+      wasMatched = isMatched;
+    });
     const qr = document.getElementById('qr');
     if (qr) {
       qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent(window.location.href);

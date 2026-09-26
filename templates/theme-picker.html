@@ -4,20 +4,42 @@
      them. Not shown on the Big Screen, which the admin controls instead
      (#42). */}}
 {{define "fragment-theme-picker.html"}}
-<div class="fixed bottom-3 right-3 z-50 flex gap-1 bg-raised border border-line rounded-full p-1 shadow-lg" role="group" aria-label="Theme">
-  {{range themes}}
+<div class="fixed bottom-3 right-3 z-50 flex items-center gap-1 bg-raised border border-line rounded-full p-1 shadow-lg">
+  <div role="group" aria-label="Theme" class="flex gap-1">
+    {{range themes}}
+    <button
+      type="button"
+      onclick="agenticBlindDateSetTheme('{{.Key}}')"
+      data-theme-option="{{.Key}}"
+      class="px-3 py-1 rounded-full text-xs font-semibold text-ink hover:opacity-80 transition-opacity"
+    >{{.Name}}</button>
+    {{end}}
+  </div>
   <button
     type="button"
-    onclick="agenticBlindDateSetTheme('{{.Key}}')"
-    data-theme-option="{{.Key}}"
-    class="px-3 py-1 rounded-full text-xs font-semibold text-ink hover:opacity-80 transition-opacity"
-  >{{.Name}}</button>
-  {{end}}
+    id="abd-sound-toggle"
+    aria-label="Toggle sound"
+    onclick="agenticBlindDateToggleSound()"
+    class="px-2 py-1 rounded-full text-sm text-ink hover:opacity-80 transition-opacity"
+  >🔇</button>
 </div>
 <script>
 function agenticBlindDateSetTheme(key) {
   document.documentElement.setAttribute('data-theme', key);
   try { localStorage.setItem('theme', key); } catch (e) { /* localStorage blocked: the choice just won't survive a reload */ }
 }
+function agenticBlindDateSoundButtonLabel() {
+  var btn = document.getElementById('abd-sound-toggle');
+  if (btn) btn.textContent = agenticBlindDateSound.isEnabled() ? '🔊' : '🔇';
+}
+function agenticBlindDateToggleSound() {
+  if (agenticBlindDateSound.isEnabled()) {
+    agenticBlindDateSound.disable();
+  } else {
+    agenticBlindDateSound.enable();
+  }
+  agenticBlindDateSoundButtonLabel();
+}
+document.addEventListener('DOMContentLoaded', agenticBlindDateSoundButtonLabel);
 </script>
 {{end}}

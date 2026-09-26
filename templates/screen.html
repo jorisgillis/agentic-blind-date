@@ -22,6 +22,11 @@
       <h1 class="text-2xl font-display font-bold tracking-tight">Agentic Blind Date</h1>
     </div>
     <div class="flex items-center gap-6">
+      <button
+        id="sound-toggle"
+        onclick="enableBigScreenSound()"
+        class="text-xs px-3 py-1.5 rounded-full bg-raised border border-line text-ink hover:opacity-80"
+      >🔇 Enable sound</button>
       <div id="status-info" class="text-right">
         <p id="phase-label" class="text-sm text-ink-muted">Loading...</p>
         <p id="count-label" class="text-xs text-ink-muted/70"></p>
@@ -77,6 +82,39 @@ function nodeStroke() {
   return outline !== 'transparent' ? outline : themeColor('surface-raised', '#111827');
 }
 
+// Big Screen sound (#44): off until the admin's one click, which unlocks a
+// shared AudioContext that stays usable until the page reloads. Never
+// persisted (unlike the Participant's own choice, #41): a fresh load is
+// always silent until clicked again.
+const bigScreenSounds = {{themeSoundsJSON}};
+let bigScreenAudioCtx = null;
+
+function enableBigScreenSound() {
+  if (!bigScreenAudioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    bigScreenAudioCtx = new AC();
+  }
+  if (bigScreenAudioCtx.state === 'suspended') bigScreenAudioCtx.resume();
+  document.getElementById('sound-toggle').textContent = '🔊 Sound on';
+}
+
+function playBigScreenCue(cue) {
+  if (!bigScreenAudioCtx) return; // silent until the admin enables sound
+  const themeKey = document.documentElement.getAttribute('data-theme');
+  const recipe = bigScreenSounds[themeKey] && bigScreenSounds[themeKey][cue];
+  if (!recipe) return;
+  const osc = bigScreenAudioCtx.createOscillator();
+  const gain = bigScreenAudioCtx.createGain();
+  osc.type = recipe.Waveform;
+  osc.frequency.value = recipe.Hz;
+  gain.gain.setValueAtTime(0.15, bigScreenAudioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, bigScreenAudioCtx.currentTime + recipe.Seconds);
+  osc.connect(gain).connect(bigScreenAudioCtx.destination);
+  osc.start();
+  osc.stop(bigScreenAudioCtx.currentTime + recipe.Seconds);
+}
+
 // QR code pointing to /user
 new QRCode(document.getElementById('qr'), {
   text: window.location.origin + '/user',
@@ -127,9 +165,15 @@ function drag() {
 }
 
 let currentNodes = [];
+let previousMatchCount = 0;
 
 function updateGraph(data) {
   const revealed = data.revealed;
+
+  // A new Match (#44), once sound is enabled.
+  const matchCount = (data.matches || []).length;
+  if (matchCount > previousMatchCount) playBigScreenCue('bigscreen_match');
+  previousMatchCount = matchCount;
 
   // The admin's Big Screen Theme choice, pushed live over this same stream
   // (#42) — never a device-stored choice, which the Big Screen ignores.
@@ -236,9 +280,10 @@ function updateGraph(data) {
     }
   }
 
-  // The Reveal (#43): a brief highlight flash across the whole screen, once.
+  // The Reveal (#43, #44): a brief highlight flash across the whole screen, once.
   if (data.revealed && !hasRevealed) {
     hasRevealed = true;
+    playBigScreenCue('bigscreen_reveal');
     const flashMs = agenticBlindDateReducedMotion() ? 0 : themeDurationMs('slow', 400);
     document.body.style.transition = `box-shadow ${flashMs}ms ${themeColor('ease-standard', 'ease')}`;
     document.body.style.boxShadow = `inset 0 0 0 9999px ${themeColor('highlight-from', '#6366f1')}`;

@@ -78,6 +78,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		"themeStyleBlock": themeStyleBlock,
 		"themes":          func() []Theme { return Themes },
 		"themeKeysJSON":   themeKeysJSON,
+		"themeSoundsJSON": themeSoundsJSON,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{

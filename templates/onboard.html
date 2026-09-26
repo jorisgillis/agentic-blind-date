@@ -7,6 +7,7 @@
   <title>Agentic Blind Date — Onboarding</title>
   {{template "fragment-theme-head.html" .}}
   {{template "fragment-theme-device-choice.html" .}}
+  {{template "fragment-theme-sound.html" .}}
   <script src="/static/htmx-1.9.12.min.js"></script>
   <script src="/static/marked-12.0.2.min.js"></script>
 </head>
@@ -33,8 +34,19 @@
     }
     document.addEventListener('DOMContentLoaded', renderMd);
     document.addEventListener('htmx:afterSwap', renderMd);
+    // An answer submitted (#44): registered once here, not inside the
+    // question fragment itself, which gets swapped out on every question.
+    document.body.addEventListener('htmx:beforeRequest', e => {
+      if (e.detail.requestConfig.path.startsWith('/user/answer/')) {
+        agenticBlindDateSound.play('answer_submitted');
+      }
+    });
     const _es = new EventSource('/user/pipeline-stream/{{.ID}}');
-    _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
+    _es.addEventListener('redirect', e => {
+      agenticBlindDateSound.play('interview_done'); // the Interview is done: on to the wait page
+      window.location.href = e.data;
+      _es.close();
+    });
     _es.addEventListener('refresh', () => htmx.trigger('#pipeline-area', 'refresh'));
     _es.onerror = () => _es.close();
   </script>
