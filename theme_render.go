@@ -40,8 +40,50 @@ func themeStyleBlock() template.HTML {
 		b.WriteString("}\n")
 	}
 	b.WriteString("</style>\n")
+	b.WriteString(motionStyleBlock)
 	return template.HTML(b.String())
 }
+
+// motionStyleBlock gives the meaningful moments (ticket 02) their motion
+// using the current Theme's duration and easing tokens, and collapses every
+// CSS animation and transition under prefers-reduced-motion (#43). JS-driven
+// motion (the Big Screen's D3 force graph) checks reducedMotion() itself,
+// since this media query only reaches CSS.
+const motionStyleBlock = `<style>
+@keyframes abd-pop-in {
+  0% { transform: scale(0.8); opacity: 0; }
+  70% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.abd-pop-in { animation: abd-pop-in var(--t-duration-slow) var(--t-ease-emphasis) forwards; }
+
+@keyframes abd-pulse-match {
+  0%, 100% { stroke-opacity: 0.9; }
+  50% { stroke-opacity: 0.3; }
+}
+.abd-pulse-match { animation: abd-pulse-match calc(var(--t-duration-slow) * 4) ease-in-out infinite; }
+
+.abd-fade { transition: opacity var(--t-duration-normal) var(--t-ease-standard); }
+.htmx-swapping { opacity: 0; transition: opacity var(--t-duration-fast) var(--t-ease-standard); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+</style>
+<script>
+// Shared by every page's JS-driven motion (the Big Screen's D3 force graph):
+// CSS's prefers-reduced-motion media query above doesn't reach JS animation.
+function agenticBlindDateReducedMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+</script>
+`
 
 // themeVarMapping is one entry of the theme-agnostic @theme inline block:
 // a Tailwind theme key (what a template's utility classes read, e.g.

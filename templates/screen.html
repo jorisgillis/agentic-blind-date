@@ -12,11 +12,6 @@
     html, body { height: 100%; overflow: hidden; }
     .node { cursor: grab; }
     .node:active { cursor: grabbing; }
-    @keyframes pulse-match {
-      0%, 100% { stroke-opacity: 0.9; }
-      50%       { stroke-opacity: 0.3; }
-    }
-    .edge-matched { animation: pulse-match 2s ease-in-out infinite; }
   </style>
 </head>
 <body class="bg-page text-ink flex flex-col h-full">
@@ -63,6 +58,15 @@ const colorMap = {{.Palette}};
 function themeColor(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--t-' + name).trim();
   return v || fallback;
+}
+
+// themeDurationMs reads a Theme duration token (e.g. "300ms") as a number of
+// milliseconds, for D3 transitions — CSS's prefers-reduced-motion media
+// query doesn't reach JS-driven animation, so callers check
+// agenticBlindDateReducedMotion() themselves (#43).
+function themeDurationMs(name, fallbackMs) {
+  const v = parseFloat(themeColor('duration-' + name, ''));
+  return isNaN(v) ? fallbackMs : v;
 }
 
 // The Persona outline (ticket 03) is only drawn on Themes where it isn't
@@ -161,7 +165,7 @@ function updateGraph(data) {
   edgeSel.exit().remove();
   edgeSel.enter().append('line')
     .merge(edgeSel)
-    .attr('class', d => d.matched ? 'edge-matched' : '')
+    .attr('class', d => d.matched ? 'abd-pulse-match' : '')
     .attr('stroke', d => d.matched ? themeColor('highlight-to', '#ec4899') : themeColor('accent', '#3b82f6'))
     .attr('stroke-width', d => d.matched ? 3.5 : 1)
     .attr('stroke-dasharray', d => d.matched ? null : '6,4')
@@ -173,10 +177,15 @@ function updateGraph(data) {
 
   const nodeEnter = nodeSel.enter().append('g').attr('class', 'node')
     .call(drag());
-  nodeEnter.append('circle')
-    .attr('r', 42)
+  // A new Participant pops in (#43): grows from 0 to full size, unless the
+  // device asks for reduced motion, in which case it just appears.
+  const newNodeCircle = nodeEnter.append('circle')
+    .attr('r', agenticBlindDateReducedMotion() ? 42 : 0)
     .attr('stroke', nodeStroke())
     .attr('stroke-width', 3);
+  if (!agenticBlindDateReducedMotion()) {
+    newNodeCircle.transition().duration(themeDurationMs('slow', 400)).attr('r', 42);
+  }
   nodeEnter.append('text')
     .attr('class', 'sym')
     .attr('text-anchor', 'middle')
@@ -216,11 +225,27 @@ function updateGraph(data) {
   document.getElementById('count-label').textContent =
     data.nodes.length + ' participant' + (data.nodes.length !== 1 ? 's' : '');
 
-  // Activity ticker
+  // Activity ticker: a new line fades in (#43).
   if (data.activity && data.activity.length > 0) {
-    document.getElementById('ticker').textContent = data.activity[0];
+    const ticker = document.getElementById('ticker');
+    if (ticker.textContent !== data.activity[0]) {
+      ticker.classList.add('abd-fade');
+      ticker.style.opacity = '0';
+      ticker.textContent = data.activity[0];
+      requestAnimationFrame(() => { ticker.style.opacity = '1'; });
+    }
+  }
+
+  // The Reveal (#43): a brief highlight flash across the whole screen, once.
+  if (data.revealed && !hasRevealed) {
+    hasRevealed = true;
+    const flashMs = agenticBlindDateReducedMotion() ? 0 : themeDurationMs('slow', 400);
+    document.body.style.transition = `box-shadow ${flashMs}ms ${themeColor('ease-standard', 'ease')}`;
+    document.body.style.boxShadow = `inset 0 0 0 9999px ${themeColor('highlight-from', '#6366f1')}`;
+    setTimeout(() => { document.body.style.boxShadow = 'none'; }, 50);
   }
 }
+let hasRevealed = false;
 
 const es = new EventSource('/bigscreen/stream');
 es.addEventListener('message', e => {

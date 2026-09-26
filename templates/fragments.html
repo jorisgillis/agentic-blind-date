@@ -87,7 +87,7 @@
 
     {{if .Question.Options}}
     {{if gt .Question.MaxSelections 1}}
-    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3" id="multiselect-form">
+    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML swap:150ms" class="space-y-3" id="multiselect-form">
       <input type="hidden" name="answer" id="selected-options" value="" />
       <div class="space-y-2" id="option-container">
         {{range .Question.Options}}
@@ -108,7 +108,7 @@
       </button>
     </form>
     {{else}}
-    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3">
+    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML swap:150ms" class="space-y-3">
       {{range .Question.Options}}
       <button
         type="submit"
@@ -120,7 +120,7 @@
     </form>
     {{end}}
     {{else}}
-    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3">
+    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML swap:150ms" class="space-y-3">
       <div class="flex gap-2">
         <input
           type="text"
@@ -131,7 +131,7 @@
         <button type="submit" class="bg-accent hover:opacity-90 text-on-accent rounded-xl px-4 py-3 text-sm font-bold transition-colors">→</button>
       </div>
     </form>
-    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="mt-2">
+    <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML swap:150ms" class="mt-2">
       <input type="hidden" name="answer" value="">
       <button type="submit" class="text-ink-muted hover:text-ink text-xs underline w-full text-center transition-colors">
         Skip this question
@@ -153,7 +153,7 @@
   hx-get="/user/wait-status/{{$p.ID}}"
   hx-trigger="refresh"
   hx-swap="outerHTML"
-  class="text-center space-y-4 py-4"
+  class="text-center space-y-4 py-4 abd-pop-in"
 >
   <p class="text-4xl">❤️</p>
   <p class="text-on-persona font-bold">You've been matched!</p>

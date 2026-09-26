@@ -8,14 +8,6 @@
   {{template "fragment-theme-head.html" .}}
   {{template "fragment-theme-device-choice.html" .}}
   <script src="/static/marked-12.0.2.min.js"></script>
-  <style>
-    @keyframes pop-in {
-      0% { transform: scale(0.8); opacity: 0; }
-      70% { transform: scale(1.05); }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    .pop-in { animation: pop-in 0.5s ease-out forwards; }
-  </style>
 </head>
 <body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10">
 {{template "fragment-theme-picker.html" .}}
@@ -26,7 +18,7 @@
       <a href="/user/match/{{.Me.ID}}" class="text-on-persona/80 text-sm hover:text-on-persona">← Back to your match</a>
     </div>
 
-    <div class="text-center mb-8 pop-in">
+    <div class="text-center mb-8 abd-pop-in">
       <div class="flex items-center justify-center gap-4 mb-3">
         <div class="w-16 h-16 rounded-2xl {{.Me.PersonaColor}} border-4 border-overlay flex items-center justify-center text-4xl shadow">{{.Me.PersonaSymbol}}</div>
         <span class="text-3xl">🤝</span>
@@ -45,14 +37,14 @@
 
     {{/* Reason */}}
     {{if .Reason}}
-    <div class="bg-overlay border border-overlay rounded-xl p-4 mb-4 pop-in" style="animation-delay:0.15s">
+    <div class="bg-overlay border border-overlay rounded-xl p-4 mb-4 abd-pop-in" style="animation-delay:0.15s">
       <p class="text-on-persona italic text-sm text-center" data-md>"{{.Reason}}"</p>
     </div>
     {{end}}
 
     {{/* Flags */}}
     {{if or .GreenFlags .RedFlags}}
-    <div class="grid grid-cols-2 gap-3 mb-4 pop-in" style="animation-delay:0.25s">
+    <div class="grid grid-cols-2 gap-3 mb-4 abd-pop-in" style="animation-delay:0.25s">
       {{if .GreenFlags}}
       <div class="bg-overlay border border-overlay rounded-xl p-4">
         <p class="text-ok font-bold text-sm mb-2">✅ Green flags</p>
@@ -74,7 +66,7 @@
 
     {{/* Conversation starters */}}
     {{if .Icebreakers}}
-    <div class="bg-overlay border border-overlay rounded-xl p-4 pop-in" style="animation-delay:0.35s">
+    <div class="bg-overlay border border-overlay rounded-xl p-4 abd-pop-in" style="animation-delay:0.35s">
       <p class="text-accent font-bold text-sm mb-3">💬 Ask them</p>
       {{range .Icebreakers}}
       <p class="text-on-persona text-sm mb-2" data-md>→ {{.}}</p>

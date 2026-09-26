@@ -8,21 +8,13 @@
   {{template "fragment-theme-head.html" .}}
   {{template "fragment-theme-device-choice.html" .}}
   <script src="/static/marked-12.0.2.min.js"></script>
-  <style>
-    @keyframes pop-in {
-      0% { transform: scale(0.8); opacity: 0; }
-      70% { transform: scale(1.05); }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    .pop-in { animation: pop-in 0.5s ease-out forwards; }
-  </style>
 </head>
 <body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10">
 {{template "fragment-theme-picker.html" .}}
 <div class="text-on-persona">
   <div class="max-w-md mx-auto">
 
-    <div class="text-center mb-8 pop-in">
+    <div class="text-center mb-8 abd-pop-in">
       <div class="text-8xl mb-3">{{.Me.PersonaSymbol}}</div>
       <div class="text-4xl mb-2">💘</div>
       <h1 class="text-3xl font-display font-bold text-on-persona">It's a match!</h1>
@@ -45,7 +37,7 @@
     </div>
 
     {{/* Match card + Find them merged */}}
-    <div class="bg-overlay border border-overlay rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
+    <div class="bg-overlay border border-overlay rounded-2xl p-6 mb-4 abd-pop-in" style="animation-delay:0.15s">
       <div class="flex items-center gap-4">
         <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} outline outline-2 outline-persona-line flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
           {{$m.PersonaSymbol}}
@@ -93,7 +85,7 @@
 
     {{/* Icebreakers */}}
     {{if .Icebreakers}}
-    <div class="bg-overlay border border-overlay rounded-xl p-4 pop-in mb-4" style="animation-delay:0.3s">
+    <div class="bg-overlay border border-overlay rounded-xl p-4 abd-pop-in mb-4" style="animation-delay:0.3s">
       <p class="text-accent font-bold text-sm mb-3">💬 Ask them</p>
       {{range .Icebreakers}}
       <p class="text-on-persona text-sm mb-2" data-md>→ {{.}}</p>
@@ -103,7 +95,7 @@
 
     {{/* Others at the event */}}
     {{if .Others}}
-    <div class="bg-overlay border border-overlay rounded-xl p-4 pop-in mt-4" style="animation-delay:0.45s">
+    <div class="bg-overlay border border-overlay rounded-xl p-4 abd-pop-in mt-4" style="animation-delay:0.45s">
       <p class="text-on-persona/80 font-bold text-sm mb-3">👥 Others at the event</p>
       <div class="grid grid-cols-3 gap-3">
         {{range .Others}}
@@ -118,7 +110,7 @@
     {{end}}
 
     {{/* QR code */}}
-    <div class="bg-overlay border border-overlay rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
+    <div class="bg-overlay border border-overlay rounded-xl p-4 abd-pop-in mt-4 text-center" style="animation-delay:0.6s">
       <p class="text-on-persona/80 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
       <img id="qr" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
     </div>
