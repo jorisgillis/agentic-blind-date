@@ -33,6 +33,21 @@
       ✨ Continuous matching active
     </div>
 
+    <form action="/admin/bigscreen-theme" method="POST" class="bg-raised border border-line rounded-xl p-5 space-y-2">
+      <label for="bigScreenTheme" class="text-ink-muted text-xs uppercase tracking-widest">Big Screen Theme</label>
+      <select
+        id="bigScreenTheme"
+        name="theme"
+        onchange="this.form.submit()"
+        class="w-full bg-page border border-line rounded-lg px-3 py-2 text-sm"
+      >
+        {{$current := .BigScreenTheme}}
+        {{range themes}}
+        <option value="{{.Key}}" {{if eq .Key $current}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </form>
+
     <form action="/admin/reset" method="POST">
       <button
         type="submit"

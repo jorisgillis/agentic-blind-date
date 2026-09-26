@@ -25,6 +25,13 @@ func (a *EventAdmin) Reveal() error {
 	return nil
 }
 
+// SetBigScreenTheme stores the admin's Big Screen Theme choice, with the
+// Event State (#42): it survives restarts and is untouched by Reset and
+// Rematch, and is pushed live to the Big Screen's stream.
+func (a *EventAdmin) SetBigScreenTheme(key string) error {
+	return a.db.SetBigScreenTheme(key)
+}
+
 // Reset starts the event over: no Participants, no activity, no cached LLM
 // assessments, and back to before the Reveal. It takes Matchmaking's lock,
 // so it cannot interleave with Continuous Matching (#57).

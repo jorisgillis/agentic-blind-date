@@ -48,6 +48,7 @@ type Snapshot struct {
 	EventState EventState    `json:"event_state"`
 	Label      string        `json:"label"`
 	Revealed   bool          `json:"revealed"`
+	ThemeKey   string        `json:"theme_key"` // the admin's Big Screen Theme choice (#42)
 	Count      int           `json:"count"`
 	ReadyCount int           `json:"ready_count"`
 	Nodes      []ScreenNode  `json:"nodes"`
@@ -101,6 +102,7 @@ func (b *BigScreen) build() *Snapshot {
 	snap := &Snapshot{
 		EventState: event,
 		Label:      event.Label(),
+		ThemeKey:   b.db.BigScreenTheme().Key,
 		Revealed:   event.IsRevealed(),
 		Count:      len(participants),
 		Activity:   activity,

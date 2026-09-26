@@ -42,3 +42,27 @@ func (db *DB) setEventState(state EventState) error {
 	}
 	return err
 }
+
+// bigScreenThemeKey is a second key in the same event_state table as the
+// phase: Reset only ever replaces 'phase', so the admin's Big Screen Theme
+// choice survives Reset and Rematch untouched, and a restart (#42).
+const bigScreenThemeKey = "big_screen_theme"
+
+// BigScreenTheme returns the admin's chosen Theme for the Big Screen, or the
+// default Theme when none is set or the stored key is unknown (#42).
+func (db *DB) BigScreenTheme() Theme {
+	var key string
+	if err := db.db.QueryRow(`SELECT value FROM event_state WHERE key = ?`, bigScreenThemeKey).Scan(&key); err != nil {
+		key = ""
+	}
+	return ThemeByKey(key)
+}
+
+// SetBigScreenTheme stores the admin's Big Screen Theme choice.
+func (db *DB) SetBigScreenTheme(key string) error {
+	_, err := db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES (?, ?)`, bigScreenThemeKey, key)
+	if err == nil {
+		db.changed()
+	}
+	return err
+}

@@ -330,7 +330,7 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 
 // GET /bigscreen
 func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "screen.html", ScreenView{Palette: paletteHex()})
+	h.render(w, "screen.html", ScreenView{Palette: paletteHex(), ThemeKey: h.db.BigScreenTheme().Key})
 }
 
 // GET /bigscreen/graph-data  — kept as fallback; big screen now uses /bigscreen/stream
@@ -413,7 +413,19 @@ func writeJSON(w http.ResponseWriter, v any) {
 // GET /admin
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 	event := h.db.EventState()
-	h.render(w, "admin.html", AdminView{Event: event, Count: h.db.ParticipantCount(), Ready: h.db.ReadyCount()})
+	h.render(w, "admin.html", AdminView{
+		Event: event, Count: h.db.ParticipantCount(), Ready: h.db.ReadyCount(),
+		BigScreenTheme: h.db.BigScreenTheme().Key,
+	})
+}
+
+// POST /admin/bigscreen-theme: the admin picks the Big Screen's Theme.
+func (h *Handler) SetBigScreenTheme(w http.ResponseWriter, r *http.Request) {
+	if err := h.admin.SetBigScreenTheme(r.FormValue("theme")); err != nil {
+		http.Error(w, "setting the Big Screen Theme failed: "+err.Error(), 500)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 // POST /admin/reveal: the admin reveals every Match once everybody is seated.

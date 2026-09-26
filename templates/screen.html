@@ -1,6 +1,6 @@
 {{define "screen.html"}}
 <!DOCTYPE html>
-<html lang="en" data-theme="classic">
+<html lang="en" data-theme="{{.ThemeKey}}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -126,6 +126,12 @@ let currentNodes = [];
 
 function updateGraph(data) {
   const revealed = data.revealed;
+
+  // The admin's Big Screen Theme choice, pushed live over this same stream
+  // (#42) — never a device-stored choice, which the Big Screen ignores.
+  if (data.theme_key && document.documentElement.getAttribute('data-theme') !== data.theme_key) {
+    document.documentElement.setAttribute('data-theme', data.theme_key);
+  }
 
   const byId = Object.fromEntries(currentNodes.map(n => [n.id, n]));
   const hasNew = data.nodes.some(n => !byId[n.id]);

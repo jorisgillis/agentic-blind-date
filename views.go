@@ -46,7 +46,8 @@ type ExploreView struct {
 
 // ScreenView is /bigscreen: the shell that the graph and state view render into.
 type ScreenView struct {
-	Palette map[string]string
+	Palette  map[string]string
+	ThemeKey string // the admin's Big Screen Theme choice (#42); never a device-stored one
 }
 
 // DataView is /data: the debug overview of the whole event.
@@ -60,7 +61,8 @@ type DataView struct {
 
 // AdminView is /admin: the host panel.
 type AdminView struct {
-	Event EventState
-	Count int
-	Ready int
+	Event          EventState
+	Count          int
+	Ready          int
+	BigScreenTheme string // the currently chosen Big Screen Theme's key (#42)
 }
