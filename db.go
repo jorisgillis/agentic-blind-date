@@ -206,8 +206,11 @@ func (db *DB) SetMaxOpenConns(n int) {
 	db.db.SetMaxOpenConns(n)
 }
 
-// Reset starts the event over: no Participants, no activity, and back to
-// before the Reveal — one transaction, so a failure leaves everything as it was.
+// Reset starts the event over: no Participants, no activity, back to before
+// the Reveal and, in a Game Show, back to the Lobby — one transaction, so a
+// failure leaves everything as it was. The Event Format and the Big Screen
+// Theme are untouched: only the run of the event resets, not the choices
+// around it (#42, #77).
 func (db *DB) Reset() error {
 	return db.inTx(func(tx *sql.Tx) error {
 		if err := db.checkFault("reset_participants"); err != nil {
@@ -225,7 +228,14 @@ func (db *DB) Reset() error {
 		if err := db.checkFault("reset_event_state"); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(db.execCtx(), `INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, BeforeReveal)
+		if _, err := tx.ExecContext(db.execCtx(), `INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, BeforeReveal); err != nil {
+			return err
+		}
+		if err := db.checkFault("reset_show_state"); err != nil {
+			return err
+		}
+		lobby, _ := json.Marshal(ShowState{Segment: SegmentLobby}) // plain data: this cannot fail
+		_, err := tx.ExecContext(db.execCtx(), `INSERT OR REPLACE INTO event_state (key, value) VALUES (?, ?)`, showStateKey, string(lobby))
 		return err
 	})
 }

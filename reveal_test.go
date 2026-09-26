@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestReveal_ReportsAFailure(t *testing.T) {
+	db := newTestDB(t)
+	failWrites(t, db, "reveal")
+
+	if err := db.Reveal(); err == nil {
+		t.Error("want a failure")
+	}
+	if db.EventState().IsRevealed() {
+		t.Error("a failed Reveal must not have changed the Event State")
+	}
+}
+
 func TestReveal_MatchedParticipantWaitsForTheReveal(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")

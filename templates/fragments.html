@@ -1,3 +1,42 @@
+{{/* Host console state — the segment and next action, refreshed when the change feed says so (#78) */}}
+{{define "fragment-host-console-state.html"}}
+<div
+  id="host-console-state"
+  hx-get="/admin/host/state"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="space-y-4"
+>
+  {{if not .Active}}
+  <div class="bg-raised border border-line rounded-xl p-5 text-center text-ink-muted text-sm">
+    The Event Format is the Classic flow — the Show module is inactive.
+  </div>
+  {{else}}
+  <div class="bg-raised border border-line rounded-xl p-5 text-center space-y-1">
+    <p class="text-ink-muted text-xs uppercase tracking-widest">Current segment</p>
+    <p class="text-2xl font-display font-bold">
+      {{if eq .Segment "lobby"}}Lobby
+      {{else if eq .Segment "round"}}Round {{.Round}} of {{.TotalRounds}}
+      {{else if eq .Segment "matchmaking"}}Matchmaking
+      {{else if eq .Segment "reveal"}}Reveal
+      {{else if eq .Segment "afterparty"}}Afterparty
+      {{end}}
+    </p>
+  </div>
+  {{if .NextAction}}
+  <form action="/admin/host/advance" method="POST">
+    <button type="submit" class="w-full bg-accent hover:opacity-90 text-on-accent font-bold rounded-xl py-4 text-lg transition-colors">
+      {{.NextAction}}
+    </button>
+  </form>
+  {{else}}
+  <p class="text-center text-ink-muted text-sm">The show is over.</p>
+  {{end}}
+  {{end}}
+</div>
+{{end}}
+
+
 {{/* Pipeline step indicator — shown while GitHub fetch / persona creation is in progress */}}
 {{define "fragment-pipeline-step.html"}}
 <div

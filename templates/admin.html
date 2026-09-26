@@ -98,6 +98,9 @@
     </form>
 
     <div class="text-center space-y-1">
+      {{if eq .Format "game_show"}}
+      <a href="/admin/host" class="block text-accent hover:opacity-80 text-sm">Open host console →</a>
+      {{end}}
       <a href="/bigscreen" target="_blank" class="block text-accent hover:opacity-80 text-sm">Open big screen →</a>
       <a href="/user" target="_blank" class="block text-ink-muted hover:text-ink text-sm">Open participant landing →</a>
       <a href="/data" target="_blank" class="block text-ink-muted hover:text-ink text-sm">Open debug data →</a>

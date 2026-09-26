@@ -55,6 +55,9 @@ type Snapshot struct {
 	Edges      []ScreenEdge  `json:"edges"`
 	Matches    []ScreenMatch `json:"matches"`
 	Activity   []string      `json:"activity"`
+	Format     EventFormat   `json:"format"`            // #78
+	Segment    ShowSegment   `json:"segment,omitempty"` // only meaningful when Format is GameShow
+	Round      int           `json:"round,omitempty"`   // 1-based; only meaningful when Segment is "round"
 }
 
 // BigScreen builds the Snapshot the Big Screen shows: Participants, Match
@@ -98,6 +101,7 @@ func (b *BigScreen) build() *Snapshot {
 	event := b.db.EventState()
 	participants, _ := b.store.All()
 	activity, _ := b.db.GetRecentActivity(8)
+	format := b.db.EventFormat()
 
 	snap := &Snapshot{
 		EventState: event,
@@ -106,6 +110,7 @@ func (b *BigScreen) build() *Snapshot {
 		Revealed:   event.IsRevealed(),
 		Count:      len(participants),
 		Activity:   activity,
+		Format:     format,
 	}
 
 	seen := map[string]bool{}
@@ -164,6 +169,12 @@ func (b *BigScreen) build() *Snapshot {
 			snap.Edges = append(snap.Edges, ScreenEdge{Source: p.ID, Target: c.Participant.ID, Score: c.Score, Matched: false})
 			added++
 		}
+	}
+
+	if format == GameShow {
+		state := b.db.ShowState()
+		snap.Segment = state.Segment
+		snap.Round = state.Round + 1
 	}
 
 	return snap

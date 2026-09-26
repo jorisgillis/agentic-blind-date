@@ -68,3 +68,21 @@ type AdminView struct {
 	Format         EventFormat
 	FormatLocked   bool // Participants are present: the Event Format can't change (#77)
 }
+
+// HostConsoleView is /admin/host: the Host's phone-friendly console (#78).
+type HostConsoleView struct {
+	Active      bool
+	Segment     ShowSegment
+	Round       int // 1-based, for display
+	TotalRounds int
+	NextAction  string // "" once there is nothing left to advance to (the Afterparty)
+}
+
+// ShowStatusView is /user/show/{id}: a Participant's phone between Rounds
+// in a Game Show, before their Match is revealed (#78).
+type ShowStatusView struct {
+	Participant *Participant
+	Segment     ShowSegment
+	Round       int // 1-based, for display
+	TotalRounds int
+}

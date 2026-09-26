@@ -94,6 +94,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("POST /user/answer/{id}", h.SubmitAnswer)
 	mux.HandleFunc("GET /user/wait/{id}", h.Wait)
 	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
+	mux.HandleFunc("GET /user/show/{id}", h.ShowStatus)
 	mux.HandleFunc("GET /user/match/{id}", h.Match)
 	mux.HandleFunc("GET /user/explore/{myId}/{otherId}", h.Explore)
 
@@ -104,6 +105,7 @@ func buildMux(h *Handler) http.Handler {
 
 	mux.HandleFunc("GET /user/pipeline-stream/{id}", h.PipelineStream)
 	mux.HandleFunc("GET /user/wait-stream/{id}", h.WaitStream)
+	mux.HandleFunc("GET /user/show-stream/{id}", h.ShowStatusStream)
 
 	mux.HandleFunc("GET /data", h.DataIndex)
 	mux.HandleFunc("GET /data/participants", h.DataParticipants)
@@ -115,6 +117,10 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /admin", h.Admin)
 	mux.HandleFunc("POST /admin/event-format", h.SetEventFormat)
 	mux.HandleFunc("POST /admin/bigscreen-theme", h.SetBigScreenTheme)
+	mux.HandleFunc("GET /admin/host", h.HostConsole)
+	mux.HandleFunc("GET /admin/host/state", h.HostConsoleState)
+	mux.HandleFunc("GET /admin/host/stream", h.HostConsoleStream)
+	mux.HandleFunc("POST /admin/host/advance", h.AdvanceShow)
 	mux.HandleFunc("POST /admin/reveal", h.TriggerReveal)
 	mux.HandleFunc("POST /admin/reset", h.Reset)
 	mux.HandleFunc("POST /admin/rematch", h.Rematch)

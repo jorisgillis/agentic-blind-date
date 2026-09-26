@@ -36,7 +36,10 @@ func (db *DB) Reveal() error {
 }
 
 func (db *DB) setEventState(state EventState) error {
-	_, err := db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, state)
+	if err := db.checkFault("reveal"); err != nil {
+		return err
+	}
+	_, err := db.db.ExecContext(db.execCtx(), `INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, state)
 	if err == nil {
 		db.changed()
 	}

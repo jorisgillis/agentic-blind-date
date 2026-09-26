@@ -113,6 +113,8 @@ The admin running a Game Show from the host console: starting the show, opening 
 ### Show Segment
 A stage of a Game Show, in order: the **Lobby** (Participants answer their personalised questions on their own), the Rounds, the matchmaking segment (everyone ready is paired at once), the Reveal (pair by pair), and the **Afterparty** (arrivals after the Reveal are matched by Continuous Matching).
 
+The **Show module** owns the current segment (stored with the Event State, so a restart resumes it) and the Host's one action to advance it. It is inactive — every operation refused — outside a Game Show (#78).
+
 ### Round
 In a Game Show, one Fixed Question answered by every Participant at the same moment on their phone, with a countdown, while the Big Screen shows the room's answers live.
 

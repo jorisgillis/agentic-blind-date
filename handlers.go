@@ -55,6 +55,7 @@ type Handler struct {
 	activity    *Activity
 	bigscreen   *BigScreen
 	admin       *EventAdmin
+	show        *Show
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -83,7 +84,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{
 		db: db, store: NewParticipantStore(db), activity: NewActivity(db), bigscreen: NewBigScreen(db, matcher),
-		admin:      NewEventAdmin(db, matcher, matchmaking),
+		admin: NewEventAdmin(db, matcher, matchmaking), show: NewShow(db),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, watcher: watcher,
 	}
@@ -255,6 +256,54 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "fragment-wait-status.html", WaitStatusView{Participant: p, Count: h.db.ReadyCount()})
 }
 
+// GET /user/show/{id}: a Participant's phone in a Game Show, between Rounds
+// and before their Match is revealed (#78).
+func (h *Handler) ShowStatus(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if dest := h.destination(p); dest != r.URL.Path {
+		http.Redirect(w, r, dest, http.StatusSeeOther)
+		return
+	}
+	state := h.show.State()
+	h.render(w, "show-status.html", ShowStatusView{
+		Participant: p, Segment: state.Segment, Round: state.Round + 1, TotalRounds: TotalFixedQuestions,
+	})
+}
+
+// GET /user/show-stream/{id}
+// Tells the show status page to refresh when the segment changes, and
+// redirects once the Participant belongs elsewhere (matched, after the Reveal).
+func (h *Handler) ShowStatusStream(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := h.store.Get(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !sseHeaders(w) {
+		return
+	}
+	last := h.show.State()
+	h.watch(w, r, func() bool {
+		p, err := h.store.Get(id)
+		if err != nil {
+			return true
+		}
+		if dest := h.destination(p); dest != "/user/show/"+id {
+			sseRedirect(w, dest)
+			return true
+		}
+		if now := h.show.State(); now != last {
+			last = now
+			sseEvent(w, "refresh")
+		}
+		return false
+	})
+}
+
 // GET /user/match/{id}
 func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 	p, err := h.store.Get(r.PathValue("id"))
@@ -421,6 +470,50 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 		Format:         h.db.EventFormat(),
 		FormatLocked:   count > 0,
 	})
+}
+
+func (h *Handler) hostConsoleView() HostConsoleView {
+	state := h.show.State()
+	return HostConsoleView{
+		Active: h.show.Active(), Segment: state.Segment, Round: state.Round + 1, TotalRounds: TotalFixedQuestions,
+		NextAction: NextActionLabel(state),
+	}
+}
+
+// GET /admin/host: the Host's phone-friendly console.
+func (h *Handler) HostConsole(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "host-console.html", h.hostConsoleView())
+}
+
+// GET /admin/host/state: HTMX-polled fragment, and what the stream pushes.
+func (h *Handler) HostConsoleState(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "fragment-host-console-state.html", h.hostConsoleView())
+}
+
+// GET /admin/host/stream
+func (h *Handler) HostConsoleStream(w http.ResponseWriter, r *http.Request) {
+	if !sseHeaders(w) {
+		return
+	}
+	last := h.show.State()
+	h.watch(w, r, func() bool {
+		if now := h.show.State(); now != last {
+			last = now
+			sseEvent(w, "refresh")
+		}
+		return false
+	})
+}
+
+// POST /admin/host/advance: the Host's one action — start the show, open the
+// next Round, start matchmaking or start the Reveal, depending on the
+// current segment (#78).
+func (h *Handler) AdvanceShow(w http.ResponseWriter, r *http.Request) {
+	if err := h.show.Advance(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	http.Redirect(w, r, "/admin/host", http.StatusSeeOther)
 }
 
 // POST /admin/event-format: the admin picks the Event Format. Refused while

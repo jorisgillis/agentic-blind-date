@@ -138,7 +138,7 @@ type plainWriter struct{ http.ResponseWriter }
 func TestStreams_NeedAWriterThatCanStream(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "p", "P", "ready")
-	for _, path := range []string{"/user/pipeline-stream/p", "/user/wait-stream/p", "/bigscreen/stream"} {
+	for _, path := range []string{"/user/pipeline-stream/p", "/user/wait-stream/p", "/user/show-stream/p", "/bigscreen/stream", "/admin/host/stream"} {
 		rec := httptest.NewRecorder()
 		srv.h.ServeHTTP(plainWriter{rec}, httptest.NewRequest("GET", path, nil))
 		if rec.Code != 500 {
@@ -161,6 +161,21 @@ func TestStreams_EndWhenTheParticipantIsRemoved(t *testing.T) {
 
 	eventually(t, "the pipeline stream to end", pipeline.ended)
 	eventually(t, "the wait stream to end", wait.ended)
+}
+
+// TestShowStatusStream_EndsWhenTheParticipantIsRemoved covers #78.
+func TestShowStatusStream_EndsWhenTheParticipantIsRemoved(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, deps.db, "s", "S", "ready")
+	show := open(t, srv, "/user/show-stream/s")
+	sentNothingNew(t, show, 1, "", "before removal")
+
+	NewRelationships(deps.db).Remove("s")
+
+	eventually(t, "the show stream to end", show.ended)
 }
 
 // TestStreams_SendAHeartbeatWhenIdle covers #58: the heartbeat comes from an

@@ -64,6 +64,10 @@ func NewBigScreen(db *DB, matcher *Matcher) *BigScreen
 // Event administration: Reveal, Reset and Rematch, so handlers only call them (#57)
 func NewEventAdmin(db *DB, matcher *Matcher, matchmaking *Matchmaking) *EventAdmin
 
+// Show: the Game Show's segments (Lobby, Rounds, matchmaking, Reveal, Afterparty).
+// Inactive in the Classic flow (#78)
+func NewShow(db *DB) *Show
+
 // Watcher: the SSE streams' heartbeat Clock and catch-up signal (#58)
 func NewWatcher() *Watcher
 

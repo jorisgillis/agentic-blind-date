@@ -426,6 +426,35 @@ func TestReset_ChecksTheEventStateWriteToo(t *testing.T) {
 	}
 }
 
+func TestReset_ReportsAGenuineEventStateWriteFailure(t *testing.T) {
+	db := newTestDB(t)
+	breakOnFault(t, db, "reset_event_state")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+// TestReset_ChecksTheShowStateWriteToo covers #78: Reset also returns the
+// Game Show to the Lobby, in the same transaction.
+func TestReset_ChecksTheShowStateWriteToo(t *testing.T) {
+	db := newTestDB(t)
+	failWrites(t, db, "reset_show_state")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestReset_ReportsAGenuineShowStateWriteFailure(t *testing.T) {
+	db := newTestDB(t)
+	breakOnFault(t, db, "reset_show_state")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
+	}
+}
+
 func TestCreateParticipant_ReportsADamagedSchema(t *testing.T) {
 	db := newTestDB(t)
 	db.db.Exec(`ALTER TABLE participants DROP COLUMN persona_symbol`)

@@ -1,0 +1,39 @@
+{{define "show-status.html"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="classic">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Blind Date — The Show</title>
+  {{template "fragment-theme-head.html" .}}
+  {{template "fragment-theme-device-choice.html" .}}
+  {{template "fragment-theme-sound.html" .}}
+  <script src="/static/htmx-1.9.12.min.js"></script>
+</head>
+<body class="{{.Participant.PersonaColor}} text-on-persona min-h-screen px-4 py-8 flex items-center justify-center">
+  {{template "fragment-theme-picker.html" .}}
+  <div class="max-w-md mx-auto text-center space-y-4">
+    <div class="w-32 h-32 mx-auto rounded-3xl bg-overlay flex items-center justify-center text-7xl shadow-xl">
+      {{.Participant.PersonaSymbol}}
+    </div>
+    <h1 class="text-2xl font-display font-bold text-on-persona">{{.Participant.PersonaName}}</h1>
+
+    <div id="show-status-segment" class="pt-4">
+      <p class="text-on-persona/80 text-sm uppercase tracking-widest">
+        {{if eq .Segment "lobby"}}Waiting for the Host
+        {{else if eq .Segment "round"}}Round {{.Round}} of {{.TotalRounds}} coming up
+        {{else if eq .Segment "matchmaking"}}The agents are matching everyone...
+        {{else if eq .Segment "reveal"}}The Reveal is starting...
+        {{end}}
+      </p>
+    </div>
+  </div>
+  <script>
+    const _es = new EventSource('/user/show-stream/{{.Participant.ID}}');
+    _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
+    _es.addEventListener('refresh', () => window.location.reload());
+    _es.onerror = () => _es.close();
+  </script>
+</body>
+</html>
+{{end}}

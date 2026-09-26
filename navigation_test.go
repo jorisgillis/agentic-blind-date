@@ -23,10 +23,27 @@ func TestDestination_EveryParticipantHasOnePlaceToBe(t *testing.T) {
 			if c.matched {
 				p.MatchedWith = "q"
 			}
-			if got := destination(p, c.revealed); got != row.want[col] {
+			if got := destination(p, c.revealed, ClassicFlow); got != row.want[col] {
 				t.Errorf("%s (matched %v, revealed %v): want %s, got %s", row.name, c.matched, c.revealed, row.want[col], got)
 			}
 		}
+	}
+}
+
+// TestDestination_GameShowSendsAReadyParticipantToTheShowStatusPage covers
+// #78: before the Reveal, a ready Participant in a Game Show belongs on the
+// show status page, not the Classic flow's wait page; after the Reveal
+// they're matched like anyone else.
+func TestDestination_GameShowSendsAReadyParticipantToTheShowStatusPage(t *testing.T) {
+	p := &Participant{ID: "p", PipelineStep: StepReady}
+
+	if got := destination(p, false, GameShow); got != "/user/show/p" {
+		t.Errorf("want the show status page, got %s", got)
+	}
+
+	p.MatchedWith = "q"
+	if got := destination(p, true, GameShow); got != "/user/match/p" {
+		t.Errorf("once revealed and matched, want the match page, got %s", got)
 	}
 }
 
