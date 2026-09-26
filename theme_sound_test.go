@@ -55,3 +55,25 @@ func TestEveryPage_HasTheSoundModule(t *testing.T) {
 		t.Error("the Big Screen should show its own enable-sound control")
 	}
 }
+
+// TestPhonePages_RespectTheSilentSwitchUnlessPlayThroughIsChosen covers #44:
+// sound defaults to iOS's "ambient" audio session, which respects the
+// silent switch, and a Participant can explicitly opt into playing through
+// it instead (navigator.audioSession, feature-detected for browsers that
+// don't implement it).
+func TestPhonePages_RespectTheSilentSwitchUnlessPlayThroughIsChosen(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+
+	body := readBody(t, get(t, srv, "/user/wait/a"))
+	for _, want := range []string{
+		"audioSession",
+		"'playback'",
+		"'ambient'",
+		"abd-sound-playthrough-toggle",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q: the silent-switch play-through option isn't wired up", want)
+		}
+	}
+}

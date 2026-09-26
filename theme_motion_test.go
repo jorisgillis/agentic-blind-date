@@ -48,7 +48,7 @@ func TestTemplates_NoHardCodedAnimationDurations(t *testing.T) {
 		"templates/match.html", "templates/explore.html", "templates/screen.html", "templates/fragments.html",
 	} {
 		src := readFile(t, path)
-		for _, hardCoded := range []string{"0.5s ease-out", "2s ease-in-out"} {
+		for _, hardCoded := range []string{"0.5s ease-out", "2s ease-in-out", "duration-1000"} {
 			if strings.Contains(src, hardCoded) {
 				t.Errorf("%s: hard-codes an animation duration (%q) instead of a Theme token", path, hardCoded)
 			}

@@ -22,6 +22,14 @@
     onclick="agenticBlindDateToggleSound()"
     class="px-2 py-1 rounded-full text-sm text-ink hover:opacity-80 transition-opacity"
   >🔇</button>
+  <button
+    type="button"
+    id="abd-sound-playthrough-toggle"
+    aria-label="Play sound through the silent switch"
+    title="Play sound through the silent switch"
+    onclick="agenticBlindDateTogglePlayThrough()"
+    class="px-2 py-1 rounded-full text-xs text-ink hover:opacity-80 transition-opacity"
+  >📵</button>
 </div>
 <script>
 function agenticBlindDateSetTheme(key) {
@@ -31,6 +39,8 @@ function agenticBlindDateSetTheme(key) {
 function agenticBlindDateSoundButtonLabel() {
   var btn = document.getElementById('abd-sound-toggle');
   if (btn) btn.textContent = agenticBlindDateSound.isEnabled() ? '🔊' : '🔇';
+  var pt = document.getElementById('abd-sound-playthrough-toggle');
+  if (pt) pt.textContent = agenticBlindDateSound.playsThroughSilentSwitch() ? '🔊📵' : '📵';
 }
 function agenticBlindDateToggleSound() {
   if (agenticBlindDateSound.isEnabled()) {
@@ -38,6 +48,10 @@ function agenticBlindDateToggleSound() {
   } else {
     agenticBlindDateSound.enable();
   }
+  agenticBlindDateSoundButtonLabel();
+}
+function agenticBlindDateTogglePlayThrough() {
+  agenticBlindDateSound.setPlaysThroughSilentSwitch(!agenticBlindDateSound.playsThroughSilentSwitch());
   agenticBlindDateSoundButtonLabel();
 }
 document.addEventListener('DOMContentLoaded', agenticBlindDateSoundButtonLabel);

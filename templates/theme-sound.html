@@ -6,16 +6,35 @@
      fresh user gesture to unlock audio on each one — so once a Participant
      has opted in, any tap on the page (not just the toggle) re-unlocks the
      shared context. Every cue is optional: a Theme may leave it silent, and
-     nothing in the app depends on sound playing. */}}
+     nothing in the app depends on sound playing.
+
+     On iOS, Web Audio defaults to the "ambient" audio session category,
+     which respects the silent switch — cues stay silent when it's flipped,
+     which is the right default. navigator.audioSession (Safari 17+; feature
+     detected, since most browsers don't implement it) lets a Participant who
+     wants their sound to play through the switch opt into that explicitly. */}}
 {{define "fragment-theme-sound.html"}}
 <script>
 window.agenticBlindDateSound = (function(){
   var STORAGE_KEY = 'sound';
+  var PLAY_THROUGH_KEY = 'soundPlayThrough';
   var sounds = {{themeSoundsJSON}};
   var ctx = null;
 
   function enabled() {
     try { return localStorage.getItem(STORAGE_KEY) === 'on'; } catch (e) { return false; }
+  }
+
+  function playsThroughSilentSwitch() {
+    try { return localStorage.getItem(PLAY_THROUGH_KEY) === 'on'; } catch (e) { return false; }
+  }
+
+  // Sets the iOS audio session category to match the Participant's choice.
+  // Feature-detected: browsers without navigator.audioSession keep whatever
+  // their own default is (Web Audio's usual "ambient"-like behaviour).
+  function applyAudioSession() {
+    if (!('audioSession' in navigator)) return;
+    navigator.audioSession.type = playsThroughSilentSwitch() ? 'playback' : 'ambient';
   }
 
   function unlock() {
@@ -25,6 +44,7 @@ window.agenticBlindDateSound = (function(){
       if (!AC) return null;
       ctx = new AC();
     }
+    applyAudioSession();
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
   }
@@ -41,6 +61,11 @@ window.agenticBlindDateSound = (function(){
     },
     disable: function() {
       try { localStorage.setItem(STORAGE_KEY, 'off'); } catch (e) {}
+    },
+    playsThroughSilentSwitch: playsThroughSilentSwitch,
+    setPlaysThroughSilentSwitch: function(on) {
+      try { localStorage.setItem(PLAY_THROUGH_KEY, on ? 'on' : 'off'); } catch (e) {}
+      applyAudioSession();
     },
     // play sounds cue for the current Theme, or does nothing when sound is
     // off or the Theme leaves that cue silent.

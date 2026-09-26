@@ -123,10 +123,18 @@ var themeVarMappings = []themeVarMapping{
 	{"font-sans", "font-body"},
 	{"font-display", "font-display"},
 	{"font-mono", "font-mono"},
+	// The token set has 4 sizes (ticket 02), but templates use Tailwind's own
+	// finer rounded-{lg,xl,2xl,3xl,full} scale, so every one of those keys
+	// that templates actually use must be overridden too, not just the 4
+	// whose names happen to match a token 1:1 — otherwise most of the app's
+	// corners stay Tailwind's fixed, unthemed default (#40 review finding).
 	{"radius-sm", "radius-sm"},
 	{"radius-md", "radius-md"},
-	{"radius-lg", "radius-lg"},
-	{"radius-pill", "radius-pill"},
+	{"radius-lg", "radius-md"},
+	{"radius-xl", "radius-lg"},
+	{"radius-2xl", "radius-lg"},
+	{"radius-3xl", "radius-lg"},
+	{"radius-full", "radius-pill"},
 }
 
 type themeTokenValue struct{ token, value string }

@@ -50,7 +50,7 @@
   <div class="text-center mb-4">
     <p class="text-ink-muted text-xs mb-1">Question {{add .Index 1}} of {{.Total}}</p>
     <div class="h-1.5 bg-line rounded-full overflow-hidden">
-      <div class="h-full bg-accent rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
+      <div class="h-full bg-accent rounded-full transition-all" style="width: {{percent .Index .Total}}%; transition-duration: var(--t-duration-normal); transition-timing-function: var(--t-ease-standard)"></div>
     </div>
   </div>
 
