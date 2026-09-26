@@ -1,13 +1,13 @@
 {{define "screen.html"}}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="classic">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Blind Date — Big Screen</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  {{template "fragment-theme-head.html" .}}
+  <script src="/static/d3-7.9.0.min.js"></script>
+  <script src="/static/qrcode-1.0.0.min.js"></script>
   <style>
     html, body { height: 100%; overflow: hidden; }
     .node { cursor: grab; }
@@ -19,17 +19,17 @@
     .edge-matched { animation: pulse-match 2s ease-in-out infinite; }
   </style>
 </head>
-<body class="bg-gray-950 text-white flex flex-col h-full">
+<body class="bg-page text-ink flex flex-col h-full">
 
   <header class="flex items-center justify-between px-8 pt-5 pb-3 flex-shrink-0">
     <div class="flex items-center gap-3">
       <span class="text-3xl">💘</span>
-      <h1 class="text-2xl font-black tracking-tight">Agentic Blind Date</h1>
+      <h1 class="text-2xl font-display font-bold tracking-tight">Agentic Blind Date</h1>
     </div>
     <div class="flex items-center gap-6">
       <div id="status-info" class="text-right">
-        <p id="phase-label" class="text-sm text-gray-400">Loading...</p>
-        <p id="count-label" class="text-xs text-gray-600"></p>
+        <p id="phase-label" class="text-sm text-ink-muted">Loading...</p>
+        <p id="count-label" class="text-xs text-ink-muted/70"></p>
       </div>
       <div id="qr" class="rounded-lg overflow-hidden flex-shrink-0"></div>
     </div>
@@ -43,26 +43,43 @@
     <div id="empty-state" class="absolute inset-0 flex items-center justify-center">
       <div class="text-center">
         <p class="text-6xl mb-4">📱</p>
-        <p class="text-gray-400 text-2xl font-semibold">Scan the QR code to join!</p>
-        <p class="text-gray-700 text-sm mt-2">Participants appear here as they register</p>
+        <p class="text-ink-muted text-2xl font-semibold">Scan the QR code to join!</p>
+        <p class="text-ink-muted/70 text-sm mt-2">Participants appear here as they register</p>
       </div>
     </div>
   </div>
 
-  <footer class="flex-shrink-0 px-8 py-3 border-t border-gray-800 font-mono text-sm text-gray-500 overflow-hidden" style="height:44px">
+  <footer class="flex-shrink-0 px-8 py-3 border-t border-line font-mono text-sm text-ink-muted overflow-hidden" style="height:44px">
     <p id="ticker">&nbsp;</p>
   </footer>
 
 <script>
 const colorMap = {{.Palette}};
 
+// Theme tokens (theme_render.go) are CSS variables, not Tailwind classes, so
+// D3/QRCode — which paint via JS, not classes — read them from :root at the
+// moment they're needed. That keeps this reading whichever Theme is active,
+// including after a live Theme change (#42).
+function themeColor(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--t-' + name).trim();
+  return v || fallback;
+}
+
+// The Persona outline (ticket 03) is only drawn on Themes where it isn't
+// "transparent" (light Themes, where a Persona colour alone doesn't pass the
+// 3:1 contrast check); dark Themes fall back to a plain depth stroke.
+function nodeStroke() {
+  const outline = themeColor('persona-outline', 'transparent');
+  return outline !== 'transparent' ? outline : themeColor('surface-raised', '#111827');
+}
+
 // QR code pointing to /user
 new QRCode(document.getElementById('qr'), {
   text: window.location.origin + '/user',
   width: 110,
   height: 110,
-  colorDark: '#ffffff',
-  colorLight: '#030712',
+  colorDark: themeColor('text-normal', '#ffffff'),
+  colorLight: themeColor('surface-page', '#030712'),
   correctLevel: QRCode.CorrectLevel.M,
 });
 
@@ -139,7 +156,7 @@ function updateGraph(data) {
   edgeSel.enter().append('line')
     .merge(edgeSel)
     .attr('class', d => d.matched ? 'edge-matched' : '')
-    .attr('stroke', d => d.matched ? '#ec4899' : '#3b82f6')
+    .attr('stroke', d => d.matched ? themeColor('highlight-to', '#ec4899') : themeColor('accent', '#3b82f6'))
     .attr('stroke-width', d => d.matched ? 3.5 : 1)
     .attr('stroke-dasharray', d => d.matched ? null : '6,4')
     .attr('stroke-opacity', d => d.matched ? 0.9 : 0.45);
@@ -152,7 +169,7 @@ function updateGraph(data) {
     .call(drag());
   nodeEnter.append('circle')
     .attr('r', 42)
-    .attr('stroke', '#111827')
+    .attr('stroke', nodeStroke())
     .attr('stroke-width', 3);
   nodeEnter.append('text')
     .attr('class', 'sym')
@@ -165,7 +182,7 @@ function updateGraph(data) {
     .attr('text-anchor', 'middle')
     .attr('y', 58)
     .attr('font-size', '11px')
-    .attr('fill', '#9ca3af')
+    .attr('fill', themeColor('text-muted', '#9ca3af'))
     .style('pointer-events', 'none');
 
   const nodeAll = nodeEnter.merge(nodeSel);
@@ -173,7 +190,7 @@ function updateGraph(data) {
     .attr('fill', d => colorMap[d.color] || '#6b7280')
     .attr('opacity', d => d.ready ? 1 : 0.5)
     .style('filter', d => {
-      if (revealed && d.matched) return 'drop-shadow(0 0 10px #ec4899)';
+      if (revealed && d.matched) return `drop-shadow(0 0 10px ${themeColor('highlight-to', '#ec4899')})`;
       return null;
     });
   nodeAll.select('.sym').text(d => d.symbol || '🎭');

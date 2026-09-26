@@ -73,8 +73,9 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		// Only called with a non-empty question set and constant divisors.
 		"percent":   func(n, total int) int { return n * 100 / total },
 		"divInt":    func(a, b int) int { return a / b },
-		"colorName": paletteName,
-		"textColor": paletteText,
+		"colorName":       paletteName,
+		"textColor":       paletteText,
+		"themeStyleBlock": themeStyleBlock,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{

@@ -76,6 +76,9 @@ func main() {
 func buildMux(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 
+	// Every front-end asset is self-hosted (ADR-0009): no third-party requests.
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)

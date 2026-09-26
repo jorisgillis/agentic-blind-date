@@ -1,12 +1,12 @@
 {{define "match.html"}}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="classic">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Blind Date — Your Match!</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  {{template "fragment-theme-head.html" .}}
+  <script src="/static/marked-12.0.2.min.js"></script>
   <style>
     @keyframes pop-in {
       0% { transform: scale(0.8); opacity: 0; }
@@ -16,16 +16,16 @@
     .pop-in { animation: pop-in 0.5s ease-out forwards; }
   </style>
 </head>
-<body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10" style="color-scheme: light;">
-<div class="{{textColor .Me.PersonaColor}}">
+<body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10">
+<div class="text-on-persona">
   <div class="max-w-md mx-auto">
 
     <div class="text-center mb-8 pop-in">
       <div class="text-8xl mb-3">{{.Me.PersonaSymbol}}</div>
       <div class="text-4xl mb-2">💘</div>
-      <h1 class="text-3xl font-black text-gray-900">It's a match!</h1>
+      <h1 class="text-3xl font-display font-bold text-on-persona">It's a match!</h1>
       {{if .Match}}
-      <p class="text-gray-700 mt-1">{{.Me.CompatScore}}% compatibility</p>
+      <p class="text-on-persona/80 mt-1">{{.Me.CompatScore}}% compatibility</p>
       {{end}}
     </div>
 
@@ -34,35 +34,35 @@
 
     {{/* Compatibility meter */}}
     <div class="mb-6">
-      <div class="h-3 bg-black/20 rounded-full overflow-hidden">
+      <div class="h-3 bg-overlay rounded-full overflow-hidden">
         <div
-          class="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full transition-all duration-1000"
+          class="h-full bg-gradient-to-r from-highlight-from to-highlight-to rounded-full transition-all duration-1000"
           style="width: {{.Me.CompatScore}}%"
         ></div>
       </div>
     </div>
 
     {{/* Match card + Find them merged */}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
+    <div class="bg-overlay border border-overlay rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
       <div class="flex items-center gap-4">
-        <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
+        <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} outline outline-2 outline-persona-line flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
           {{$m.PersonaSymbol}}
         </div>
         <div>
-          <p class="font-bold text-lg text-gray-900">{{$m.PersonaName}}</p>
-          <p class="text-gray-700 text-sm">{{$m.DisplayHandle}}</p>
+          <p class="font-bold text-lg text-on-persona">{{$m.PersonaName}}</p>
+          <p class="text-on-persona/80 text-sm">{{$m.DisplayHandle}}</p>
         </div>
       </div>
       {{if .Me.CompatReason}}
-      <p class="mt-4 text-gray-800 italic text-sm" data-md>"{{.Me.CompatReason}}"</p>
+      <p class="mt-4 text-on-persona italic text-sm" data-md>"{{.Me.CompatReason}}"</p>
       {{end}}
-      <div class="mt-4 pt-4 border-t border-black/10 flex items-center gap-3">
-        <div class="w-12 h-12 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow">
+      <div class="mt-4 pt-4 border-t border-overlay flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl {{$m.PersonaColor}} outline outline-2 outline-persona-line flex items-center justify-center text-2xl flex-shrink-0 shadow">
           {{$m.PersonaSymbol}}
         </div>
         <div>
-          <p class="text-pink-800 font-bold text-xs">📍 Find them in the room</p>
-          <p class="text-gray-900 text-sm font-medium mt-0.5">{{$m.PersonaSymbol}} on a {{colorName $m.PersonaColor}} background</p>
+          <p class="text-accent font-bold text-xs">📍 Find them in the room</p>
+          <p class="text-on-persona text-sm font-medium mt-0.5">{{$m.PersonaSymbol}} on a {{colorName $m.PersonaColor}} background</p>
         </div>
       </div>
     </div>
@@ -71,18 +71,18 @@
     {{if or .GreenFlags .RedFlags}}
     <div class="grid grid-cols-2 gap-3 mb-4">
       {{if .GreenFlags}}
-      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
-        <p class="text-green-800 font-bold text-sm mb-2">✅ Green flags</p>
+      <div class="bg-overlay border border-overlay rounded-xl p-4">
+        <p class="text-ok font-bold text-sm mb-2">✅ Green flags</p>
         {{range .GreenFlags}}
-        <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
+        <p class="text-on-persona text-sm" data-md>• {{.}}</p>
         {{end}}
       </div>
       {{end}}
       {{if .RedFlags}}
-      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
-        <p class="text-red-800 font-bold text-sm mb-2">🚩 Red flags</p>
+      <div class="bg-overlay border border-overlay rounded-xl p-4">
+        <p class="text-bad font-bold text-sm mb-2">🚩 Red flags</p>
         {{range .RedFlags}}
-        <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
+        <p class="text-on-persona text-sm" data-md>• {{.}}</p>
         {{end}}
       </div>
       {{end}}
@@ -91,24 +91,24 @@
 
     {{/* Icebreakers */}}
     {{if .Icebreakers}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mb-4" style="animation-delay:0.3s">
-      <p class="text-indigo-800 font-bold text-sm mb-3">💬 Ask them</p>
+    <div class="bg-overlay border border-overlay rounded-xl p-4 pop-in mb-4" style="animation-delay:0.3s">
+      <p class="text-accent font-bold text-sm mb-3">💬 Ask them</p>
       {{range .Icebreakers}}
-      <p class="text-gray-800 text-sm mb-2" data-md>→ {{.}}</p>
+      <p class="text-on-persona text-sm mb-2" data-md>→ {{.}}</p>
       {{end}}
     </div>
     {{end}}
 
     {{/* Others at the event */}}
     {{if .Others}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mt-4" style="animation-delay:0.45s">
-      <p class="text-gray-700 font-bold text-sm mb-3">👥 Others at the event</p>
+    <div class="bg-overlay border border-overlay rounded-xl p-4 pop-in mt-4" style="animation-delay:0.45s">
+      <p class="text-on-persona/80 font-bold text-sm mb-3">👥 Others at the event</p>
       <div class="grid grid-cols-3 gap-3">
         {{range .Others}}
         <a href="/user/explore/{{$.Me.ID}}/{{.ID}}" class="flex flex-col items-center text-center hover:opacity-75 active:scale-95 transition-all">
-          <div class="w-12 h-12 rounded-xl {{.PersonaColor}} flex items-center justify-center text-xl mb-1 shadow-sm">{{.PersonaSymbol}}</div>
-          <p class="text-xs font-bold leading-tight text-gray-900">{{if .PersonaName}}{{.PersonaName}}{{else}}{{.DisplayHandle}}{{end}}</p>
-          <p class="text-gray-600 text-xs">{{.DisplayHandle}}</p>
+          <div class="w-12 h-12 rounded-xl {{.PersonaColor}} outline outline-2 outline-persona-line flex items-center justify-center text-xl mb-1 shadow-sm">{{.PersonaSymbol}}</div>
+          <p class="text-xs font-bold leading-tight text-on-persona">{{if .PersonaName}}{{.PersonaName}}{{else}}{{.DisplayHandle}}{{end}}</p>
+          <p class="text-on-persona/70 text-xs">{{.DisplayHandle}}</p>
         </a>
         {{end}}
       </div>
@@ -116,13 +116,13 @@
     {{end}}
 
     {{/* QR code */}}
-    <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
-      <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
+    <div class="bg-overlay border border-overlay rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
+      <p class="text-on-persona/80 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
       <img id="qr" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
     </div>
 
     {{else}}
-    <div class="text-center text-gray-700 py-12">
+    <div class="text-center text-on-persona/80 py-12">
       <p>Hmm, we couldn't find your match yet.</p>
       <p class="text-sm mt-2">Refresh in a moment.</p>
     </div>

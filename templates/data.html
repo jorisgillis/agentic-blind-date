@@ -1,48 +1,48 @@
 {{define "data.html"}}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="classic">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Debug Data — Agentic Blind Date</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  {{template "fragment-theme-head.html" .}}
+  <script src="/static/htmx-1.9.12.min.js"></script>
   <style>
     pre { white-space: pre-wrap; word-break: break-all; }
   </style>
 </head>
-<body class="bg-gray-950 text-white min-h-screen px-6 py-8 font-mono text-sm">
+<body class="bg-page text-ink min-h-screen px-6 py-8 font-mono text-sm">
 
   <div class="max-w-5xl mx-auto space-y-8">
 
     <div>
       <h1 class="text-xl font-bold mb-1">Debug Data</h1>
-      <p class="text-gray-500 text-xs">
+      <p class="text-ink-muted text-xs">
         JSON endpoints:
-        <a href="/data/participants" class="text-indigo-400 hover:underline">/data/participants</a> ·
-        <a href="/data/state" class="text-indigo-400 hover:underline">/data/state</a> ·
-        <a href="/data/activity" class="text-indigo-400 hover:underline">/data/activity</a>
+        <a href="/data/participants" class="text-accent hover:underline">/data/participants</a> ·
+        <a href="/data/state" class="text-accent hover:underline">/data/state</a> ·
+        <a href="/data/activity" class="text-accent hover:underline">/data/activity</a>
       </p>
     </div>
 
     {{/* Event state */}}
     <section>
-      <h2 class="text-gray-400 uppercase text-xs tracking-widest mb-3">Event State</h2>
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex gap-8">
-        <div><span class="text-gray-500">phase</span> <span class="text-yellow-300 font-bold ml-2">{{.Event.Label}}</span></div>
-        <div><span class="text-gray-500">participants</span> <span class="font-bold ml-2">{{.Count}}</span></div>
-        <div><span class="text-gray-500">ready</span> <span class="font-bold ml-2">{{.ReadyCount}}</span></div>
+      <h2 class="text-ink-muted uppercase text-xs tracking-widest mb-3">Event State</h2>
+      <div class="bg-raised border border-line rounded-xl p-4 flex gap-8">
+        <div><span class="text-ink-muted">phase</span> <span class="text-accent font-bold ml-2">{{.Event.Label}}</span></div>
+        <div><span class="text-ink-muted">participants</span> <span class="font-bold ml-2">{{.Count}}</span></div>
+        <div><span class="text-ink-muted">ready</span> <span class="font-bold ml-2">{{.ReadyCount}}</span></div>
       </div>
     </section>
 
     {{/* Participants table */}}
     <section>
-      <h2 class="text-gray-400 uppercase text-xs tracking-widest mb-3">Participants ({{.Count}})</h2>
+      <h2 class="text-ink-muted uppercase text-xs tracking-widest mb-3">Participants ({{.Count}})</h2>
       {{if .Participants}}
       <div class="overflow-x-auto">
         <table class="w-full border-collapse text-xs">
           <thead>
-            <tr class="text-gray-500 border-b border-gray-800">
+            <tr class="text-ink-muted border-b border-line">
               <th class="text-left py-2 pr-4">handle</th>
               <th class="text-left py-2 pr-4">name</th>
               <th class="text-left py-2 pr-2">sym</th>
@@ -58,29 +58,29 @@
           </thead>
           <tbody>
             {{range .Participants}}
-            <tr class="border-b border-gray-900 hover:bg-gray-900/50" id="row-{{.ID}}">
-              <td class="py-2 pr-4 text-indigo-300">{{.DisplayHandle}}</td>
-              <td class="py-2 pr-4 text-gray-300">{{.Name}}</td>
+            <tr class="border-b border-raised hover:bg-raised/50" id="row-{{.ID}}">
+              <td class="py-2 pr-4 text-accent">{{.DisplayHandle}}</td>
+              <td class="py-2 pr-4 text-ink">{{.Name}}</td>
               <td class="py-2 pr-2 text-lg">{{.PersonaSymbol}}</td>
               <td class="py-2 pr-4">{{.PersonaName}}</td>
-              <td class="py-2 pr-4"><span class="px-2 py-0.5 rounded text-xs {{.PersonaColor}} text-gray-900">{{.PersonaColor}}</span></td>
+              <td class="py-2 pr-4"><span class="px-2 py-0.5 rounded text-xs {{.PersonaColor}} text-on-persona">{{.PersonaColor}}</span></td>
               <td class="py-2 pr-4
-                {{if .MatchedWith}}text-green-400
-                {{else if .PipelineStep.IsReady}}text-yellow-400
-                {{else if .PipelineStep.IsInterviewing}}text-blue-400
-                {{else}}text-gray-500
+                {{if .MatchedWith}}text-ok
+                {{else if .PipelineStep.IsReady}}text-warn
+                {{else if .PipelineStep.IsInterviewing}}text-accent
+                {{else}}text-ink-muted
                 {{end}}">{{.PipelineStep}}{{if .MatchedWith}} · matched{{end}}</td>
               <td class="py-2 pr-4">{{if .CompatScore}}{{.CompatScore}}%{{else}}-{{end}}</td>
-              <td class="py-2 pr-4 text-gray-500 truncate max-w-xs">{{if .MatchedWith}}{{.MatchedWith}}{{else}}-{{end}}</td>
-					<td class="py-2 pr-4 text-gray-500 truncate max-w-xs">{{range $k, $v := .Answers}}{{if $k}}, {{end}}{{$k}}:{{$v}}{{end}}</td>
-              <td class="py-2 pr-4"><a href="/data/participant/{{.ID}}" class="text-indigo-400 hover:underline">json</a></td>
+              <td class="py-2 pr-4 text-ink-muted truncate max-w-xs">{{if .MatchedWith}}{{.MatchedWith}}{{else}}-{{end}}</td>
+					<td class="py-2 pr-4 text-ink-muted truncate max-w-xs">{{range $k, $v := .Answers}}{{if $k}}, {{end}}{{$k}}:{{$v}}{{end}}</td>
+              <td class="py-2 pr-4"><a href="/data/participant/{{.ID}}" class="text-accent hover:underline">json</a></td>
               <td class="py-2">
                 <button
                   hx-delete="/data/participant/{{.ID}}"
                   hx-confirm="Delete {{.DisplayHandle}}?"
                   hx-target="closest tr"
                   hx-swap="outerHTML swap:1s"
-                  class="text-red-400 hover:text-red-300 text-xs font-mono">✕</button>
+                  class="text-bad hover:opacity-80 text-xs font-mono">✕</button>
               </td>
             </tr>
             {{end}}
@@ -88,21 +88,21 @@
         </table>
       </div>
       {{else}}
-      <p class="text-gray-600">No participants yet.</p>
+      <p class="text-ink-muted/70">No participants yet.</p>
       {{end}}
     </section>
 
     {{/* Activity log */}}
     <section>
-      <h2 class="text-gray-400 uppercase text-xs tracking-widest mb-3">Recent Activity</h2>
+      <h2 class="text-ink-muted uppercase text-xs tracking-widest mb-3">Recent Activity</h2>
       {{if .Activity}}
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-1">
+      <div class="bg-raised border border-line rounded-xl p-4 space-y-1">
         {{range .Activity}}
-        <p class="text-gray-300">{{.}}</p>
+        <p class="text-ink">{{.}}</p>
         {{end}}
       </div>
       {{else}}
-      <p class="text-gray-600">No activity yet.</p>
+      <p class="text-ink-muted/70">No activity yet.</p>
       {{end}}
     </section>
 

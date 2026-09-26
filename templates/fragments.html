@@ -10,32 +10,32 @@
   <div class="space-y-3">
     {{$step := .PipelineStep}}
 
-    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsFetchingGitHub}}bg-indigo-900/40 border border-indigo-700{{else}}bg-gray-900 border border-gray-800{{end}}">
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsFetchingGitHub}}bg-accent/20 border border-accent{{else}}bg-raised border border-line{{end}}">
       <span class="text-xl">{{if $step.IsFetchingGitHub}}⏳{{else}}✅{{end}}</span>
       <div>
         <p class="font-semibold text-sm">Fetching GitHub profile</p>
-        {{if $step.IsFetchingGitHub}}<p class="text-indigo-400 text-xs">Preparing your interview questions...</p>{{end}}
+        {{if $step.IsFetchingGitHub}}<p class="text-accent text-xs">Preparing your interview questions...</p>{{end}}
       </div>
     </div>
 
-    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsCreatingPersona}}bg-indigo-900/40 border border-indigo-700{{else if $step.IsFetchingGitHub}}bg-gray-900/50 border border-gray-800 opacity-40{{else}}bg-gray-900 border border-gray-800{{end}}">
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsCreatingPersona}}bg-accent/20 border border-accent{{else if $step.IsFetchingGitHub}}bg-raised/50 border border-line opacity-40{{else}}bg-raised border border-line{{end}}">
       <span class="text-xl">{{if $step.IsCreatingPersona}}⏳{{else if $step.IsFetchingGitHub}}⬜{{else}}✅{{end}}</span>
       <div>
         <p class="font-semibold text-sm">Crafting your persona</p>
-        {{if $step.IsCreatingPersona}}<p class="text-indigo-400 text-xs">Creating your persona...</p>{{end}}
+        {{if $step.IsCreatingPersona}}<p class="text-accent text-xs">Creating your persona...</p>{{end}}
       </div>
     </div>
 
-    <div class="flex items-center gap-3 p-4 rounded-xl bg-gray-900/50 border border-gray-800 opacity-40">
+    <div class="flex items-center gap-3 p-4 rounded-xl bg-raised/50 border border-line opacity-40">
       <span class="text-xl">⬜</span>
       <div>
         <p class="font-semibold text-sm">Interview</p>
-        <p class="text-gray-600 text-xs">Coming up next</p>
+        <p class="text-ink-muted text-xs">Coming up next</p>
       </div>
     </div>
   </div>
 
-  <p class="text-center text-gray-600 text-xs animate-pulse">Agent pipeline running...</p>
+  <p class="text-center text-ink-muted text-xs animate-pulse">Agent pipeline running...</p>
 </div>
 {{end}}
 
@@ -48,13 +48,13 @@
   class="space-y-4"
 >
   <div class="text-center mb-4">
-    <p class="text-gray-500 text-xs mb-1">Question {{add .Index 1}} of {{.Total}}</p>
-    <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-      <div class="h-full bg-indigo-500 rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
+    <p class="text-ink-muted text-xs mb-1">Question {{add .Index 1}} of {{.Total}}</p>
+    <div class="h-1.5 bg-line rounded-full overflow-hidden">
+      <div class="h-full bg-accent rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
     </div>
   </div>
 
-  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+  <div class="bg-raised border border-line rounded-2xl p-6">
     <p class="font-semibold text-lg mb-5" data-md>{{.Question.Text}}</p>
 
     <script>
@@ -91,10 +91,10 @@
       <input type="hidden" name="answer" id="selected-options" value="" />
       <div class="space-y-2" id="option-container">
         {{range .Question.Options}}
-        <label class="flex items-center gap-3 p-4 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700 cursor-pointer transition-colors">
+        <label class="flex items-center gap-3 p-4 rounded-xl bg-raised border border-line hover:opacity-90 cursor-pointer transition-colors">
           <input
             type="checkbox"
-            class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+            class="h-4 w-4 rounded border-line bg-raised text-accent focus:ring-accent"
             value="{{.}}"
             onchange="updateMultiSelect(this, {{.Question.MaxSelections}})"
           />
@@ -102,8 +102,8 @@
         </label>
         {{end}}
       </div>
-      <p class="text-xs text-gray-500 text-center" id="selection-counter">0/{{.Question.MaxSelections}} selected</p>
-      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-3 text-sm transition-colors mt-2" id="submit-multiselect" disabled>
+      <p class="text-xs text-ink-muted text-center" id="selection-counter">0/{{.Question.MaxSelections}} selected</p>
+      <button type="submit" class="w-full bg-accent hover:opacity-90 text-on-accent font-bold rounded-xl py-3 text-sm transition-colors mt-2" id="submit-multiselect" disabled>
         Continue →
       </button>
     </form>
@@ -114,7 +114,7 @@
         type="submit"
         name="answer"
         value="{{.}}"
-        class="w-full text-left bg-gray-800 hover:bg-indigo-800 border border-gray-700 hover:border-indigo-500 rounded-xl px-4 py-3 text-sm transition-colors"
+        class="w-full text-left bg-raised hover:bg-accent/20 border border-line hover:border-accent rounded-xl px-4 py-3 text-sm transition-colors"
       >{{.}}</button>
       {{end}}
     </form>
@@ -126,14 +126,14 @@
           type="text"
           name="answer"
           placeholder="Type your answer..."
-          class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+          class="flex-1 bg-raised border border-line rounded-xl px-4 py-3 text-sm text-ink placeholder-ink-muted focus:outline-none focus:border-accent"
         />
-        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-4 py-3 text-sm font-bold transition-colors">→</button>
+        <button type="submit" class="bg-accent hover:opacity-90 text-on-accent rounded-xl px-4 py-3 text-sm font-bold transition-colors">→</button>
       </div>
     </form>
     <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="mt-2">
       <input type="hidden" name="answer" value="">
-      <button type="submit" class="text-gray-500 hover:text-gray-300 text-xs underline w-full text-center transition-colors">
+      <button type="submit" class="text-ink-muted hover:text-ink text-xs underline w-full text-center transition-colors">
         Skip this question
       </button>
     </form>
@@ -156,8 +156,8 @@
   class="text-center space-y-4 py-4"
 >
   <p class="text-4xl">❤️</p>
-  <p class="text-gray-900 font-bold">You've been matched!</p>
-  <p class="text-gray-700 text-sm">Your match is waiting for the Reveal. Keep an eye on the big screen!</p>
+  <p class="text-on-persona font-bold">You've been matched!</p>
+  <p class="text-on-persona/80 text-sm">Your match is waiting for the Reveal. Keep an eye on the big screen!</p>
 </div>
 {{else}}
 <div
@@ -168,16 +168,16 @@
   class="text-center space-y-4"
 >
   <div>
-    <p class="text-5xl font-black text-gray-900">{{.Count}}</p>
-    <p class="text-gray-700 mt-1">{{if eq .Count 1}}person{{else}}people{{end}} ready in the room</p>
+    <p class="text-5xl font-display font-bold text-on-persona">{{.Count}}</p>
+    <p class="text-on-persona/80 mt-1">{{if eq .Count 1}}person{{else}}people{{end}} ready in the room</p>
   </div>
 
-  <div class="flex items-center justify-center gap-2 text-gray-700 text-sm">
-    <span class="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
+  <div class="flex items-center justify-center gap-2 text-on-persona/80 text-sm">
+    <span class="w-2 h-2 rounded-full bg-on-persona animate-pulse"></span>
     Looking for your perfect match...
   </div>
 
-  <p class="text-gray-600 text-xs">Watch the big screen!</p>
+  <p class="text-on-persona/70 text-xs">Watch the big screen!</p>
 </div>
 {{end}}
 {{end}}
@@ -192,17 +192,17 @@
   {{if eq .Count 0}}
   <div class="text-center py-8 flex-shrink-0">
     <p class="text-5xl mb-4">📱</p>
-    <p class="text-gray-500 text-xl">Waiting for participants to join...</p>
-    <p class="text-gray-700 text-sm mt-2">Open the app on your phone</p>
+    <p class="text-ink-muted text-xl">Waiting for participants to join...</p>
+    <p class="text-ink-muted/70 text-sm mt-2">Open the app on your phone</p>
   </div>
   {{else if $hasMatches}}
   <div class="text-center py-4 flex-shrink-0">
-    <h2 class="text-3xl font-black">💘 {{len .Matches}} match{{if gt (len .Matches) 1}}es{{end}} so far!</h2>
+    <h2 class="text-3xl font-display font-bold">💘 {{len .Matches}} match{{if gt (len .Matches) 1}}es{{end}} so far!</h2>
   </div>
   {{else}}
   <div class="flex items-center justify-between px-8 py-4 flex-shrink-0">
-    <p class="text-gray-400 text-sm">{{.Count}} participant{{if ne .Count 1}}s{{end}} — {{.ReadyCount}} ready</p>
-    <p class="text-gray-600 text-sm">✨ Live matching</p>
+    <p class="text-ink-muted text-sm">{{.Count}} participant{{if ne .Count 1}}s{{end}} — {{.ReadyCount}} ready</p>
+    <p class="text-ink-muted/70 text-sm">✨ Live matching</p>
   </div>
   {{end}}
 
@@ -214,18 +214,18 @@
     {{/* Show match cards: each Match once, both sides' own Persona (#55) */}}
     <div class="grid grid-cols-3 gap-5">
       {{range .Matches}}
-      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
+      <div class="bg-raised border border-line rounded-2xl p-4 text-center">
         <div class="flex justify-center gap-3 mb-3">
-          <div class="w-14 h-14 rounded-xl {{.A.Color}} flex items-center justify-center text-2xl">{{.A.Symbol}}</div>
-          <div class="flex items-center text-gray-600">❤️</div>
-          <div class="w-14 h-14 rounded-xl {{.B.Color}} flex items-center justify-center text-2xl">{{.B.Symbol}}</div>
+          <div class="w-14 h-14 rounded-xl {{.A.Color}} outline outline-2 outline-persona-line flex items-center justify-center text-2xl">{{.A.Symbol}}</div>
+          <div class="flex items-center text-ink-muted">❤️</div>
+          <div class="w-14 h-14 rounded-xl {{.B.Color}} outline outline-2 outline-persona-line flex items-center justify-center text-2xl">{{.B.Symbol}}</div>
         </div>
         <p class="font-bold text-sm">{{if .A.Handle}}{{.A.Handle}} & {{.B.Handle}}{{else}}{{.A.Name}} & {{.B.Name}}{{end}}</p>
-        <div class="bg-gray-800 rounded-full px-3 py-1 text-xs font-bold text-indigo-400 inline-block mt-2">
+        <div class="bg-overlay rounded-full px-3 py-1 text-xs font-bold text-accent inline-block mt-2">
           {{.Score}}% match
         </div>
         {{if .Reason}}
-        <p class="text-gray-600 text-xs mt-2 italic">{{.Reason}}</p>
+        <p class="text-ink-muted text-xs mt-2 italic">{{.Reason}}</p>
         {{end}}
       </div>
       {{end}}
@@ -235,13 +235,13 @@
     <div class="grid grid-cols-4 gap-4 auto-rows-fr">
       {{range .Nodes}}
       <div class="flex flex-col items-center text-center">
-        <div class="w-full aspect-square rounded-2xl {{.Color}} flex items-center justify-center text-4xl shadow-lg mb-2
-          {{if .Ready}}ring-2 ring-white/40{{else}}opacity-70{{end}}
-          {{if .Matched}}ring-2 ring-indigo-500{{end}}">
+        <div class="w-full aspect-square rounded-2xl {{.Color}} outline outline-2 outline-persona-line flex items-center justify-center text-4xl shadow-lg mb-2
+          {{if .Ready}}ring-2 ring-ink/40{{else}}opacity-70{{end}}
+          {{if .Matched}}ring-2 ring-accent{{end}}">
           {{.Symbol}}
         </div>
         <p class="text-sm font-bold leading-tight">{{if .Handle}}{{.Handle}}{{else if .PersonaName}}{{.PersonaName}}{{else}}Preparing…{{end}}</p>
-        <p class="text-xs text-gray-500">
+        <p class="text-xs text-ink-muted">
           {{if .Matched}}❤️ matched{{else if .Ready}}✅ ready{{else if eq .Step "interviewing"}}💬 interviewing{{else if eq .Step "creating_persona"}}{{.Symbol}} profiling{{else}}🔍 fetching{{end}}
         </p>
       </div>
@@ -251,7 +251,7 @@
   </div>
 
   {{/* Activity ticker */}}
-  <div class="flex-shrink-0 px-8 py-3 border-t border-gray-800 font-mono text-sm text-gray-500 overflow-hidden">
+  <div class="flex-shrink-0 px-8 py-3 border-t border-line font-mono text-sm text-ink-muted overflow-hidden">
     {{if .Activity}}{{index .Activity 0}}{{end}}
   </div>
 </div>

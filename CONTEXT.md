@@ -21,6 +21,9 @@ The persona allows participants to be identifiable in the room without revealing
 
 The **Persona module** is the only place a Persona is made. When the LLM fails it falls back to an anonymous Persona named after the Participant's main language ("The Go Developer"), never after their handle or name.
 
+### Theme
+A look for the app: named design tokens for colour, typography, shape, motion and sound, applied through CSS custom properties under `<html data-theme>` (ADR-0009). The Persona palette (a Persona's colour, symbol and, on light Themes, outline) is not part of any Theme — it stays the same regardless of which Theme is active. The **Theme catalogue** (`theme.go`) is the one source of Themes; `ThemeByKey` falls back to the default Theme, **Classic**, for an unknown or blank key. A Participant picks their own Theme on their phone; the admin picks the Big Screen's.
+
 ### Pipeline
 The automated process that each participant goes through:
 1. **Fetching GitHub**: Retrieve and parse GitHub profile data and prepare the question set. The Interview only starts (`interviewing`) once the question set is stored

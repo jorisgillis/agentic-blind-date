@@ -1,0 +1,26 @@
+{{/* fragment-theme-head.html: included in every page's <head>. Renders the
+     vendored Tailwind v4 browser build, the Theme catalogue as CSS (see
+     themeStyleBlock in theme_render.go), and the no-unstyled-flash guard
+     (ADR-0009). Every page's <html data-theme="…"> picks which Theme these
+     variables resolve to. */}}
+{{define "fragment-theme-head.html"}}
+<style id="theme-flash-guard">html{visibility:hidden}</style>
+<script src="/static/tailwind-browser-4.3.3.js"></script>
+{{themeStyleBlock}}
+<script>
+(function(){
+  var revealed = false;
+  function reveal(){
+    if (revealed) return;
+    revealed = true;
+    var g = document.getElementById('theme-flash-guard');
+    if (g) g.remove();
+  }
+  // Two animation frames: Tailwind's browser build compiles the styles
+  // above synchronously on load, so by the frame after next they are in
+  // effect. The timeout is a safety net if that script fails to load.
+  requestAnimationFrame(function(){ requestAnimationFrame(reveal); });
+  setTimeout(reveal, 1000);
+})();
+</script>
+{{end}}

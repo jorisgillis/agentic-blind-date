@@ -1,20 +1,20 @@
 {{define "landing.html"}}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="classic">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Blind Date</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  {{template "fragment-theme-head.html" .}}
+  <script src="/static/htmx-1.9.12.min.js"></script>
 </head>
-<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center px-4">
+<body class="bg-page text-ink min-h-screen flex items-center justify-center px-4">
   <div class="w-full max-w-md text-center">
 
     <div class="text-7xl mb-4">💘</div>
-    <h1 class="text-4xl font-black tracking-tight mb-2">Agentic Blind Date</h1>
-    <p class="text-gray-400 mb-2">Find your technical soulmate.</p>
-    <p class="text-gray-500 text-sm mb-10">Powered by AI agents analyzing your GitHub profile.</p>
+    <h1 class="text-4xl font-display font-bold tracking-tight mb-2">Agentic Blind Date</h1>
+    <p class="text-ink-muted mb-2">Find your technical soulmate.</p>
+    <p class="text-ink-muted/70 text-sm mb-10">Powered by AI agents analyzing your GitHub profile.</p>
 
      <form action="/user/join" method="POST" class="space-y-4" id="joinForm">
        <div>
@@ -24,7 +24,7 @@
            placeholder="your name"
            autocomplete="given-name"
            required
-           class="w-full bg-gray-800 border border-gray-700 rounded-xl px-5 py-4 text-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-center"
+           class="w-full bg-raised border border-line rounded-xl px-5 py-4 text-lg text-ink placeholder-ink-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-center"
          />
        </div>
        <div>
@@ -35,17 +35,17 @@
            placeholder="your GitHub handle"
            autocomplete="off"
            autocapitalize="none"
-           class="w-full bg-gray-800 border border-gray-700 rounded-xl px-5 py-4 text-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-center"
+           class="w-full bg-raised border border-line rounded-xl px-5 py-4 text-lg text-ink placeholder-ink-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent text-center"
          />
        </div>
         <div class="flex items-center justify-center gap-2">
-          <input type="checkbox" id="noGitHubCheckbox" name="no_github" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
-          <label for="noGitHubCheckbox" class="text-sm text-gray-400 cursor-pointer">I don't have a GitHub account</label>
+          <input type="checkbox" id="noGitHubCheckbox" name="no_github" class="h-4 w-4 rounded border-line bg-raised text-accent focus:ring-accent" />
+          <label for="noGitHubCheckbox" class="text-sm text-ink-muted cursor-pointer">I don't have a GitHub account</label>
         </div>
-        
+
         <button
          type="submit"
-         class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-4 text-lg transition-colors"
+         class="w-full bg-accent hover:opacity-90 text-on-accent font-bold rounded-xl py-4 text-lg transition-colors"
        >
          Find my match →
        </button>
@@ -77,7 +77,7 @@
         });
       </script>
 
-    <p class="text-gray-600 text-xs mt-8">Only your public GitHub data is used.</p>
+    <p class="text-ink-muted/50 text-xs mt-8">Only your public GitHub data is used.</p>
   </div>
 </body>
 </html>
