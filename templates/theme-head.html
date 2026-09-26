@@ -24,3 +24,24 @@
 })();
 </script>
 {{end}}
+
+{{/* fragment-theme-device-choice.html: applies the Participant's
+     device-stored Theme choice before first paint (#41). Included on every
+     phone page (Participant and admin/data alike — ticket 02: "Admin and
+     data pages follow the organiser's own device choice, like any phone")
+     but never on the Big Screen, which ignores any device-stored choice
+     and instead renders the admin's chosen Theme (#42). An unknown,
+     missing or blocked choice leaves <html data-theme> at the default
+     already rendered server-side. */}}
+{{define "fragment-theme-device-choice.html"}}
+<script>
+(function(){
+  try {
+    var chosen = localStorage.getItem('theme');
+    if (chosen && {{themeKeysJSON}}.indexOf(chosen) !== -1) {
+      document.documentElement.setAttribute('data-theme', chosen);
+    }
+  } catch (e) { /* localStorage blocked: keep the default already rendered */ }
+})();
+</script>
+{{end}}

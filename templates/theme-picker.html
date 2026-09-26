@@ -1,0 +1,23 @@
+{{/* fragment-theme-picker.html: lets a Participant pick a Theme on their own
+     device (#41). Applies instantly (no reload) and persists to localStorage;
+     HTMX swaps and SSE refreshes never touch <html>, so the choice survives
+     them. Not shown on the Big Screen, which the admin controls instead
+     (#42). */}}
+{{define "fragment-theme-picker.html"}}
+<div class="fixed bottom-3 right-3 z-50 flex gap-1 bg-raised border border-line rounded-full p-1 shadow-lg" role="group" aria-label="Theme">
+  {{range themes}}
+  <button
+    type="button"
+    onclick="agenticBlindDateSetTheme('{{.Key}}')"
+    data-theme-option="{{.Key}}"
+    class="px-3 py-1 rounded-full text-xs font-semibold text-ink hover:opacity-80 transition-opacity"
+  >{{.Name}}</button>
+  {{end}}
+</div>
+<script>
+function agenticBlindDateSetTheme(key) {
+  document.documentElement.setAttribute('data-theme', key);
+  try { localStorage.setItem('theme', key); } catch (e) { /* localStorage blocked: the choice just won't survive a reload */ }
+}
+</script>
+{{end}}

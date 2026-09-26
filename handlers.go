@@ -71,11 +71,13 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
 		// Only called with a non-empty question set and constant divisors.
-		"percent":   func(n, total int) int { return n * 100 / total },
-		"divInt":    func(a, b int) int { return a / b },
+		"percent":         func(n, total int) int { return n * 100 / total },
+		"divInt":          func(a, b int) int { return a / b },
 		"colorName":       paletteName,
 		"textColor":       paletteText,
 		"themeStyleBlock": themeStyleBlock,
+		"themes":          func() []Theme { return Themes },
+		"themeKeysJSON":   themeKeysJSON,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{

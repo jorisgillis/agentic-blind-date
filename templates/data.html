@@ -6,12 +6,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Debug Data — Agentic Blind Date</title>
   {{template "fragment-theme-head.html" .}}
+  {{template "fragment-theme-device-choice.html" .}}
   <script src="/static/htmx-1.9.12.min.js"></script>
   <style>
     pre { white-space: pre-wrap; word-break: break-all; }
   </style>
 </head>
 <body class="bg-page text-ink min-h-screen px-6 py-8 font-mono text-sm">
+  {{template "fragment-theme-picker.html" .}}
 
   <div class="max-w-5xl mx-auto space-y-8">
 

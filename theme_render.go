@@ -1,10 +1,23 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"strings"
 )
+
+// themeKeysJSON renders the catalogue's keys as a JSON array, for the
+// inline device-choice script to validate a stored choice against (#41)
+// without a round trip to the server.
+func themeKeysJSON() template.JS {
+	keys := make([]string, len(Themes))
+	for i, t := range Themes {
+		keys[i] = t.Key
+	}
+	data, _ := json.Marshal(keys) // keys are Go string literals: this cannot fail
+	return template.JS(data)
+}
 
 // themeStyleBlock renders the Theme catalogue as CSS: one @theme inline
 // mapping (the same for every Theme, so Tailwind compiles utilities that

@@ -77,7 +77,7 @@ type ToneRecipe struct {
 const DefaultThemeKey = "classic"
 
 // Themes is the catalogue, in the picker's order.
-var Themes = []Theme{classicTheme}
+var Themes = []Theme{classicTheme, neonTheme, paperTheme}
 
 // ThemeByKey returns the Theme for key, or the default Theme when key is
 // unknown or blank (ticket 01: "an unknown or blocked choice falls back to
@@ -128,4 +128,90 @@ var classicTheme = Theme{
 	EasingStandard: "cubic-bezier(0.4, 0, 0.2, 1)", EasingEmphasis: "cubic-bezier(0.34, 1.56, 0.64, 1)",
 
 	Sounds: map[SoundCue]ToneRecipe{}, // Classic: no sound (ticket 03)
+}
+
+var neonTheme = Theme{
+	Key: "neon", Name: "Neon",
+
+	SurfacePage:    "#1a0b2e",
+	SurfaceRaised:  "#2d1b4e",
+	SurfaceOverlay: "rgb(0 0 0 / 0.15)",
+	TextNormal:     "#f5f3ff",
+	TextMuted:      "#c4b5fd", // violet-300
+	Accent:         "#ff2fd4", // neon magenta
+	TextOnAccent:   "#ffffff",
+	Border:         "#4c1d95", // violet-800
+	StatePositive:  "#39ff14", // neon green
+	StateNegative:  "#ff2965", // neon red
+	StateWarning:   "#ffe135", // neon yellow
+	HighlightFrom:  "#ff2fd4", // neon magenta
+	HighlightTo:    "#22d3ee", // cyan-400
+	TextOnPersona:  "#ffffff",
+	PersonaOutline: "transparent", // Neon is dark: Persona colours already pass 3:1 (ticket 03)
+
+	FontDisplay:       "ui-sans-serif, system-ui, sans-serif",
+	FontBody:          "ui-sans-serif, system-ui, sans-serif",
+	FontMono:          "ui-monospace, SFMono-Regular, monospace",
+	FontDisplayWeight: "900", // bolder than Classic, for a louder look
+	WebFontURL:        "",
+
+	RadiusSm: "0.75rem", RadiusMd: "1.25rem", RadiusLg: "2rem", RadiusPill: "9999px", // large radii (ticket 03)
+	BorderWidth: "2px",
+	Glow:        "0 0 20px rgb(255 47 212 / 0.6), 0 0 40px rgb(34 211 238 / 0.4)", // a double glow (ticket 03)
+
+	DurationFast: "150ms", DurationNormal: "300ms", DurationSlow: "500ms",
+	EasingStandard: "cubic-bezier(0.4, 0, 0.2, 1)",
+	EasingEmphasis: "cubic-bezier(0.68, -0.55, 0.27, 1.55)", // bouncy, with overshoot (ticket 03)
+
+	Sounds: map[SoundCue]ToneRecipe{
+		CueAnswerSubmitted: {Waveform: "sawtooth", Hz: 440, Seconds: 0.15},
+		CueInterviewDone:   {Waveform: "triangle", Hz: 660, Seconds: 0.3},
+		CueYourMatch:       {Waveform: "sawtooth", Hz: 220, Seconds: 0.5},
+		CueBigScreenMatch:  {Waveform: "triangle", Hz: 523.25, Seconds: 0.4},
+		CueBigScreenReveal: {Waveform: "sawtooth", Hz: 110, Seconds: 0.8},
+	},
+}
+
+var paperTheme = Theme{
+	Key: "paper", Name: "Paper",
+
+	SurfacePage:    "#faf7f0", // cream
+	SurfaceRaised:  "#ffffff",
+	SurfaceOverlay: "rgb(0 0 0 / 0.12)",
+	TextNormal:     "#1c1917", // stone-900
+	TextMuted:      "#78716c", // stone-500
+	Accent:         "#4338ca", // indigo-700: dark enough to read on cream and white
+	TextOnAccent:   "#ffffff",
+	Border:         "#e7e5e4", // stone-200
+	StatePositive:  "#15803d", // green-700
+	StateNegative:  "#b91c1c", // red-700
+	StateWarning:   "#a16207", // yellow-700
+	HighlightFrom:  "#f59e0b", // amber-500
+	HighlightTo:    "#ec4899", // pink-500
+	TextOnPersona:  "#1c1917",
+	// A light Theme: Persona colours (all Tailwind *-400s) are below 3:1 on
+	// cream and white, so the outline itself must pass 3:1 instead (ticket 03).
+	PersonaOutline: "#1c1917",
+
+	FontDisplay:       "Georgia, 'Times New Roman', serif", // Paper's one serif "web font": a system serif, no file to vendor
+	FontBody:          "ui-sans-serif, system-ui, sans-serif",
+	FontMono:          "ui-monospace, SFMono-Regular, monospace",
+	FontDisplayWeight: "600",
+	WebFontURL:        "",
+
+	RadiusSm: "0.25rem", RadiusMd: "0.375rem", RadiusLg: "0.625rem", RadiusPill: "9999px",
+	BorderWidth: "1px",
+	Glow:        "0 1px 3px rgb(28 25 23 / 0.08), 0 1px 2px rgb(28 25 23 / 0.06)", // soft shadows (ticket 03)
+
+	DurationFast: "150ms", DurationNormal: "250ms", DurationSlow: "450ms", // gentle motion (ticket 03)
+	EasingStandard: "cubic-bezier(0.4, 0, 0.2, 1)",
+	EasingEmphasis: "cubic-bezier(0.16, 1, 0.3, 1)", // smooth deceleration, no overshoot
+
+	Sounds: map[SoundCue]ToneRecipe{
+		CueAnswerSubmitted: {Waveform: "sine", Hz: 523.25, Seconds: 0.2},
+		CueInterviewDone:   {Waveform: "sine", Hz: 659.25, Seconds: 0.3},
+		CueYourMatch:       {Waveform: "sine", Hz: 784, Seconds: 0.6},
+		CueBigScreenMatch:  {Waveform: "sine", Hz: 659.25, Seconds: 0.4},
+		CueBigScreenReveal: {Waveform: "sine", Hz: 880, Seconds: 0.8},
+	},
 }

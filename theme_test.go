@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -11,6 +12,70 @@ func TestThemeByKey_FallsBackToDefaultForUnknownOrBlankKey(t *testing.T) {
 		if got.Key != DefaultThemeKey {
 			t.Errorf("ThemeByKey(%q): want the default Theme, got %q", key, got.Key)
 		}
+	}
+}
+
+// TestThemes_HoldsExactlyThreeThemes covers #41: the catalogue holds
+// exactly three Themes, Classic, Neon and Paper, with Classic the default.
+func TestThemes_HoldsExactlyThreeThemes(t *testing.T) {
+	if len(Themes) != 3 {
+		t.Fatalf("want 3 Themes, got %d: %+v", len(Themes), Themes)
+	}
+	want := []string{"classic", "neon", "paper"}
+	for i, key := range want {
+		if Themes[i].Key != key {
+			t.Errorf("Themes[%d]: want %q, got %q", i, key, Themes[i].Key)
+		}
+	}
+	if Themes[0].Key != DefaultThemeKey {
+		t.Errorf("want Classic first and default, got %q as the default", DefaultThemeKey)
+	}
+}
+
+// TestThemes_EveryThemeDefinesEveryToken covers #40/#41: no Theme leaves a
+// token blank. WebFontURL may be "" (a Theme need not add a web font), and
+// Sounds may be empty (a Theme may leave every cue silent) — every other
+// field must be set.
+func TestThemes_EveryThemeDefinesEveryToken(t *testing.T) {
+	for _, th := range Themes {
+		t.Run(th.Name, func(t *testing.T) {
+			fields := map[string]string{
+				"SurfacePage": th.SurfacePage, "SurfaceRaised": th.SurfaceRaised, "SurfaceOverlay": th.SurfaceOverlay,
+				"TextNormal": th.TextNormal, "TextMuted": th.TextMuted,
+				"Accent": th.Accent, "TextOnAccent": th.TextOnAccent,
+				"Border": th.Border,
+				"StatePositive": th.StatePositive, "StateNegative": th.StateNegative, "StateWarning": th.StateWarning,
+				"HighlightFrom": th.HighlightFrom, "HighlightTo": th.HighlightTo,
+				"TextOnPersona": th.TextOnPersona, "PersonaOutline": th.PersonaOutline,
+				"FontDisplay": th.FontDisplay, "FontBody": th.FontBody, "FontMono": th.FontMono, "FontDisplayWeight": th.FontDisplayWeight,
+				"RadiusSm": th.RadiusSm, "RadiusMd": th.RadiusMd, "RadiusLg": th.RadiusLg, "RadiusPill": th.RadiusPill,
+				"BorderWidth": th.BorderWidth, "Glow": th.Glow,
+				"DurationFast": th.DurationFast, "DurationNormal": th.DurationNormal, "DurationSlow": th.DurationSlow,
+				"EasingStandard": th.EasingStandard, "EasingEmphasis": th.EasingEmphasis,
+			}
+			for name, v := range fields {
+				if v == "" {
+					t.Errorf("%s.%s is blank", th.Name, name)
+				}
+			}
+		})
+	}
+}
+
+// TestPersonaSource_NeverMentionsThemes covers #41: a Persona's Tailwind
+// colour class (e.g. bg-purple-400) must render identically under every
+// Theme. persona.go is the one source of Persona colours (CONTEXT.md), so
+// that holds as long as it has no structural dependency on the Theme
+// catalogue at all — checked here at the source level, since the colour
+// values themselves can coincidentally collide (Persona red and a Theme's
+// state-negative both happen to be Tailwind's red-400).
+func TestPersonaSource_NeverMentionsThemes(t *testing.T) {
+	src, err := os.ReadFile("persona.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(string(src)), "theme") {
+		t.Error("persona.go should have no dependency on the Theme catalogue")
 	}
 }
 
