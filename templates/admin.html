@@ -34,6 +34,23 @@
       ✨ Continuous matching active
     </div>
 
+    <form action="/admin/event-format" method="POST" class="bg-raised border border-line rounded-xl p-5 space-y-2">
+      <label for="eventFormat" class="text-ink-muted text-xs uppercase tracking-widest">Event Format</label>
+      <select
+        id="eventFormat"
+        name="format"
+        onchange="this.form.submit()"
+        {{if .FormatLocked}}disabled{{end}}
+        class="w-full bg-page border border-line rounded-lg px-3 py-2 text-sm disabled:opacity-50"
+      >
+        <option value="classic" {{if eq .Format "classic"}}selected{{end}}>Classic flow</option>
+        <option value="game_show" {{if eq .Format "game_show"}}selected{{end}}>Game Show</option>
+      </select>
+      {{if .FormatLocked}}
+      <p class="text-ink-muted/70 text-xs">Locked while Participants are registered. Reset to change it.</p>
+      {{end}}
+    </form>
+
     <form action="/admin/bigscreen-theme" method="POST" class="bg-raised border border-line rounded-xl p-5 space-y-2">
       <label for="bigScreenTheme" class="text-ink-muted text-xs uppercase tracking-widest">Big Screen Theme</label>
       <select

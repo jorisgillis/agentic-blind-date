@@ -15,11 +15,12 @@ import (
 type Interview struct {
 	store *ParticipantStore
 	llm   LLM
+	db    *DB // EventFormat only (#77): in a Game Show, the Lobby asks personalised questions only
 }
 
 // NewInterview creates the Interview module. The LLM generates Custom Questions.
 func NewInterview(db *DB, llm LLM) *Interview {
-	return &Interview{store: NewParticipantStore(db), llm: llm}
+	return &Interview{store: NewParticipantStore(db), llm: llm, db: db}
 }
 
 // QuestionData contains the data needed to render a single interview question.
@@ -59,8 +60,10 @@ func (e *InvalidAnswerError) Error() string { return e.msg }
 
 // Start picks the Participant's question set, stores it with their profile, and
 // only then opens the Interview. Until Start returns, the Participant is still
-// being prepared. Every Participant answers 11 questions, the 6 Fixed
-// Questions plus 5 personalised ones (#76):
+// being prepared. In the Classic flow every Participant answers 11 questions,
+// the 6 Fixed Questions plus 5 personalised ones (#76); in a Game Show, the
+// Lobby asks only the 5 personalised ones, leaving the Fixed Questions for
+// the Rounds (#77):
 //   - GitHub user: Custom Questions generated from their profile, asked for
 //     5 and topped up with Extra Questions when the LLM returns fewer or
 //     fails (ADR-0003, ADR-0006)
@@ -70,17 +73,25 @@ func (iv *Interview) Start(p *Participant, profile *GitHubProfile) error {
 }
 
 func (iv *Interview) questionSet(profile *GitHubProfile, githubUser bool) []Question {
-	if !githubUser {
-		qs := append([]Question{}, ExtraQuestions...)
-		return append(qs, FixedQuestions...)
+	personalized := iv.personalizedQuestions(profile, githubUser)
+	if iv.db.EventFormat() == GameShow {
+		return personalized
 	}
+	if !githubUser {
+		return append(personalized, FixedQuestions...)
+	}
+	return append(append([]Question{}, FixedQuestions...), personalized...)
+}
 
-	qs := append([]Question{}, FixedQuestions...)
+func (iv *Interview) personalizedQuestions(profile *GitHubProfile, githubUser bool) []Question {
+	if !githubUser {
+		return append([]Question{}, ExtraQuestions...)
+	}
 	custom, err := iv.customQuestions(profile)
 	if err != nil {
 		log.Printf("Custom questions error: %v", err)
 	}
-	return append(qs, topUp(custom, PersonalizedQuestions)...)
+	return topUp(custom, PersonalizedQuestions)
 }
 
 // topUp fills questions with ExtraQuestions until it has n, for when the LLM

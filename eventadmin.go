@@ -32,6 +32,12 @@ func (a *EventAdmin) SetBigScreenTheme(key string) error {
 	return a.db.SetBigScreenTheme(key)
 }
 
+// SetEventFormat stores the Event Format, refusing to change it while any
+// Participant exists (#77).
+func (a *EventAdmin) SetEventFormat(f EventFormat) error {
+	return a.db.SetEventFormat(f)
+}
+
 // Reset starts the event over: no Participants, no activity, no cached LLM
 // assessments, and back to before the Reveal. It takes Matchmaking's lock,
 // so it cannot interleave with Continuous Matching (#57).

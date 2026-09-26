@@ -65,4 +65,6 @@ type AdminView struct {
 	Count          int
 	Ready          int
 	BigScreenTheme string // the currently chosen Big Screen Theme's key (#42)
+	Format         EventFormat
+	FormatLocked   bool // Participants are present: the Event Format can't change (#77)
 }

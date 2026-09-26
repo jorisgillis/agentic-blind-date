@@ -99,9 +99,11 @@ The network visualization shown on the big screen, consisting of:
 A Participant looking at their compatibility with another Participant who is not their Match. Any two different **ready** Participants may explore each other at any time. The page shows personas only, so before the Reveal it never reveals who either of them is.
 
 ### Event Format
-How the event runs, chosen by the admin before the event starts:
+How the event runs, chosen by the admin before the event starts and stored with the Event State:
 - **Classic flow**: each Participant goes through the Interview on their own phone, and Continuous Matching pairs them as they become ready.
 - **Game Show**: the Big Screen is the stage and phones are controllers. A Host runs the show in Rounds, and everyone is paired at once in the matchmaking segment.
+
+It can change only while there are no Participants — before the first registers, or after a Reset — so nobody is stranded halfway through a different flow. In a Game Show, registration leads to the **Lobby**: the Interview asks only the 5 personalised questions there; the 6 Fixed Questions are answered later, one per Round.
 
 Both formats share registration, Personas, matching, Themes and the Reveal.
 

@@ -414,10 +414,27 @@ func writeJSON(w http.ResponseWriter, v any) {
 // GET /admin
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 	event := h.db.EventState()
+	count := h.db.ParticipantCount()
 	h.render(w, "admin.html", AdminView{
-		Event: event, Count: h.db.ParticipantCount(), Ready: h.db.ReadyCount(),
+		Event: event, Count: count, Ready: h.db.ReadyCount(),
 		BigScreenTheme: h.db.BigScreenTheme().Key,
+		Format:         h.db.EventFormat(),
+		FormatLocked:   count > 0,
 	})
+}
+
+// POST /admin/event-format: the admin picks the Event Format. Refused while
+// any Participant exists (#77).
+func (h *Handler) SetEventFormat(w http.ResponseWriter, r *http.Request) {
+	format := EventFormat(r.FormValue("format"))
+	if err := h.admin.SetEventFormat(format); errors.Is(err, ErrEventFormatLocked) {
+		http.Error(w, err.Error(), 400)
+		return
+	} else if err != nil {
+		http.Error(w, "setting the Event Format failed: "+err.Error(), 500)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 // POST /admin/bigscreen-theme: the admin picks the Big Screen's Theme.
