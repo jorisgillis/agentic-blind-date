@@ -23,7 +23,18 @@
       {{end}}
     </p>
   </div>
-  {{if .NextAction}}
+  {{if .RoundOpen}}
+  <div class="bg-raised border border-line rounded-xl p-5 text-center space-y-1">
+    <p class="text-ink-muted text-xs uppercase tracking-widest">Time left</p>
+    <p class="text-3xl font-display font-bold">{{.RoundSecondsLeft}}s</p>
+    <p class="text-ink-muted text-sm">{{.RoundAnswerCount}} answered</p>
+  </div>
+  <form action="/admin/host/close-round" method="POST">
+    <button type="submit" class="w-full bg-accent hover:opacity-90 text-on-accent font-bold rounded-xl py-4 text-lg transition-colors">
+      Close Round early
+    </button>
+  </form>
+  {{else if .NextAction}}
   <form action="/admin/host/advance" method="POST">
     <button type="submit" class="w-full bg-accent hover:opacity-90 text-on-accent font-bold rounded-xl py-4 text-lg transition-colors">
       {{.NextAction}}
@@ -34,6 +45,41 @@
   {{end}}
   {{end}}
 </div>
+{{end}}
+
+{{/* Round answer pad — a Participant's answer form and countdown while a Round is open (#79) */}}
+{{define "fragment-round-answer.html"}}
+{{if .RoundOpen}}
+<div id="round-answer" class="bg-overlay/10 rounded-2xl p-6 mt-4 space-y-4">
+  <p class="text-on-persona/80 text-xs uppercase tracking-widest">
+    Round {{.Round}} of {{.TotalRounds}} — <span id="round-seconds-left">{{.SecondsLeft}}</span>s left
+  </p>
+  <p class="font-semibold text-on-persona" data-md>{{.Question.Text}}</p>
+  <form hx-post="/user/round-answer/{{.Participant.ID}}" hx-target="#round-answer" hx-swap="outerHTML" class="space-y-2">
+    {{if .Question.Options}}
+    {{range .Question.Options}}
+    <button type="submit" name="answer" value="{{.}}" class="w-full bg-overlay hover:opacity-90 text-on-persona rounded-xl py-3 text-sm transition-colors">{{.}}</button>
+    {{end}}
+    {{else}}
+    <input type="text" name="answer" class="w-full rounded-xl px-4 py-3 bg-overlay text-on-persona placeholder-on-persona/50" placeholder="Your answer..." />
+    <button type="submit" class="w-full bg-overlay hover:opacity-90 text-on-persona font-bold rounded-xl py-3 text-sm transition-colors">Submit</button>
+    {{end}}
+  </form>
+</div>
+<script>
+  (function() {
+    var left = {{.SecondsLeft}};
+    var el = document.getElementById('round-seconds-left');
+    var timer = setInterval(function() {
+      left--;
+      if (el) el.textContent = Math.max(left, 0);
+      if (left <= 0) clearInterval(timer);
+    }, 1000);
+  })();
+</script>
+{{else}}
+<div id="round-answer"></div>
+{{end}}
 {{end}}
 
 

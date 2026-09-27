@@ -1,8 +1,10 @@
 package main
 
 import (
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHostConsoleState_RendersTheFragment(t *testing.T) {
@@ -95,12 +97,131 @@ func TestAdvanceShow_RejectedInTheClassicFlow(t *testing.T) {
 	}
 }
 
+// TestHostConsole_ShowsTheRoundCountdownAndAnswerCount covers #79: while a
+// Round is open, the host console shows the countdown and answer count
+// instead of the next-action button, plus a way to close the Round early.
+func TestHostConsole_ShowsTheRoundCountdownAndAnswerCount(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	deps.db.CreateParticipant("p", "p", "P", true)
+	post(t, srv, "/admin/host/advance", nil) // -> Round 0
+
+	body := readBody(t, get(t, srv, "/admin/host"))
+	if !strings.Contains(body, "15s") {
+		t.Errorf("want the countdown shown, got:\n%s", body)
+	}
+	if !strings.Contains(body, "0 answered") {
+		t.Errorf("want the answer count shown, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Close Round early") {
+		t.Errorf("want a way to close the Round early, got:\n%s", body)
+	}
+
+	post(t, srv, "/user/round-answer/p", url.Values{"answer": {"Tabs"}})
+
+	body = readBody(t, get(t, srv, "/admin/host"))
+	if !strings.Contains(body, "1 answered") {
+		t.Errorf("want the answer count updated, got:\n%s", body)
+	}
+}
+
+func TestCloseRoundEarly_ClosesTheOpenRound(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> Round 0
+
+	if loc := post(t, srv, "/admin/host/close-round", nil).Header.Get("Location"); loc != "/admin/host" {
+		t.Errorf("want redirect to the host console, got %q", loc)
+	}
+
+	body := readBody(t, get(t, srv, "/admin/host"))
+	if strings.Contains(body, "Close Round early") {
+		t.Errorf("want the Round no longer open, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Open Round 2") {
+		t.Errorf("want the next action offered again, got:\n%s", body)
+	}
+}
+
+func TestCloseRoundEarly_RejectedInTheClassicFlow(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	if resp := post(t, srv, "/admin/host/close-round", nil); resp.StatusCode != 400 {
+		t.Errorf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+// TestShowStatus_ShowsTheAnswerPadWhileARoundIsOpen and
+// TestSubmitRoundAnswer_RecordsTheAnswerAndReRendersThePad cover #79: a
+// Participant answers the current Round's Fixed Question from the show
+// status page, and can change their answer while the Round stays open.
+func TestShowStatus_ShowsTheAnswerPadWhileARoundIsOpen(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, deps.db, "p", "P", "ready")
+	post(t, srv, "/admin/host/advance", nil) // -> Round 0
+
+	body := readBody(t, get(t, srv, "/user/show/p"))
+
+	if !strings.Contains(body, FixedQuestions[0].Text) {
+		t.Errorf("want the current Round's Question shown, got:\n%s", body)
+	}
+	if !strings.Contains(body, "15") {
+		t.Errorf("want the countdown shown, got:\n%s", body)
+	}
+}
+
+func TestSubmitRoundAnswer_RecordsTheAnswerAndReRendersThePad(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	deps.db.CreateParticipant("p", "p", "P", true)
+	post(t, srv, "/admin/host/advance", nil) // -> Round 0
+
+	body := readBody(t, post(t, srv, "/user/round-answer/p", url.Values{"answer": {"Tabs"}}))
+
+	if !strings.Contains(body, "id=\"round-answer\"") {
+		t.Errorf("want the answer pad re-rendered, got:\n%s", body)
+	}
+	p, err := NewParticipantStore(deps.db).Get("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Answers[FixedQuestions[0].ID]; got != "Tabs" {
+		t.Errorf("want the answer recorded, got %q", got)
+	}
+}
+
+func TestSubmitRoundAnswer_UnknownParticipantIs404(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	if resp := post(t, srv, "/user/round-answer/nobody", url.Values{"answer": {"Tabs"}}); resp.StatusCode != 404 {
+		t.Errorf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestSubmitRoundAnswer_RejectedOutsideAnOpenRound(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.CreateParticipant("p", "p", "P", true) // Classic flow: the Show is inactive
+
+	if resp := post(t, srv, "/user/round-answer/p", url.Values{"answer": {"Tabs"}}); resp.StatusCode != 400 {
+		t.Errorf("want 400, got %d", resp.StatusCode)
+	}
+}
+
 func TestBigScreen_SnapshotCarriesTheShowSegmentInAGameShow(t *testing.T) {
 	db := newTestDB(t)
 	if err := db.SetEventFormat(GameShow); err != nil {
 		t.Fatal(err)
 	}
-	show := NewShow(db)
+	show := NewShow(db, time.Now)
 	if err := show.Advance(); err != nil { // -> Round 0
 		t.Fatal(err)
 	}

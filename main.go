@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // loadDotEnv sets environment variables from a KEY=value file, without
@@ -66,7 +67,7 @@ func main() {
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, NewWatcher())
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, NewWatcher(), NewShow(db, time.Now))
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)
@@ -95,6 +96,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/wait/{id}", h.Wait)
 	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
 	mux.HandleFunc("GET /user/show/{id}", h.ShowStatus)
+	mux.HandleFunc("POST /user/round-answer/{id}", h.SubmitRoundAnswer)
 	mux.HandleFunc("GET /user/match/{id}", h.Match)
 	mux.HandleFunc("GET /user/explore/{myId}/{otherId}", h.Explore)
 
@@ -121,6 +123,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /admin/host/state", h.HostConsoleState)
 	mux.HandleFunc("GET /admin/host/stream", h.HostConsoleStream)
 	mux.HandleFunc("POST /admin/host/advance", h.AdvanceShow)
+	mux.HandleFunc("POST /admin/host/close-round", h.CloseRoundEarly)
 	mux.HandleFunc("POST /admin/reveal", h.TriggerReveal)
 	mux.HandleFunc("POST /admin/reset", h.Reset)
 	mux.HandleFunc("POST /admin/rematch", h.Rematch)

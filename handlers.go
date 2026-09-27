@@ -67,7 +67,7 @@ type Handler struct {
 
 // NewHandler creates a new Handler with the given dependencies.
 // It initializes the templates and takes the modules the pages use.
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, watcher *Watcher) *Handler {
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, watcher *Watcher, show *Show) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -84,7 +84,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{
 		db: db, store: NewParticipantStore(db), activity: NewActivity(db), bigscreen: NewBigScreen(db, matcher),
-		admin: NewEventAdmin(db, matcher, matchmaking), show: NewShow(db),
+		admin: NewEventAdmin(db, matcher, matchmaking), show: show,
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, watcher: watcher,
 	}
@@ -256,6 +256,20 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "fragment-wait-status.html", WaitStatusView{Participant: p, Count: h.db.ReadyCount()})
 }
 
+// showStatusView builds a Participant's show status view from state,
+// including the current Round's Question and countdown while it's open (#79).
+func (h *Handler) showStatusView(p *Participant, state ShowState) ShowStatusView {
+	view := ShowStatusView{
+		Participant: p, Segment: state.Segment, Round: state.Round + 1, TotalRounds: TotalFixedQuestions,
+	}
+	if state.Segment == SegmentRound && state.RoundOpen {
+		view.RoundOpen = true
+		view.Question = FixedQuestions[state.Round]
+		view.SecondsLeft = h.show.RoundSecondsLeft()
+	}
+	return view
+}
+
 // GET /user/show/{id}: a Participant's phone in a Game Show, between Rounds
 // and before their Match is revealed (#78).
 func (h *Handler) ShowStatus(w http.ResponseWriter, r *http.Request) {
@@ -268,10 +282,23 @@ func (h *Handler) ShowStatus(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, dest, http.StatusSeeOther)
 		return
 	}
-	state := h.show.State()
-	h.render(w, "show-status.html", ShowStatusView{
-		Participant: p, Segment: state.Segment, Round: state.Round + 1, TotalRounds: TotalFixedQuestions,
-	})
+	h.render(w, "show-status.html", h.showStatusView(p, h.show.State()))
+}
+
+// POST /user/round-answer/{id}: a Participant answers the current Round's
+// Fixed Question. Accepted, and changeable, only while the Round is open (#79).
+func (h *Handler) SubmitRoundAnswer(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := h.store.Get(id)
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	if err := h.show.SubmitRoundAnswer(id, r.FormValue("answer")); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	h.render(w, "fragment-round-answer.html", h.showStatusView(p, h.show.State()))
 }
 
 // GET /user/show-stream/{id}
@@ -474,10 +501,16 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) hostConsoleView() HostConsoleView {
 	state := h.show.State()
-	return HostConsoleView{
+	view := HostConsoleView{
 		Active: h.show.Active(), Segment: state.Segment, Round: state.Round + 1, TotalRounds: TotalFixedQuestions,
 		NextAction: NextActionLabel(state),
 	}
+	if state.Segment == SegmentRound && state.RoundOpen {
+		view.RoundOpen = true
+		view.RoundAnswerCount = h.show.RoundAnswerCount()
+		view.RoundSecondsLeft = h.show.RoundSecondsLeft()
+	}
+	return view
 }
 
 // GET /admin/host: the Host's phone-friendly console.
@@ -510,6 +543,16 @@ func (h *Handler) HostConsoleStream(w http.ResponseWriter, r *http.Request) {
 // current segment (#78).
 func (h *Handler) AdvanceShow(w http.ResponseWriter, r *http.Request) {
 	if err := h.show.Advance(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	http.Redirect(w, r, "/admin/host", http.StatusSeeOther)
+}
+
+// POST /admin/host/close-round: the Host closes the current Round early,
+// before its countdown ends (#79).
+func (h *Handler) CloseRoundEarly(w http.ResponseWriter, r *http.Request) {
+	if err := h.show.CloseRound(); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}

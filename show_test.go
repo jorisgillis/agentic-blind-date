@@ -4,11 +4,12 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestShow_InactiveInTheClassicFlow(t *testing.T) {
 	db := newTestDB(t)
-	show := NewShow(db)
+	show := NewShow(db, time.Now)
 
 	if show.Active() {
 		t.Error("want the Show inactive in the Classic flow")
@@ -23,7 +24,7 @@ func TestShow_StartsInTheLobby(t *testing.T) {
 	if err := db.SetEventFormat(GameShow); err != nil {
 		t.Fatal(err)
 	}
-	show := NewShow(db)
+	show := NewShow(db, time.Now)
 
 	if got := show.State(); got.Segment != SegmentLobby {
 		t.Errorf("want the Lobby, got %+v", got)
@@ -32,31 +33,40 @@ func TestShow_StartsInTheLobby(t *testing.T) {
 
 // TestShow_SegmentsAdvanceInOrder covers #78: one call to Advance moves the
 // show exactly one segment forward, through every Round in turn, into
-// matchmaking, the Reveal and the Afterparty — where it stops.
+// matchmaking, the Reveal and the Afterparty — where it stops. Each Round it
+// enters is immediately open, with a deadline in the future (#79); Advance
+// is rejected while it stays open, so the test closes each one first.
 func TestShow_SegmentsAdvanceInOrder(t *testing.T) {
 	db := newTestDB(t)
 	if err := db.SetEventFormat(GameShow); err != nil {
 		t.Fatal(err)
 	}
-	show := NewShow(db)
+	clock := newFakeNow()
+	show := NewShow(db, clock.Now)
 
-	want := []ShowState{
-		{Segment: SegmentRound, Round: 0},
-		{Segment: SegmentRound, Round: 1},
-		{Segment: SegmentRound, Round: 2},
-		{Segment: SegmentRound, Round: 3},
-		{Segment: SegmentRound, Round: 4},
-		{Segment: SegmentRound, Round: 5},
-		{Segment: SegmentMatchmaking},
-		{Segment: SegmentReveal},
-		{Segment: SegmentAfterparty},
+	want := []struct {
+		segment ShowSegment
+		round   int
+	}{
+		{SegmentRound, 0}, {SegmentRound, 1}, {SegmentRound, 2},
+		{SegmentRound, 3}, {SegmentRound, 4}, {SegmentRound, 5},
+		{SegmentMatchmaking, 0}, {SegmentReveal, 0}, {SegmentAfterparty, 0},
 	}
 	for i, w := range want {
 		if err := show.Advance(); err != nil {
 			t.Fatalf("advance %d: %v", i, err)
 		}
-		if got := show.State(); got != w {
-			t.Fatalf("advance %d: want %+v, got %+v", i, w, got)
+		got := show.State()
+		if got.Segment != w.segment || got.Round != w.round {
+			t.Fatalf("advance %d: want segment %q round %d, got %+v", i, w.segment, w.round, got)
+		}
+		if got.Segment == SegmentRound {
+			if !got.RoundOpen {
+				t.Fatalf("advance %d: a newly opened Round should be open", i)
+			}
+			if err := show.CloseRound(); err != nil {
+				t.Fatalf("advance %d: closing the Round: %v", i, err)
+			}
 		}
 	}
 
@@ -65,17 +75,30 @@ func TestShow_SegmentsAdvanceInOrder(t *testing.T) {
 	}
 }
 
+// advanceThroughRounds moves show from the Lobby to the matchmaking segment,
+// closing each Round it opens along the way so Advance is never rejected (#79).
+func advanceThroughRounds(t *testing.T, show *Show) {
+	t.Helper()
+	for i := 0; i < TotalFixedQuestions; i++ { // Lobby -> Round 0..5
+		if err := show.Advance(); err != nil {
+			t.Fatalf("advancing into Round %d: %v", i, err)
+		}
+		if err := show.CloseRound(); err != nil {
+			t.Fatalf("closing Round %d: %v", i, err)
+		}
+	}
+	if err := show.Advance(); err != nil { // -> Matchmaking
+		t.Fatal(err)
+	}
+}
+
 func TestShow_EnteringTheRevealRevealsTheMatches(t *testing.T) {
 	db := newTestDB(t)
 	if err := db.SetEventFormat(GameShow); err != nil {
 		t.Fatal(err)
 	}
-	show := NewShow(db)
-	for i := 0; i < 7; i++ { // Lobby -> Round 0..5 -> Matchmaking
-		if err := show.Advance(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	show := NewShow(db, time.Now)
+	advanceThroughRounds(t, show)
 	if db.EventState().IsRevealed() {
 		t.Fatal("must not be revealed before the Reveal segment")
 	}
@@ -94,12 +117,8 @@ func TestShow_AdvanceReportsAGenuineRevealFailure(t *testing.T) {
 	if err := db.SetEventFormat(GameShow); err != nil {
 		t.Fatal(err)
 	}
-	show := NewShow(db)
-	for i := 0; i < 7; i++ { // Lobby -> Round 0..5 -> Matchmaking
-		if err := show.Advance(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	show := NewShow(db, time.Now)
+	advanceThroughRounds(t, show)
 	breakOnFault(t, db, "reveal")
 
 	if err := show.Advance(); err == nil { // -> Reveal
@@ -119,8 +138,11 @@ func TestShow_StateSurvivesReopeningTheDatabase(t *testing.T) {
 	if err := db.SetEventFormat(GameShow); err != nil {
 		t.Fatal(err)
 	}
-	show := NewShow(db)
+	show := NewShow(db, time.Now)
 	if err := show.Advance(); err != nil { // -> Round 0
+		t.Fatal(err)
+	}
+	if err := show.CloseRound(); err != nil {
 		t.Fatal(err)
 	}
 	if err := show.Advance(); err != nil { // -> Round 1
@@ -143,7 +165,7 @@ func TestReset_ReturnsTheShowToTheLobby(t *testing.T) {
 	if err := db.SetEventFormat(GameShow); err != nil {
 		t.Fatal(err)
 	}
-	show := NewShow(db)
+	show := NewShow(db, time.Now)
 	if err := show.Advance(); err != nil { // -> Round 0
 		t.Fatal(err)
 	}
@@ -175,6 +197,130 @@ func TestNextActionLabel(t *testing.T) {
 				t.Errorf("NextActionLabel(%+v): want %q, got %q", c.state, c.want, got)
 			}
 		})
+	}
+}
+
+// TestShow_SubmitRoundAnswer covers #79: an answer is only accepted while
+// the Round is open, is stored against the Fixed Question, is changeable,
+// and is reflected in RoundAnswerCount.
+func TestShow_SubmitRoundAnswer(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateParticipant("p", "p", "P", true); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+
+	if err := show.SubmitRoundAnswer("p", "Tabs"); !errors.Is(err, ErrRoundNotOpen) {
+		t.Errorf("want ErrRoundNotOpen in the Lobby, got %v", err)
+	}
+	if err := show.Advance(); err != nil { // -> Round 0
+		t.Fatal(err)
+	}
+	if got := show.RoundAnswerCount(); got != 0 {
+		t.Errorf("want 0 answers before anyone answers, got %d", got)
+	}
+
+	if err := show.SubmitRoundAnswer("p", "Tabs"); err != nil {
+		t.Fatal(err)
+	}
+	if got := show.RoundAnswerCount(); got != 1 {
+		t.Errorf("want 1 answer, got %d", got)
+	}
+	p, err := NewParticipantStore(db).Get("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Answers[FixedQuestions[0].ID]; got != "Tabs" {
+		t.Errorf("want the answer recorded against the Fixed Question, got %q", got)
+	}
+
+	if err := show.SubmitRoundAnswer("p", "Spaces"); err != nil {
+		t.Fatal(err)
+	}
+	if p, err = NewParticipantStore(db).Get("p"); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Answers[FixedQuestions[0].ID]; got != "Spaces" {
+		t.Errorf("want the answer changeable while the Round is open, got %q", got)
+	}
+
+	if err := show.CloseRound(); err != nil {
+		t.Fatal(err)
+	}
+	if err := show.SubmitRoundAnswer("p", "Whatever the linter says"); !errors.Is(err, ErrRoundNotOpen) {
+		t.Errorf("want ErrRoundNotOpen once the Round has closed, got %v", err)
+	}
+}
+
+func TestShow_SubmitRoundAnswerInactiveInTheClassicFlow(t *testing.T) {
+	db := newTestDB(t)
+	show := NewShow(db, time.Now)
+
+	if err := show.SubmitRoundAnswer("p", "Tabs"); !errors.Is(err, ErrShowInactive) {
+		t.Errorf("want ErrShowInactive, got %v", err)
+	}
+}
+
+func TestShow_SubmitRoundAnswerReportsAnUnknownParticipant(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	if err := show.Advance(); err != nil { // -> Round 0
+		t.Fatal(err)
+	}
+
+	if err := show.SubmitRoundAnswer("nobody", "Tabs"); err == nil {
+		t.Error("want an error for an unknown Participant")
+	}
+}
+
+func TestShow_RoundAnswerCountIsZeroOutsideARound(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+
+	if got := show.RoundAnswerCount(); got != 0 {
+		t.Errorf("want 0 in the Lobby, got %d", got)
+	}
+}
+
+// TestShow_RoundSecondsLeft covers #79: the countdown is 0 outside an open
+// Round, ceiling-rounded while counting down, and 0 once the deadline passes
+// — all driven by the injected clock, never a real wait.
+func TestShow_RoundSecondsLeft(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	clock := newFakeNow()
+	show := NewShow(db, clock.Now)
+
+	if got := show.RoundSecondsLeft(); got != 0 {
+		t.Errorf("want 0 in the Lobby, got %d", got)
+	}
+
+	if err := show.Advance(); err != nil { // -> Round 0, 15s countdown
+		t.Fatal(err)
+	}
+	if got := show.RoundSecondsLeft(); got != 15 {
+		t.Errorf("want 15 seconds left right after opening, got %d", got)
+	}
+
+	clock.Advance(10 * time.Second)
+	if got := show.RoundSecondsLeft(); got != 5 {
+		t.Errorf("want 5 seconds left after 10s pass, got %d", got)
+	}
+
+	clock.Advance(10 * time.Second) // past the deadline
+	if got := show.RoundSecondsLeft(); got != 0 {
+		t.Errorf("want 0 once the deadline has passed, got %d", got)
 	}
 }
 

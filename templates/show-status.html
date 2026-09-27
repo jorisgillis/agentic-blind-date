@@ -27,6 +27,7 @@
         {{end}}
       </p>
     </div>
+    {{template "fragment-round-answer.html" .}}
   </div>
   <script>
     const _es = new EventSource('/user/show-stream/{{.Participant.ID}}');

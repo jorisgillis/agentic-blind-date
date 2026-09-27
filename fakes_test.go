@@ -219,6 +219,30 @@ type testDeps struct {
 	github      *fakeGitHub
 	onboarding  *Onboarding
 	matchmaking *Matchmaking
+	showClock   *fakeNow
+}
+
+// fakeNow is a controllable clock for the Show module's Round countdown, so
+// tests advance time deterministically instead of sleeping (#79).
+type fakeNow struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func newFakeNow() *fakeNow {
+	return &fakeNow{now: time.Now()}
+}
+
+func (f *fakeNow) Now() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.now
+}
+
+func (f *fakeNow) Advance(d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.now = f.now.Add(d)
 }
 
 func newTestDB(t *testing.T) *DB {
@@ -255,9 +279,11 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 		srv.cond.Broadcast()
 		srv.mu.Unlock()
 	}}
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, watcher)
+	showClock := newFakeNow()
+	show := NewShow(db, showClock.Now)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, watcher, show)
 	srv.h = buildMux(h)
-	return srv, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
+	return srv, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking, showClock: showClock}
 }
 
 // forceStep puts a Participant at any Pipeline Step, bypassing the guarded transitions (test setup only).

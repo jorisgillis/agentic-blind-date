@@ -71,18 +71,25 @@ type AdminView struct {
 
 // HostConsoleView is /admin/host: the Host's phone-friendly console (#78).
 type HostConsoleView struct {
-	Active      bool
-	Segment     ShowSegment
-	Round       int // 1-based, for display
-	TotalRounds int
-	NextAction  string // "" once there is nothing left to advance to (the Afterparty)
+	Active           bool
+	Segment          ShowSegment
+	Round            int // 1-based, for display
+	TotalRounds      int
+	NextAction       string // "" once there is nothing left to advance to (the Afterparty)
+	RoundOpen        bool   // #79
+	RoundAnswerCount int
+	RoundSecondsLeft int
 }
 
 // ShowStatusView is /user/show/{id}: a Participant's phone between Rounds
-// in a Game Show, before their Match is revealed (#78).
+// in a Game Show, before their Match is revealed (#78). Question and
+// SecondsLeft are only meaningful while RoundOpen (#79).
 type ShowStatusView struct {
 	Participant *Participant
 	Segment     ShowSegment
 	Round       int // 1-based, for display
 	TotalRounds int
+	RoundOpen   bool
+	Question    Question
+	SecondsLeft int
 }

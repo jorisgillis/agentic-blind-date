@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHandlers_ReportFailedSavesAsErrors(t *testing.T) {
@@ -192,7 +193,7 @@ func TestStreams_SendAHeartbeatWhenIdle(t *testing.T) {
 
 func TestRender_AMissingTemplateIsAnError(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
-	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, NewWatcher())
+	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, NewWatcher(), NewShow(deps.db, time.Now))
 	rec := httptest.NewRecorder()
 
 	h.render(rec, "no-such-template.html", nil)
