@@ -270,7 +270,9 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations)
-	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking)
+	showClock := newFakeNow()
+	show := NewShow(db, showClock.Now)
+	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking, show)
 	srv := &testSrv{URL: "http://test", clock: newFakeClock(), checks: map[string]int{}}
 	srv.cond = sync.NewCond(&srv.mu)
 	watcher := &Watcher{clock: srv.clock, heartbeatEvery: time.Second, onCheck: func(path string) {
@@ -279,8 +281,6 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 		srv.cond.Broadcast()
 		srv.mu.Unlock()
 	}}
-	showClock := newFakeNow()
-	show := NewShow(db, showClock.Now)
 	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, watcher, show)
 	srv.h = buildMux(h)
 	return srv, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking, showClock: showClock}

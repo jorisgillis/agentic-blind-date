@@ -553,6 +553,70 @@ func TestShowStatus_ShowsTheWildcardMessageAtTheirTurn(t *testing.T) {
 	}
 }
 
+// TestLateArrival_JoinsTheCurrentRoundThroughTheMux covers #84: a
+// Participant registering mid-show sees the Round already in progress once
+// they're ready.
+func TestLateArrival_JoinsTheCurrentRoundThroughTheMux(t *testing.T) {
+	llm := newFakeLLM().
+		on("interviewer", `{"questions": ["Why?", "How?", "When?", "Where?", "Who?"]}`).
+		on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`)
+	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "late", Languages: []string{"Go"}})
+	srv, deps := newTestServer(t, llm, gh)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> Round 0: the show has already started
+
+	id, err := deps.onboarding.Register("Late", "late", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answerEverything(t, deps.onboarding, deps.db, id)
+	eventually(t, "ready", func() bool { return reload(t, deps.db, id).PipelineStep == StepReady })
+
+	body := readBody(t, get(t, srv, "/user/show/"+id))
+	if !strings.Contains(body, FixedQuestions[0].Text) {
+		t.Errorf("want the late arrival to see the current Round's Question, got:\n%s", body)
+	}
+}
+
+// TestLateArrival_MatchedImmediatelyInTheAfterpartyThroughTheMux covers
+// #84: once the Afterparty starts, a new arrival is paired with the
+// wildcard as soon as they're ready, and sees their Match straight away.
+func TestLateArrival_MatchedImmediatelyInTheAfterpartyThroughTheMux(t *testing.T) {
+	llm := newFakeLLM().
+		on("interviewer", `{"questions": ["Why?", "How?", "When?", "Where?", "Who?"]}`).
+		on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`).
+		on("matchmaker", matchReply)
+	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "late", Languages: []string{"Go"}})
+	srv, deps := newTestServer(t, llm, gh)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, deps.db, "wild", "The Wildcard", "ready") // the only ready Participant: becomes the wildcard
+
+	for i := 0; i < TotalFixedQuestions; i++ {
+		post(t, srv, "/admin/host/advance", nil)
+		post(t, srv, "/admin/host/close-round", nil)
+	}
+	post(t, srv, "/admin/host/advance", nil)     // -> matchmaking: wild stays the wildcard
+	post(t, srv, "/admin/host/advance", nil)     // -> reveal: the wildcard's own slot
+	post(t, srv, "/admin/host/skip-reveal", nil) // -> afterparty
+
+	id, err := deps.onboarding.Register("Late", "late", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answerEverything(t, deps.onboarding, deps.db, id)
+
+	eventually(t, "matched with the wildcard", func() bool {
+		return reload(t, deps.db, id).MatchedWith == "wild"
+	})
+	if loc := get(t, srv, "/user/show/"+id).Header.Get("Location"); loc != "/user/match/"+id {
+		t.Errorf("want the late arrival redirected to their match page, got %q", loc)
+	}
+}
+
 func TestBigScreen_SnapshotCarriesTheShowSegmentInAGameShow(t *testing.T) {
 	db := newTestDB(t)
 	if err := db.SetEventFormat(GameShow); err != nil {

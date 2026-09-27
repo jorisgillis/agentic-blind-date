@@ -19,13 +19,14 @@ type Onboarding struct {
 	interview   *Interview
 	personas    *Personas
 	matchmaking *Matchmaking
+	show        *Show
 }
 
 // NewOnboarding creates the Onboarding module.
-func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding {
+func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking, show *Show) *Onboarding {
 	return &Onboarding{
 		db: db, store: NewParticipantStore(db), activity: NewActivity(db),
-		github: github, interview: interview, personas: personas, matchmaking: matchmaking,
+		github: github, interview: interview, personas: personas, matchmaking: matchmaking, show: show,
 	}
 }
 
@@ -137,10 +138,13 @@ func (o *Onboarding) finish(p *Participant) {
 }
 
 // becomeReady creates the Persona and Interests, makes the Participant ready,
-// and hands them to Continuous Matching — or, in a Game Show, to background
-// assessment instead, since no one is paired before the matchmaking segment
-// (#81). Failures to save the Persona or Interests are logged rather than
-// leaving the Participant stuck.
+// and hands them to Continuous Matching — or, in a Game Show before the
+// Afterparty, to background assessment instead, since no one is paired
+// before the matchmaking segment (#81). Once the Afterparty starts,
+// Continuous Matching runs exactly as in the Classic flow, pairing late
+// arrivals — and the wildcard, once the next of them becomes ready — as
+// soon as they're ready (#84). Failures to save the Persona or Interests
+// are logged rather than leaving the Participant stuck.
 func (o *Onboarding) becomeReady(p *Participant) {
 	o.activity.CraftingPersona()
 	if p.Profile == nil {
@@ -159,7 +163,7 @@ func (o *Onboarding) becomeReady(p *Participant) {
 	}
 	o.activity.ParticipantReady(persona.Name)
 
-	if o.db.EventFormat() == GameShow {
+	if o.db.EventFormat() == GameShow && o.show.State().Segment != SegmentAfterparty {
 		if err := o.matchmaking.AssessCandidates(p); err != nil {
 			log.Printf("Background assessment for %s failed: %v", p.ID, err)
 		}

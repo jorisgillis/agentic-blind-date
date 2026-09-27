@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestNormalizeGitHubHandle covers #59: whatever shape a Participant's
@@ -31,7 +32,7 @@ func onboardingFor(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*Onboarding, *DB
 	interview := NewInterview(db, llm)
 	matcher := NewMatcher(db, gh, llm)
 	matchmaking := NewMatchmaking(db, matcher, NewRelationships(db))
-	return NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking), db
+	return NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking, NewShow(db, time.Now)), db
 }
 
 func answerEverything(t *testing.T, o *Onboarding, db *DB, id string) {
@@ -122,6 +123,85 @@ func TestOnboarding_GameShowTriggersBackgroundAssessmentInsteadOfContinuousMatch
 	if strings.Contains(strings.Join(msgs, "\n"), "💘") {
 		t.Error("background assessment must not announce a Match")
 	}
+}
+
+// TestOnboarding_GameShowAfterpartyRunsContinuousMatchingForLateArrivals and
+// TestOnboarding_WildcardIsPairedWithTheNextArrivalInTheAfterparty cover
+// #84: once the Afterparty starts, becoming ready hands a Participant to
+// Continuous Matching exactly as in the Classic flow, instead of background
+// assessment — including the wildcard, who is simply the pool's one
+// unmatched, ready Participant.
+func TestOnboarding_GameShowAfterpartyRunsContinuousMatchingForLateArrivals(t *testing.T) {
+	gh := newFakeGitHub().
+		withProfile(&GitHubProfile{Login: "a", Languages: []string{"Go"}}).
+		withProfile(&GitHubProfile{Login: "b", Languages: []string{"Go"}})
+	llm := newFakeLLM().
+		on("interviewer", `{"questions": ["Why?"]}`).
+		on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`).
+		on("matchmaker", matchReply)
+	o, db := onboardingFor(t, llm, gh)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	advanceThroughRounds(t, show)
+	if err := show.Advance(); err != nil { // -> reveal
+		t.Fatal(err)
+	}
+	if err := show.SkipToNextPair(); err != nil { // -> afterparty: nobody to reveal
+		t.Fatal(err)
+	}
+
+	idA, err := o.Register("A", "a", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answerEverything(t, o, db, idA)
+	eventually(t, "A ready", func() bool { return reload(t, db, idA).PipelineStep == StepReady })
+
+	idB, err := o.Register("B", "b", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answerEverything(t, o, db, idB)
+
+	eventually(t, "A and B matched by Continuous Matching", func() bool {
+		return reload(t, db, idA).MatchedWith == idB
+	})
+}
+
+func TestOnboarding_WildcardIsPairedWithTheNextArrivalInTheAfterparty(t *testing.T) {
+	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "n", Languages: []string{"Go"}})
+	llm := newFakeLLM().
+		on("interviewer", `{"questions": ["Why?"]}`).
+		on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`).
+		on("matchmaker", matchReply)
+	o, db := onboardingFor(t, llm, gh)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, db, "w", "The Wildcard", "ready")
+	if err := NewParticipantStore(db).Change(ParticipantChange{ID: "w", Wildcard: boolPtr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	advanceThroughRounds(t, show)
+	if err := show.Advance(); err != nil { // -> reveal: the wildcard's own slot
+		t.Fatal(err)
+	}
+	if err := show.SkipToNextPair(); err != nil { // -> afterparty
+		t.Fatal(err)
+	}
+
+	id, err := o.Register("N", "n", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answerEverything(t, o, db, id)
+
+	eventually(t, "the wildcard paired with the new arrival", func() bool {
+		return reload(t, db, "w").MatchedWith == id
+	})
 }
 
 func TestOnboarding_RegisteringAKnownHandleResumesTheSameParticipant(t *testing.T) {
