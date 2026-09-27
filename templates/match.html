@@ -19,6 +19,9 @@
       <div class="text-8xl mb-3">{{.Me.PersonaSymbol}}</div>
       <div class="text-4xl mb-2">💘</div>
       <h1 class="text-3xl font-display font-bold text-on-persona">It's a match!</h1>
+      {{if .GameShow}}
+      <p class="text-xl font-bold text-on-persona mt-2 uppercase tracking-wide">🧍 Stand up!</p>
+      {{end}}
       {{if .Match}}
       <p class="text-on-persona/80 mt-1">{{.Me.CompatScore}}% compatibility</p>
       {{end}}

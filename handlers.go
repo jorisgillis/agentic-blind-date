@@ -267,6 +267,10 @@ func (h *Handler) showStatusView(p *Participant, state ShowState) ShowStatusView
 		view.Question = FixedQuestions[state.Round]
 		view.SecondsLeft = h.show.RoundSecondsLeft()
 	}
+	if state.Segment == SegmentReveal && p.Wildcard {
+		view.Wildcard = true
+		view.YourTurn = h.show.PairRevealed(p.ID)
+	}
 	return view
 }
 
@@ -351,16 +355,21 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		result = &matchResult{RedFlags: []string{}, GreenFlags: []string{}, Icebreakers: []string{}}
 	}
 
-	all, _ := h.store.All()
+	gameShow := h.db.EventFormat() == GameShow
 	var others []*Participant
-	for _, op := range all {
-		if op.ID != p.ID && op.ID != p.MatchedWith {
-			others = append(others, op)
+	// During a Game Show's Reveal, other Participants' identities aren't
+	// necessarily shown yet: the "Others" list waits for the Afterparty (#83).
+	if !gameShow || h.show.State().Segment != SegmentReveal {
+		all, _ := h.store.All()
+		for _, op := range all {
+			if op.ID != p.ID && op.ID != p.MatchedWith {
+				others = append(others, op)
+			}
 		}
 	}
 
 	h.render(w, "match.html", MatchView{
-		Me: p, Match: match,
+		Me: p, Match: match, GameShow: gameShow,
 		RedFlags: result.RedFlags, GreenFlags: result.GreenFlags, Icebreakers: result.Icebreakers,
 		Others: others,
 	})
@@ -515,6 +524,9 @@ func (h *Handler) hostConsoleView() HostConsoleView {
 			view.AssessedPairs, view.TotalPairs = h.matcher.AssessmentProgress(ready)
 		}
 	}
+	if state.Segment == SegmentReveal {
+		view.RevealPair, view.RevealTotal = h.show.RevealProgress()
+	}
 	return view
 }
 
@@ -566,6 +578,16 @@ func (h *Handler) AdvanceShow(w http.ResponseWriter, r *http.Request) {
 // before its countdown ends (#79).
 func (h *Handler) CloseRoundEarly(w http.ResponseWriter, r *http.Request) {
 	if err := h.show.CloseRound(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	http.Redirect(w, r, "/admin/host", http.StatusSeeOther)
+}
+
+// POST /admin/host/skip-reveal: the Host skips the Reveal straight to the
+// next pair, ahead of its own countdown (#83).
+func (h *Handler) SkipReveal(w http.ResponseWriter, r *http.Request) {
+	if err := h.show.SkipToNextPair(); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}

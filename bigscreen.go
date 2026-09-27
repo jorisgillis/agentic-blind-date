@@ -55,11 +55,12 @@ type Snapshot struct {
 	Edges      []ScreenEdge  `json:"edges"`
 	Matches    []ScreenMatch `json:"matches"`
 	Activity   []string      `json:"activity"`
-	Format       EventFormat   `json:"format"`               // #78
-	Segment      ShowSegment   `json:"segment,omitempty"`    // only meaningful when Format is GameShow
-	Round        int           `json:"round,omitempty"`      // 1-based; only meaningful when Segment is "round"
-	RoundOpen    bool          `json:"round_open,omitempty"` // #80
-	RoundCallout *RoundCallout `json:"round_callout,omitempty"`
+	Format        EventFormat   `json:"format"`               // #78
+	Segment       ShowSegment   `json:"segment,omitempty"`    // only meaningful when Format is GameShow
+	Round         int           `json:"round,omitempty"`      // 1-based; only meaningful when Segment is "round"
+	RoundOpen     bool          `json:"round_open,omitempty"` // #80
+	RoundCallout  *RoundCallout `json:"round_callout,omitempty"`
+	RevealPairIDs []string      `json:"reveal_pair_ids,omitempty"` // 1 (the wildcard) or 2 node IDs currently lit on stage (#83)
 }
 
 // BigScreen builds the Snapshot the Big Screen shows: Participants, Match
@@ -122,13 +123,19 @@ func (b *BigScreen) build() *Snapshot {
 	for _, p := range participants {
 		byID[p.ID] = p
 	}
+	// revealedFor narrows the global Revealed flag to a Game Show's
+	// pair-by-pair Reveal: a Participant's own identity, and their Match's,
+	// only appear once their pair has had its turn on stage (#83).
+	revealedFor := func(id string) bool {
+		return snap.Revealed && (format != GameShow || b.show.PairRevealed(id))
+	}
 
 	for _, p := range participants {
 		if p.PipelineStep.IsReady() {
 			snap.ReadyCount++
 		}
 		handle := ""
-		if snap.Revealed {
+		if revealedFor(p.ID) {
 			handle = p.DisplayHandle()
 		}
 		snap.Nodes = append(snap.Nodes, ScreenNode{
@@ -150,8 +157,9 @@ func (b *BigScreen) build() *Snapshot {
 		// byID[p.MatchedWith] always exists: the Relationship module keeps both
 		// sides of a Match consistent in one transaction (#50).
 		if partner := byID[p.MatchedWith]; p.CompatScore > 0 {
+			pairRevealed := revealedFor(p.ID)
 			snap.Matches = append(snap.Matches, ScreenMatch{
-				A: screenPersona(p, snap.Revealed), B: screenPersona(partner, snap.Revealed),
+				A: screenPersona(p, pairRevealed), B: screenPersona(partner, pairRevealed),
 				Score: p.CompatScore, Reason: p.CompatReason,
 			})
 		}
@@ -180,6 +188,12 @@ func (b *BigScreen) build() *Snapshot {
 		snap.Round = state.Round + 1
 		snap.RoundOpen = state.RoundOpen
 		snap.RoundCallout = b.show.RoundCallout()
+		if pair, ok := b.show.CurrentRevealPair(); ok {
+			snap.RevealPairIDs = []string{pair.A.ID}
+			if pair.B != nil {
+				snap.RevealPairIDs = append(snap.RevealPairIDs, pair.B.ID)
+			}
+		}
 	}
 
 	return snap

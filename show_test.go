@@ -53,7 +53,11 @@ func TestShow_SegmentsAdvanceInOrder(t *testing.T) {
 		{SegmentMatchmaking, 0}, {SegmentReveal, 0}, {SegmentAfterparty, 0},
 	}
 	for i, w := range want {
-		if err := show.Advance(); err != nil {
+		advance := show.Advance
+		if show.State().Segment == SegmentReveal { // #83: plays on its own, or skipped, never Advance
+			advance = show.SkipToNextPair
+		}
+		if err := advance(); err != nil {
 			t.Fatalf("advance %d: %v", i, err)
 		}
 		got := show.State()
@@ -188,7 +192,7 @@ func TestNextActionLabel(t *testing.T) {
 		{ShowState{Segment: SegmentRound, Round: 0}, "Open Round 2"},
 		{ShowState{Segment: SegmentRound, Round: TotalFixedQuestions - 1}, "Start matchmaking"},
 		{ShowState{Segment: SegmentMatchmaking}, "Start the Reveal"},
-		{ShowState{Segment: SegmentReveal}, "Move to the Afterparty"},
+		{ShowState{Segment: SegmentReveal}, ""}, // #83: plays on its own, or with SkipToNextPair, never Advance
 		{ShowState{Segment: SegmentAfterparty}, ""},
 	}
 	for _, c := range cases {
@@ -420,6 +424,241 @@ func TestShow_RoundCalloutNilForAFreeTextRound(t *testing.T) {
 
 	if got := show.RoundCallout(); got != nil {
 		t.Errorf("want no callout for a free-text Round, got %+v", got)
+	}
+}
+
+// TestShow_RevealPlaysPairByPairOnTheInjectedClock covers #83: the Reveal
+// shows one pair at a time, advancing to the next on its own once the
+// injected clock reaches its deadline, and lands on the Afterparty once the
+// last pair has had its turn.
+func TestShow_RevealPlaysPairByPairOnTheInjectedClock(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if err := db.CreateParticipant(id, id, id, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pair(t, db, "a", "b")
+	pair(t, db, "c", "d")
+	clock := newFakeNow()
+	show := NewShow(db, clock.Now)
+	advanceThroughRounds(t, show)
+	if err := show.Advance(); err != nil { // -> Reveal
+		t.Fatal(err)
+	}
+
+	first, ok := show.CurrentRevealPair()
+	if !ok {
+		t.Fatal("want a pair on stage at the start of the Reveal")
+	}
+	if current, total := show.RevealProgress(); current != 1 || total != 2 {
+		t.Errorf("want pair 1 of 2, got %d of %d", current, total)
+	}
+
+	clock.Advance(DefaultRevealPairDuration)
+
+	second, ok := show.CurrentRevealPair()
+	if !ok {
+		t.Fatal("want a second pair on stage once the first's time is up")
+	}
+	if current, _ := show.RevealProgress(); current != 2 {
+		t.Errorf("want pair 2, got %d", current)
+	}
+	if first.A.ID == second.A.ID {
+		t.Error("want a different pair the second time")
+	}
+
+	clock.Advance(DefaultRevealPairDuration)
+
+	if got := show.State().Segment; got != SegmentAfterparty {
+		t.Errorf("want the Afterparty after the last pair's time is up, got %q", got)
+	}
+	if _, ok := show.CurrentRevealPair(); ok {
+		t.Error("want no current pair in the Afterparty")
+	}
+}
+
+// TestShow_SkipToNextPairAdvancesImmediately covers #83: the Host can move
+// the Reveal along without waiting for the clock.
+func TestShow_SkipToNextPairAdvancesImmediately(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if err := db.CreateParticipant(id, id, id, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pair(t, db, "a", "b")
+	pair(t, db, "c", "d")
+	show := NewShow(db, time.Now)
+	advanceThroughRounds(t, show)
+	if err := show.Advance(); err != nil { // -> Reveal
+		t.Fatal(err)
+	}
+
+	if err := show.SkipToNextPair(); err != nil {
+		t.Fatal(err)
+	}
+	if current, _ := show.RevealProgress(); current != 2 {
+		t.Errorf("want pair 2 after one skip, got %d", current)
+	}
+
+	if err := show.SkipToNextPair(); err != nil {
+		t.Fatal(err)
+	}
+	if got := show.State().Segment; got != SegmentAfterparty {
+		t.Errorf("want the Afterparty after skipping past the last pair, got %q", got)
+	}
+}
+
+func TestShow_AdvanceRejectedWhileRevealPlaying(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	db.CreateParticipant("a", "a", "A", true)
+	db.CreateParticipant("b", "b", "B", true)
+	pair(t, db, "a", "b")
+	show := NewShow(db, time.Now)
+	advanceThroughRounds(t, show)
+	if err := show.Advance(); err != nil { // -> Reveal
+		t.Fatal(err)
+	}
+
+	if err := show.Advance(); !errors.Is(err, ErrRevealStillPlaying) {
+		t.Errorf("want ErrRevealStillPlaying, got %v", err)
+	}
+}
+
+func TestShow_SkipToNextPairRejectedOutsideTheReveal(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+
+	if err := show.SkipToNextPair(); !errors.Is(err, ErrRevealNotPlaying) {
+		t.Errorf("want ErrRevealNotPlaying in the Lobby, got %v", err)
+	}
+}
+
+func TestShow_SkipToNextPairInactiveInTheClassicFlow(t *testing.T) {
+	db := newTestDB(t)
+	show := NewShow(db, time.Now)
+
+	if err := show.SkipToNextPair(); !errors.Is(err, ErrShowInactive) {
+		t.Errorf("want ErrShowInactive, got %v", err)
+	}
+}
+
+// TestShow_PairRevealed covers #83: nobody's pair is revealed before its
+// turn, and everybody's is at or after it — the rule behind "no handle or
+// name before its turn".
+func TestShow_PairRevealed(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if err := db.CreateParticipant(id, id, id, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pair(t, db, "a", "b")
+	pair(t, db, "c", "d")
+	clock := newFakeNow()
+	show := NewShow(db, clock.Now)
+
+	if !show.PairRevealed("a") {
+		t.Error("PairRevealed is only meaningful once EventState.IsRevealed is true; before the Reveal it's vacuously true")
+	}
+
+	advanceThroughRounds(t, show)
+	if err := show.Advance(); err != nil { // -> Reveal, pair 1: a-b (registration order)
+		t.Fatal(err)
+	}
+
+	if !show.PairRevealed("a") || !show.PairRevealed("b") {
+		t.Error("want a and b revealed at their own turn")
+	}
+	if show.PairRevealed("c") || show.PairRevealed("d") {
+		t.Error("want c and d not yet revealed")
+	}
+
+	clock.Advance(DefaultRevealPairDuration)
+
+	if !show.PairRevealed("c") || !show.PairRevealed("d") {
+		t.Error("want c and d revealed at their turn")
+	}
+}
+
+func TestShow_RevealProgressIsZeroOutsideTheReveal(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+
+	if current, total := show.RevealProgress(); current != 0 || total != 0 {
+		t.Errorf("want 0 of 0 in the Lobby, got %d of %d", current, total)
+	}
+}
+
+// TestShow_CurrentRevealPairFalseWithNoPairsToShow covers the degenerate
+// case of entering the Reveal with nobody to reveal (#83).
+func TestShow_CurrentRevealPairFalseWithNoPairsToShow(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	advanceThroughRounds(t, show)
+	if err := show.Advance(); err != nil { // -> Reveal, with nobody to reveal
+		t.Fatal(err)
+	}
+
+	if _, ok := show.CurrentRevealPair(); ok {
+		t.Error("want no current pair when there's nobody to reveal")
+	}
+}
+
+// TestShow_WildcardGetsItsOwnRevealSlot covers #83: the wildcard gets its
+// own turn, alone, instead of being skipped.
+func TestShow_WildcardGetsItsOwnRevealSlot(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	db.CreateParticipant("a", "a", "A", true)
+	db.CreateParticipant("b", "b", "B", true)
+	db.CreateParticipant("w", "w", "W", true)
+	pair(t, db, "a", "b")
+	if err := NewParticipantStore(db).Change(ParticipantChange{ID: "w", Wildcard: boolPtr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	advanceThroughRounds(t, show)
+	if err := show.Advance(); err != nil { // -> Reveal
+		t.Fatal(err)
+	}
+
+	if err := show.SkipToNextPair(); err != nil { // a-b comes first (registered before w)
+		t.Fatal(err)
+	}
+	second, ok := show.CurrentRevealPair()
+	if !ok {
+		t.Fatal("want the wildcard's own slot")
+	}
+	if !second.Wildcard || second.B != nil || second.A.ID != "w" {
+		t.Errorf("want the wildcard alone in their own slot, got %+v", second)
+	}
+	if !show.PairRevealed("w") {
+		t.Error("want the wildcard revealed at their turn")
 	}
 }
 

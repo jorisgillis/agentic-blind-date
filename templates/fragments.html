@@ -34,6 +34,16 @@
       Close Round early
     </button>
   </form>
+  {{else if eq .Segment "reveal"}}
+  <div class="bg-raised border border-line rounded-xl p-5 text-center space-y-1">
+    <p class="text-ink-muted text-xs uppercase tracking-widest">On stage</p>
+    <p class="text-2xl font-display font-bold">Pair {{.RevealPair}} of {{.RevealTotal}}</p>
+  </div>
+  <form action="/admin/host/skip-reveal" method="POST">
+    <button type="submit" class="w-full bg-accent hover:opacity-90 text-on-accent font-bold rounded-xl py-4 text-lg transition-colors">
+      Skip to the next pair
+    </button>
+  </form>
   {{else if .NextAction}}
   <form action="/admin/host/advance" method="POST">
     <button type="submit" class="w-full bg-accent hover:opacity-90 text-on-accent font-bold rounded-xl py-4 text-lg transition-colors">

@@ -23,9 +23,15 @@
         {{if eq .Segment "lobby"}}Waiting for the Host
         {{else if eq .Segment "round"}}Round {{.Round}} of {{.TotalRounds}} coming up
         {{else if eq .Segment "matchmaking"}}The agents are matching everyone...
-        {{else if eq .Segment "reveal"}}The Reveal is starting...
+        {{else if eq .Segment "reveal"}}
+          {{if .YourTurn}}You're the wildcard! 🃏
+          {{else}}The agents are revealing the pairs...
+          {{end}}
         {{end}}
       </p>
+      {{if and (eq .Segment "reveal") .Wildcard .YourTurn}}
+      <p class="text-on-persona mt-2">No Match this round — you're free to mingle. The next Participant who's ready is yours.</p>
+      {{end}}
     </div>
     {{template "fragment-round-answer.html" .}}
   </div>

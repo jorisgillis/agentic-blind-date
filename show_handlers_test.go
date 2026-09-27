@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -326,6 +327,229 @@ func TestAdvanceShow_EnteringMatchmakingPairsEveryoneThroughTheMux(t *testing.T)
 	body := readBody(t, get(t, srv, "/admin/host"))
 	if !strings.Contains(body, "Matchmaking") {
 		t.Errorf("want the Matchmaking segment shown, got:\n%s", body)
+	}
+}
+
+// TestReveal_HidesIdentitiesUntilEachPairsTurn covers #83: the stage output
+// (the Big Screen) never names a Participant before their pair's turn, and
+// names them (and the pair stays named) from their turn on.
+func TestReveal_HidesIdentitiesUntilEachPairsTurn(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"avery", "blair", "cody", "drew"} {
+		seed(t, deps.db, id, id, "ready")
+	}
+
+	for i := 0; i < TotalFixedQuestions; i++ {
+		post(t, srv, "/admin/host/advance", nil)
+		post(t, srv, "/admin/host/close-round", nil)
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> matchmaking: pairs everyone
+	post(t, srv, "/admin/host/advance", nil) // -> reveal
+
+	graphData := func() map[string]any {
+		var v map[string]any
+		if err := json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	revealPairIDs := func(v map[string]any) []string {
+		raw, _ := v["reveal_pair_ids"].([]any)
+		var ids []string
+		for _, id := range raw {
+			ids = append(ids, id.(string))
+		}
+		return ids
+	}
+	all := []string{"avery", "blair", "cody", "drew"}
+	revealedNames := func(v map[string]any) map[string]bool {
+		names := map[string]bool{}
+		for _, n := range v["nodes"].([]any) {
+			node := n.(map[string]any)
+			if h, ok := node["handle"].(string); ok && h != "" {
+				names[node["id"].(string)] = true
+			}
+		}
+		return names
+	}
+
+	first := revealPairIDs(graphData())
+	if len(first) == 0 {
+		t.Fatal("want a pair on stage")
+	}
+	revealed := revealedNames(graphData())
+	for _, id := range all {
+		want := false
+		for _, r := range first {
+			if r == id {
+				want = true
+			}
+		}
+		if revealed[id] != want {
+			t.Errorf("id %s: want revealed=%v before the second pair's turn, got %v", id, want, revealed[id])
+		}
+	}
+
+	post(t, srv, "/admin/host/skip-reveal", nil)
+
+	revealed = revealedNames(graphData())
+	for _, id := range all {
+		if !revealed[id] {
+			t.Errorf("id %s: want revealed once every pair has had its turn", id)
+		}
+	}
+}
+
+// TestSkipReveal_MovesToTheNextPair and TestSkipReveal_RejectedOutsideTheReveal
+// cover #83: the Host can skip the Reveal ahead, but only while it's playing.
+func TestSkipReveal_MovesToTheNextPair(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		seed(t, deps.db, id, id, "ready")
+	}
+	for i := 0; i < TotalFixedQuestions; i++ {
+		post(t, srv, "/admin/host/advance", nil)
+		post(t, srv, "/admin/host/close-round", nil)
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> matchmaking
+	post(t, srv, "/admin/host/advance", nil) // -> reveal, pair 1 of 2
+
+	if loc := post(t, srv, "/admin/host/skip-reveal", nil).Header.Get("Location"); loc != "/admin/host" {
+		t.Errorf("want redirect to the host console, got %q", loc)
+	}
+
+	body := readBody(t, get(t, srv, "/admin/host"))
+	if !strings.Contains(body, "Pair 2 of 2") {
+		t.Errorf("want pair 2 of 2 shown, got:\n%s", body)
+	}
+}
+
+func TestSkipReveal_RejectedOutsideTheReveal(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+
+	if resp := post(t, srv, "/admin/host/skip-reveal", nil); resp.StatusCode != 400 {
+		t.Errorf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+// TestMatch_ShowsStandUpInAGameShowOnceThePairsTurnComes and
+// TestShowStatus_ShowsTheWildcardMessageAtTheirTurn cover #83: both phones
+// pop at their pair's turn, and the wildcard sees their own message.
+func TestMatch_ShowsStandUpInAGameShowOnceThePairsTurnComes(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b"} {
+		seed(t, deps.db, id, id, "ready")
+	}
+	for i := 0; i < TotalFixedQuestions; i++ {
+		post(t, srv, "/admin/host/advance", nil)
+		post(t, srv, "/admin/host/close-round", nil)
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> matchmaking: a-b paired
+	post(t, srv, "/admin/host/advance", nil) // -> reveal: the only pair is on stage immediately
+
+	if loc := get(t, srv, "/user/show/a").Header.Get("Location"); loc != "/user/match/a" {
+		t.Errorf("want a redirected to the match page at their turn, got %q", loc)
+	}
+	body := readBody(t, get(t, srv, "/user/match/a"))
+	if !strings.Contains(body, "Stand up!") {
+		t.Errorf("want \"Stand up!\" shown, got:\n%s", body)
+	}
+}
+
+// TestMatch_OthersListWaitsForTheAfterpartyInAGameShow covers #83: the
+// Others-at-the-event list would leak not-yet-revealed identities, so it's
+// withheld for the whole Reveal segment, even on a page whose own pair is
+// already revealed.
+func TestMatch_OthersListWaitsForTheAfterpartyInAGameShow(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		seed(t, deps.db, id, id, "ready")
+	}
+	for i := 0; i < TotalFixedQuestions; i++ {
+		post(t, srv, "/admin/host/advance", nil)
+		post(t, srv, "/admin/host/close-round", nil)
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> matchmaking
+	post(t, srv, "/admin/host/advance", nil) // -> reveal
+
+	var revealedID string
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if loc := get(t, srv, "/user/show/"+id).Header.Get("Location"); loc == "/user/match/"+id {
+			revealedID = id
+			break
+		}
+	}
+	if revealedID == "" {
+		t.Fatal("want somebody's pair revealed immediately")
+	}
+
+	body := readBody(t, get(t, srv, "/user/match/"+revealedID))
+	if strings.Contains(body, "Others at the event") {
+		t.Errorf("want the Others list withheld during the Reveal, got:\n%s", body)
+	}
+}
+
+func TestShowStatus_ShowsTheWildcardMessageAtTheirTurn(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c"} { // odd: leaves a wildcard
+		seed(t, deps.db, id, id, "ready")
+	}
+	for i := 0; i < TotalFixedQuestions; i++ {
+		post(t, srv, "/admin/host/advance", nil)
+		post(t, srv, "/admin/host/close-round", nil)
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> matchmaking: one pair + a wildcard
+	post(t, srv, "/admin/host/advance", nil) // -> reveal
+
+	var wildcard string
+	for _, id := range []string{"a", "b", "c"} {
+		if reload(t, deps.db, id).Wildcard {
+			wildcard = id
+		}
+	}
+	if wildcard == "" {
+		t.Fatal("want a wildcard among an odd number of Participants")
+	}
+
+	// Skip until the wildcard's own slot comes up (at most one skip needed: 2 slots total).
+	for i := 0; i < 2; i++ {
+		if strings.Contains(readBody(t, get(t, srv, "/user/show/"+wildcard)), "wildcard") {
+			break
+		}
+		post(t, srv, "/admin/host/skip-reveal", nil)
+	}
+
+	body := readBody(t, get(t, srv, "/user/show/"+wildcard))
+	if !strings.Contains(body, "wildcard") {
+		t.Errorf("want the wildcard's own message shown, got:\n%s", body)
+	}
+
+	// The stage lights up the wildcard alone: one ID, not a pair.
+	var snap map[string]any
+	if err := json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &snap); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := snap["reveal_pair_ids"].([]any)
+	if len(ids) != 1 || ids[0].(string) != wildcard {
+		t.Errorf("want the wildcard alone lit up on stage, got %v", ids)
 	}
 }
 

@@ -47,6 +47,18 @@ func TestDestination_GameShowSendsAReadyParticipantToTheShowStatusPage(t *testin
 	}
 }
 
+// TestDestination_GameShowWildcardStaysOnTheShowStatusPageOnceRevealed
+// covers #83: the wildcard is never matched, so without this they would
+// otherwise fall through to the wait page once revealed is true, missing
+// their own Reveal message.
+func TestDestination_GameShowWildcardStaysOnTheShowStatusPageOnceRevealed(t *testing.T) {
+	p := &Participant{ID: "p", PipelineStep: StepReady, Wildcard: true}
+
+	if got := destination(p, true, GameShow); got != "/user/show/p" {
+		t.Errorf("want the wildcard kept on the show status page, got %s", got)
+	}
+}
+
 func TestSubmitAnswer_WhileMatchedGoesToTheRightPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.Reveal()

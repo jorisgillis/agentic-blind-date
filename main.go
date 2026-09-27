@@ -124,6 +124,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /admin/host/stream", h.HostConsoleStream)
 	mux.HandleFunc("POST /admin/host/advance", h.AdvanceShow)
 	mux.HandleFunc("POST /admin/host/close-round", h.CloseRoundEarly)
+	mux.HandleFunc("POST /admin/host/skip-reveal", h.SkipReveal)
 	mux.HandleFunc("POST /admin/reveal", h.TriggerReveal)
 	mux.HandleFunc("POST /admin/reset", h.Reset)
 	mux.HandleFunc("POST /admin/rematch", h.Rematch)

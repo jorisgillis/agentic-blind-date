@@ -30,6 +30,7 @@ type MatchView struct {
 	GreenFlags  []string
 	Icebreakers []string
 	Others      []*Participant
+	GameShow    bool // "Stand up!" instead of the Classic flow's plain reveal (#83)
 }
 
 // ExploreView is /user/explore/{myId}/{otherId}: an on-demand compatibility
@@ -81,11 +82,15 @@ type HostConsoleView struct {
 	RoundSecondsLeft int
 	AssessedPairs    int // background LLM assessment progress before the matchmaking segment (#81)
 	TotalPairs       int
+	RevealPair       int // 1-based, for display; meaningful only during the Reveal (#83)
+	RevealTotal      int
 }
 
 // ShowStatusView is /user/show/{id}: a Participant's phone between Rounds
 // in a Game Show, before their Match is revealed (#78). Question and
-// SecondsLeft are only meaningful while RoundOpen (#79).
+// SecondsLeft are only meaningful while RoundOpen (#79). Wildcard and
+// YourTurn are only meaningful during the Reveal (#83): the wildcard has no
+// Match, so they stay on this page instead of moving to the Match page.
 type ShowStatusView struct {
 	Participant *Participant
 	Segment     ShowSegment
@@ -94,4 +99,6 @@ type ShowStatusView struct {
 	RoundOpen   bool
 	Question    Question
 	SecondsLeft int
+	Wildcard    bool
+	YourTurn    bool
 }
