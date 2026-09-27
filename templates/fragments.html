@@ -66,14 +66,14 @@
 {{/* Round answer pad — a Participant's answer form and countdown while a Round is open (#79) */}}
 {{define "fragment-round-answer.html"}}
 {{if .RoundOpen}}
-<div id="round-answer" class="bg-overlay/10 rounded-2xl p-6 mt-4 space-y-4">
+<div id="round-answer" class="bg-overlay/10 rounded-2xl p-6 mt-4 space-y-4 abd-pop-in">
   <p class="text-on-persona/80 text-xs uppercase tracking-widest">
     Round {{.Round}} of {{.TotalRounds}} — <span id="round-seconds-left">{{.SecondsLeft}}</span>s left
   </p>
   <p class="font-semibold text-on-persona" data-md>{{.Question.Text}}</p>
   {{if eq (len .Question.Options) 2}}
   <div class="relative h-32 select-none" style="perspective:600px">
-    <div id="swipe-card" class="absolute inset-0 rounded-2xl bg-overlay border border-on-persona/20 flex items-center justify-center text-on-persona/70 text-sm" style="transition: transform 300ms ease, opacity 300ms ease">
+    <div id="swipe-card" class="absolute inset-0 rounded-2xl bg-overlay border border-on-persona/20 flex items-center justify-center text-on-persona/70 text-sm" style="transition: transform var(--t-duration-normal) var(--t-ease-standard), opacity var(--t-duration-normal) var(--t-ease-standard)">
       swipe or tap
     </div>
   </div>
@@ -122,11 +122,21 @@
 </div>
 <script>
   (function() {
+    if (window.agenticBlindDateSound) agenticBlindDateSound.play('round_opens');
     var left = {{.SecondsLeft}};
     var el = document.getElementById('round-seconds-left');
+    var urgent = false;
+    function checkUrgent() {
+      if (left > 3 || urgent) return;
+      urgent = true;
+      if (el) el.classList.add('abd-countdown-urgent');
+      if (window.agenticBlindDateSound) agenticBlindDateSound.play('countdown_last_3');
+    }
+    checkUrgent();
     var timer = setInterval(function() {
       left--;
       if (el) el.textContent = Math.max(left, 0);
+      checkUrgent();
       if (left <= 0) clearInterval(timer);
     }, 1000);
   })();

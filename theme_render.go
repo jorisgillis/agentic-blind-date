@@ -79,6 +79,13 @@ const motionStyleBlock = `<style>
 .abd-fade { transition: opacity var(--t-duration-normal) var(--t-ease-standard); }
 .htmx-swapping { opacity: 0; transition: opacity var(--t-duration-fast) var(--t-ease-standard); }
 
+/* The Game Show's countdown, in its last 3 seconds (#85). */
+@keyframes abd-countdown-urgent {
+  0%, 100% { color: var(--t-state-negative); transform: scale(1); }
+  50% { color: var(--t-state-negative); transform: scale(1.15); }
+}
+.abd-countdown-urgent { animation: abd-countdown-urgent var(--t-duration-fast) var(--t-ease-standard) infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

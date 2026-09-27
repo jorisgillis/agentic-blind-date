@@ -63,6 +63,13 @@ const (
 	CueYourMatch       SoundCue = "your_match"         // phone: the Reveal / your Match
 	CueBigScreenMatch  SoundCue = "bigscreen_match"    // Big Screen: a new Match
 	CueBigScreenReveal SoundCue = "bigscreen_reveal"   // Big Screen: the Reveal
+
+	// The Game Show's five moments (#85): motion in every Theme, sound optional.
+	CueRoundOpens          SoundCue = "round_opens"          // phone: a Round opens
+	CueRoundCloses         SoundCue = "round_closes"         // Big Screen: a Round closes, with the callout
+	CueCountdownLast3      SoundCue = "countdown_last_3"     // phone: the countdown's last 3 seconds
+	CueMatchmakingDrumroll SoundCue = "matchmaking_drumroll" // Big Screen: the matchmaking drumroll
+	CuePairRevealed        SoundCue = "pair_revealed"        // Big Screen: a pair revealed
 )
 
 // ToneRecipe is a synthesised sound cue (ticket 02): waveform, pitch and
@@ -169,6 +176,12 @@ var neonTheme = Theme{
 		CueYourMatch:       {Waveform: "sawtooth", Hz: 220, Seconds: 0.5},
 		CueBigScreenMatch:  {Waveform: "triangle", Hz: 523.25, Seconds: 0.4},
 		CueBigScreenReveal: {Waveform: "sawtooth", Hz: 110, Seconds: 0.8},
+
+		CueRoundOpens:          {Waveform: "sawtooth", Hz: 330, Seconds: 0.2},
+		CueRoundCloses:         {Waveform: "triangle", Hz: 392, Seconds: 0.3},
+		CueCountdownLast3:      {Waveform: "square", Hz: 880, Seconds: 0.1},
+		CueMatchmakingDrumroll: {Waveform: "sawtooth", Hz: 98, Seconds: 1.0},
+		CuePairRevealed:        {Waveform: "triangle", Hz: 587.33, Seconds: 0.4},
 	},
 }
 
@@ -213,5 +226,11 @@ var paperTheme = Theme{
 		CueYourMatch:       {Waveform: "sine", Hz: 784, Seconds: 0.6},
 		CueBigScreenMatch:  {Waveform: "sine", Hz: 659.25, Seconds: 0.4},
 		CueBigScreenReveal: {Waveform: "sine", Hz: 880, Seconds: 0.8},
+
+		CueRoundOpens:          {Waveform: "sine", Hz: 494, Seconds: 0.25},
+		CueRoundCloses:         {Waveform: "sine", Hz: 587.33, Seconds: 0.3},
+		CueCountdownLast3:      {Waveform: "sine", Hz: 987.77, Seconds: 0.12},
+		CueMatchmakingDrumroll: {Waveform: "sine", Hz: 130.81, Seconds: 1.0},
+		CuePairRevealed:        {Waveform: "sine", Hz: 698.46, Seconds: 0.4},
 	},
 }

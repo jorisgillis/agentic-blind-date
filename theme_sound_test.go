@@ -16,7 +16,10 @@ func TestThemeSoundsJSON_RoundTrips(t *testing.T) {
 	}
 	for _, key := range []string{"neon", "paper"} {
 		cues := byTheme[key]
-		for _, cue := range []string{"answer_submitted", "interview_done", "your_match", "bigscreen_match", "bigscreen_reveal"} {
+		for _, cue := range []string{
+			"answer_submitted", "interview_done", "your_match", "bigscreen_match", "bigscreen_reveal",
+			"round_opens", "round_closes", "countdown_last_3", "matchmaking_drumroll", "pair_revealed",
+		} {
 			recipe, ok := cues[cue]
 			if !ok {
 				t.Errorf("%s: missing the %q cue", key, cue)
@@ -26,6 +29,31 @@ func TestThemeSoundsJSON_RoundTrips(t *testing.T) {
 				t.Errorf("%s %q: incomplete recipe %+v", key, cue, recipe)
 			}
 		}
+	}
+}
+
+// TestGameShowMoments_HaveAnOptionalSoundCue covers #85: each of the Game
+// Show's five moments plays its own cue — silently, wherever the current
+// Theme leaves it out of its Sounds map (already covered generically by the
+// shared sound module, #44).
+func TestGameShowMoments_HaveAnOptionalSoundCue(t *testing.T) {
+	fragments := readFile(t, "templates/fragments.html")
+	if !strings.Contains(fragments, "agenticBlindDateSound.play('round_opens')") {
+		t.Error("a Round opening should have an optional sound cue")
+	}
+	if !strings.Contains(fragments, "agenticBlindDateSound.play('countdown_last_3')") {
+		t.Error("the countdown's last 3 seconds should have an optional sound cue")
+	}
+
+	screen := readFile(t, "templates/screen.html")
+	if !strings.Contains(screen, "playBigScreenCue('round_closes')") {
+		t.Error("a Round closing (the callout) should have an optional sound cue")
+	}
+	if !strings.Contains(screen, "playBigScreenCue('matchmaking_drumroll')") {
+		t.Error("the matchmaking drumroll should have an optional sound cue")
+	}
+	if !strings.Contains(screen, "playBigScreenCue('pair_revealed')") {
+		t.Error("a pair revealed should have an optional sound cue")
 	}
 }
 

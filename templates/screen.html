@@ -12,6 +12,8 @@
     html, body { height: 100%; overflow: hidden; }
     .node { cursor: grab; }
     .node:active { cursor: grabbing; }
+    /* A pair revealed (#83, #85): the glow eases in instead of snapping on. */
+    .node circle { transition: filter var(--t-duration-slow) var(--t-ease-emphasis); }
   </style>
 </head>
 <body class="bg-page text-ink flex flex-col h-full">
@@ -293,20 +295,46 @@ function updateGraph(data) {
     }
   }
 
-  // Round callout (#80): the majority answer and a minority "hot take" once a Round closes.
+  // Round callout (#80): the majority answer and a minority "hot take" once a
+  // Round closes — animated and sounded only the moment a new one appears (#85).
   const calloutEl = document.getElementById('round-callout');
   if (data.round_callout) {
+    const calloutKey = data.round_callout.majority_answer + ':' + data.round_callout.minority_answer;
     document.getElementById('round-callout-majority').textContent =
       data.round_callout.majority_answer + ' — ' + data.round_callout.majority_count + ' votes';
     document.getElementById('round-callout-minority').textContent =
       '🔥 ' + data.round_callout.minority_count + ' said ' + data.round_callout.minority_answer;
+    if (calloutKey !== lastCalloutKey) {
+      lastCalloutKey = calloutKey;
+      playBigScreenCue('round_closes');
+      calloutEl.classList.remove('abd-pop-in');
+      void calloutEl.offsetWidth; // restart the animation on a repeat callout
+      calloutEl.classList.add('abd-pop-in');
+    }
     calloutEl.classList.remove('hidden');
   } else {
+    lastCalloutKey = null;
     calloutEl.classList.add('hidden');
   }
 
-  // Drumroll (#82): the stage during the matchmaking segment.
-  document.getElementById('drumroll').style.display = data.segment === 'matchmaking' ? 'flex' : 'none';
+  // Drumroll (#82): the stage during the matchmaking segment, animated and
+  // sounded only once, on the way in (#85).
+  const drumrollEl = document.getElementById('drumroll');
+  if (data.segment === 'matchmaking') {
+    if (drumrollEl.style.display !== 'flex') playBigScreenCue('matchmaking_drumroll');
+    drumrollEl.style.display = 'flex';
+    drumrollEl.classList.add('abd-pop-in');
+  } else {
+    drumrollEl.style.display = 'none';
+    drumrollEl.classList.remove('abd-pop-in');
+  }
+
+  // A pair revealed (#83, #85): sounded once per pair, when the stage lights a new one.
+  const revealKey = (data.reveal_pair_ids || []).join(',');
+  if (revealKey && revealKey !== lastRevealKey) {
+    playBigScreenCue('pair_revealed');
+  }
+  lastRevealKey = revealKey;
 
   // The Reveal (#43, #44): a brief highlight flash across the whole screen, once.
   if (data.revealed && !hasRevealed) {
@@ -319,6 +347,8 @@ function updateGraph(data) {
   }
 }
 let hasRevealed = false;
+let lastCalloutKey = null; // #85: only animate/sound a round-callout when it's new
+let lastRevealKey = '';    // #85: only sound "a pair revealed" when the lit pair changes
 
 const es = new EventSource('/bigscreen/stream');
 es.addEventListener('message', e => {

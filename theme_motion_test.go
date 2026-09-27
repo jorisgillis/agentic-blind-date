@@ -48,11 +48,37 @@ func TestTemplates_NoHardCodedAnimationDurations(t *testing.T) {
 		"templates/match.html", "templates/explore.html", "templates/screen.html", "templates/fragments.html",
 	} {
 		src := readFile(t, path)
-		for _, hardCoded := range []string{"0.5s ease-out", "2s ease-in-out", "duration-1000"} {
+		for _, hardCoded := range []string{"0.5s ease-out", "2s ease-in-out", "duration-1000", "300ms ease"} {
 			if strings.Contains(src, hardCoded) {
 				t.Errorf("%s: hard-codes an animation duration (%q) instead of a Theme token", path, hardCoded)
 			}
 		}
+	}
+}
+
+// TestGameShowMoments_HaveMotion covers #85: each of the Game Show's five
+// moments (a Round opens, a Round closes, the countdown's last 3 seconds,
+// the matchmaking drumroll, a pair revealed) animates through a Theme-token
+// class or transition, which the reduced-motion guard above already
+// collapses for every Theme — there's no separate per-Theme CSS to check.
+func TestGameShowMoments_HaveMotion(t *testing.T) {
+	fragments := readFile(t, "templates/fragments.html")
+	if !strings.Contains(fragments, `id="round-answer" class="bg-overlay/10 rounded-2xl p-6 mt-4 space-y-4 abd-pop-in"`) {
+		t.Error("a Round opening should animate the answer pad in")
+	}
+	if !strings.Contains(fragments, "abd-countdown-urgent") {
+		t.Error("the countdown's last 3 seconds should animate")
+	}
+
+	screen := readFile(t, "templates/screen.html")
+	if !strings.Contains(screen, "calloutEl.classList.add('abd-pop-in')") {
+		t.Error("a Round closing (the callout) should animate in")
+	}
+	if !strings.Contains(screen, "drumrollEl.classList.add('abd-pop-in')") {
+		t.Error("the matchmaking drumroll should animate in")
+	}
+	if !strings.Contains(screen, "transition: filter var(--t-duration-slow)") {
+		t.Error("a pair revealed should ease its glow in, not snap it on")
 	}
 }
 
