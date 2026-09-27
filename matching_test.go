@@ -438,6 +438,30 @@ func TestMatchmaking_ReportsFailures(t *testing.T) {
 			t.Error("want the failure reported")
 		}
 	})
+	// #82: RunGameShowMatchmaking's three failure points, all against the
+	// same odd trio (A, B, N) matchmakingWithPool seeds, so one pair forms
+	// and one Participant becomes the wildcard.
+	t.Run("game show matchmaking: reading ready Participants fails", func(t *testing.T) {
+		mm, db, _ := matchmakingWithPool(t)
+		breakDB(db)
+		if err := mm.RunGameShowMatchmaking(); err == nil {
+			t.Error("want the failure reported")
+		}
+	})
+	t.Run("game show matchmaking: storing a Match fails", func(t *testing.T) {
+		mm, db, _ := matchmakingWithPool(t)
+		failWrites(t, db, "pair")
+		if err := mm.RunGameShowMatchmaking(); err == nil {
+			t.Error("want the failure reported")
+		}
+	})
+	t.Run("game show matchmaking: marking the wildcard fails", func(t *testing.T) {
+		mm, db, _ := matchmakingWithPool(t)
+		failWrites(t, db, "wildcard")
+		if err := mm.RunGameShowMatchmaking(); err == nil {
+			t.Error("want the failure reported")
+		}
+	})
 }
 
 func TestMatchmaking_ANewcomerWhoNoLongerExistsIsSkipped(t *testing.T) {

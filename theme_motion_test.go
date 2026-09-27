@@ -56,6 +56,17 @@ func TestTemplates_NoHardCodedAnimationDurations(t *testing.T) {
 	}
 }
 
+// TestSwipeCard_SubmitDelayReadsTheSameThemeTokenAsItsTransition is a
+// regression guard: the swipe card's CSS transition (#80) reads
+// --t-duration-normal, so the JS delay before submitting must read the same
+// token instead of a bare millisecond literal that could drift from it.
+func TestSwipeCard_SubmitDelayReadsTheSameThemeTokenAsItsTransition(t *testing.T) {
+	src := readFile(t, "templates/fragments.html")
+	if !strings.Contains(src, "getComputedStyle(document.documentElement).getPropertyValue('--t-duration-normal')") {
+		t.Error("want the swipe card's submit delay to read --t-duration-normal, not a hard-coded number")
+	}
+}
+
 // TestGameShowMoments_HaveMotion covers #85: each of the Game Show's five
 // moments (a Round opens, a Round closes, the countdown's last 3 seconds,
 // the matchmaking drumroll, a pair revealed) animates through a Theme-token

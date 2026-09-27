@@ -405,6 +405,34 @@ func TestReveal_HidesIdentitiesUntilEachPairsTurn(t *testing.T) {
 
 // TestSkipReveal_MovesToTheNextPair and TestSkipReveal_RejectedOutsideTheReveal
 // cover #83: the Host can skip the Reveal ahead, but only while it's playing.
+// TestHostConsoleStream_RefreshesWhenTheRevealAdvancesOnItsOwnClock covers
+// #83's "tests drive the Reveal with the injected clock... and the
+// streams": the stream notices a pair change the injected clock alone
+// produced, with no Host action, once the heartbeat re-checks it.
+func TestHostConsoleStream_RefreshesWhenTheRevealAdvancesOnItsOwnClock(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		seed(t, deps.db, id, id, "ready")
+	}
+	for i := 0; i < TotalFixedQuestions; i++ {
+		post(t, srv, "/admin/host/advance", nil)
+		post(t, srv, "/admin/host/close-round", nil)
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> matchmaking
+	post(t, srv, "/admin/host/advance", nil) // -> reveal: pair 1 of 2
+
+	s := open(t, srv, "/admin/host/stream")
+	sentNothingNew(t, s, 1, "", "nothing changed")
+
+	deps.showClock.Advance(DefaultRevealPairDuration) // the clock alone: no Host click, no skip
+	srv.clock.fire()                                  // the heartbeat re-checks Show.State, which observes it
+
+	waitFor(t, s, "event: refresh")
+}
+
 func TestSkipReveal_MovesToTheNextPair(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	if err := deps.db.SetEventFormat(GameShow); err != nil {

@@ -59,10 +59,10 @@ type SoundCue string
 
 const (
 	CueAnswerSubmitted SoundCue = "answer_submitted" // phone
-	CueInterviewDone   SoundCue = "interview_done"    // phone
-	CueYourMatch       SoundCue = "your_match"         // phone: the Reveal / your Match
-	CueBigScreenMatch  SoundCue = "bigscreen_match"    // Big Screen: a new Match
-	CueBigScreenReveal SoundCue = "bigscreen_reveal"   // Big Screen: the Reveal
+	CueInterviewDone   SoundCue = "interview_done"   // phone
+	CueYourMatch       SoundCue = "your_match"       // phone: the Reveal / your Match
+	CueBigScreenMatch  SoundCue = "bigscreen_match"  // Big Screen: a new Match
+	CueBigScreenReveal SoundCue = "bigscreen_reveal" // Big Screen: the Reveal
 
 	// The Game Show's five moments (#85): motion in every Theme, sound optional.
 	CueRoundOpens          SoundCue = "round_opens"          // phone: a Round opens
@@ -105,8 +105,8 @@ func ThemeByKey(key string) Theme {
 var classicTheme = Theme{
 	Key: "classic", Name: "Classic",
 
-	SurfacePage:    "#030712", // Tailwind gray-950
-	SurfaceRaised:  "#111827", // gray-900
+	SurfacePage:    "#030712",           // Tailwind gray-950
+	SurfaceRaised:  "#111827",           // gray-900
 	SurfaceOverlay: "rgb(0 0 0 / 0.15)", // a translucent overlay that must work on every Persona colour (ticket 02)
 	TextNormal:     "#ffffff",
 	TextMuted:      "#9ca3af", // gray-400

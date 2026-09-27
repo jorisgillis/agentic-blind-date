@@ -95,7 +95,10 @@
         value.value = dir === 'l' ? options[0] : options[1];
         card.style.transform = dir === 'l' ? 'translateX(-140%) rotate(-18deg)' : 'translateX(140%) rotate(18deg)';
         card.style.opacity = '0';
-        setTimeout(function() { htmx.trigger(form, 'submit'); }, 200);
+        // Wait for the swipe-out transition above, reading the same Theme
+        // token it uses, so the two never drift apart.
+        var durationMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--t-duration-normal')) || 200;
+        setTimeout(function() { htmx.trigger(form, 'submit'); }, durationMs);
       };
       card.addEventListener('touchstart', function(e) { startX = e.touches[0].clientX; });
       card.addEventListener('touchend', function(e) {

@@ -57,6 +57,32 @@ func testParticipant(id, persona string, langs []string, opts ...participantOpts
 	}
 }
 
+// TestMatcherScorePair_ExcludesRoundAnswersFromTheLLMPrompt covers #75's Out
+// of Scope note for the Game Show: Round answers feed only the heuristic
+// PairScore, never the LLM compatibility assessment.
+func TestMatcherScorePair_ExcludesRoundAnswersFromTheLLMPrompt(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", matchReply)
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	a := testParticipant("a", "The Gopher", []string{"Go"})
+	a.Answers = map[string]string{"fixed_0": "Tabs", "q1": "Loves Go"}
+	b := testParticipant("b", "The Crab", []string{"Rust"})
+
+	if _, err := m.ScorePair(a, b); err != nil {
+		t.Fatal(err)
+	}
+
+	call, ok := llm.lastCallMatching("matchmaker")
+	if !ok {
+		t.Fatal("want a matchmaker call")
+	}
+	if strings.Contains(call.User, "fixed_0") || strings.Contains(call.User, "Tabs") {
+		t.Errorf("want the Round answer excluded from the LLM prompt, got:\n%s", call.User)
+	}
+	if !strings.Contains(call.User, "q1") || !strings.Contains(call.User, "Loves Go") {
+		t.Errorf("want the personalized answer still included, got:\n%s", call.User)
+	}
+}
+
 func TestMatcherScorePair_ScoresAPairOnceInEitherOrder(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", matchReply)
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)

@@ -133,6 +133,55 @@ func TestShow_AdvanceReportsAGenuineRevealFailure(t *testing.T) {
 	}
 }
 
+// TestShow_SetShowStateReportsAFailure and
+// TestShow_SetShowStateReportsAGenuineFailure cover setShowState's own
+// guard and its Exec, the write behind every Show transition (Advance,
+// CloseRound, SkipToNextPair).
+func TestShow_SetShowStateReportsAFailure(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	failWrites(t, db, "show_state")
+
+	if err := show.Advance(); err == nil {
+		t.Error("want the failure reported")
+	}
+}
+
+func TestShow_SetShowStateReportsAGenuineFailure(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	breakOnFault(t, db, "show_state")
+
+	if err := show.Advance(); err == nil {
+		t.Error("want a genuine failure reported")
+	}
+}
+
+// TestShow_SubmitRoundAnswerReportsAFailure covers the write behind
+// SubmitRoundAnswer: the Participant store's own "answers" tag.
+func TestShow_SubmitRoundAnswerReportsAFailure(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	db.CreateParticipant("p", "p", "P", true)
+	show := NewShow(db, time.Now)
+	if err := show.Advance(); err != nil { // -> Round 0
+		t.Fatal(err)
+	}
+	failWrites(t, db, "answers")
+
+	if err := show.SubmitRoundAnswer("p", "Tabs"); err == nil {
+		t.Error("want the failure reported")
+	}
+}
+
 func TestShow_StateSurvivesReopeningTheDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	db, err := NewDB(path)

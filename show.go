@@ -59,8 +59,11 @@ func (db *DB) ShowState() ShowState {
 }
 
 func (db *DB) setShowState(s ShowState) error {
+	if err := db.checkFault("show_state"); err != nil {
+		return err
+	}
 	data, _ := json.Marshal(s) // ShowState is plain data: this cannot fail
-	_, err := db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES (?, ?)`, showStateKey, string(data))
+	_, err := db.db.ExecContext(db.execCtx(), `INSERT OR REPLACE INTO event_state (key, value) VALUES (?, ?)`, showStateKey, string(data))
 	if err == nil {
 		db.changed()
 	}

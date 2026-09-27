@@ -137,15 +137,36 @@ Respond with ONLY valid JSON — no markdown:
 	}, nil
 }
 
+// fixedQuestionIDs is every Round's Fixed Question ID, for personalizedAnswers.
+var fixedQuestionIDs = func() map[string]bool {
+	ids := make(map[string]bool, len(FixedQuestions))
+	for _, q := range FixedQuestions {
+		ids[q.ID] = true
+	}
+	return ids
+}()
+
+// personalizedAnswers excludes Round answers: a Game Show's #75 spec keeps
+// them out of the LLM compatibility assessment, feeding only the heuristic
+// PairScore (matcher.go's ScoredCandidate ranking), so a Participant's
+// answer to "Tabs or spaces?" never leaks into the prompt.
+func personalizedAnswers(all map[string]string) map[string]string {
+	out := make(map[string]string, len(all))
+	for k, v := range all {
+		if fixedQuestionIDs[k] {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
 func describeDeveloper(n int, p *Participant) string {
 	profile := p.Profile
 	if profile == nil {
 		profile = &GitHubProfile{}
 	}
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
-	}
+	answers := personalizedAnswers(p.Answers)
 	s := fmt.Sprintf("DEVELOPER %d (%s):\n%s\nInterview answers: %v", n, p.PersonaName, p.Summary(), answers)
 	if interests := fmtInterests(p.Interests); interests != "" {
 		s += "\nInterests: " + interests

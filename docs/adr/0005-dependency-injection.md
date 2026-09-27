@@ -56,23 +56,29 @@ func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
 func NewRelationships(db *DB) *Relationships
 func NewPersonas(llm LLM) *Personas
 func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking
-func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding
+
+// Show: the Game Show's segments (Lobby, Rounds, matchmaking, Reveal, Afterparty).
+// Inactive in the Classic flow (#78). now is an injected clock — Round
+// countdowns and the Reveal's pair-by-pair advance are driven by it, so
+// tests never wait on real time (#79, #83)
+func NewShow(db *DB, now func() time.Time) *Show
+
+// Onboarding, BigScreen and Handler all accept Show explicitly, like
+// Watcher: none of the three build their own, because tests need to
+// control the same Show (and its clock) the rest of the server sees
+func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking, show *Show) *Onboarding
 
 // Big Screen: the one Snapshot builder for the room, shared by every open screen (#55)
-func NewBigScreen(db *DB, matcher *Matcher) *BigScreen
+func NewBigScreen(db *DB, matcher *Matcher, show *Show) *BigScreen
 
 // Event administration: Reveal, Reset and Rematch, so handlers only call them (#57)
 func NewEventAdmin(db *DB, matcher *Matcher, matchmaking *Matchmaking) *EventAdmin
-
-// Show: the Game Show's segments (Lobby, Rounds, matchmaking, Reveal, Afterparty).
-// Inactive in the Classic flow (#78)
-func NewShow(db *DB) *Show
 
 // Watcher: the SSE streams' heartbeat Clock and catch-up signal (#58)
 func NewWatcher() *Watcher
 
 // HTTP handlers
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, watcher *Watcher) *Handler
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, watcher *Watcher, show *Show) *Handler
 ```
 
 #### Composition Root
@@ -99,8 +105,9 @@ func main() {
     interview := NewInterview(db, llm)
     relations := NewRelationships(db)
     matchmaking := NewMatchmaking(db, matcher, relations)
-    onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
-    h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, NewWatcher())
+    show := NewShow(db, time.Now)
+    onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking, show)
+    h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, NewWatcher(), show)
 
     // Start server
     log.Fatal(http.ListenAndServe(addr, buildMux(h)))

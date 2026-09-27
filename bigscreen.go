@@ -45,16 +45,16 @@ type ScreenMatch struct {
 // and shared by every open Big Screen (#55). Keys use Event State vocabulary
 // rather than "phase".
 type Snapshot struct {
-	EventState EventState    `json:"event_state"`
-	Label      string        `json:"label"`
-	Revealed   bool          `json:"revealed"`
-	ThemeKey   string        `json:"theme_key"` // the admin's Big Screen Theme choice (#42)
-	Count      int           `json:"count"`
-	ReadyCount int           `json:"ready_count"`
-	Nodes      []ScreenNode  `json:"nodes"`
-	Edges      []ScreenEdge  `json:"edges"`
-	Matches    []ScreenMatch `json:"matches"`
-	Activity   []string      `json:"activity"`
+	EventState    EventState    `json:"event_state"`
+	Label         string        `json:"label"`
+	Revealed      bool          `json:"revealed"`
+	ThemeKey      string        `json:"theme_key"` // the admin's Big Screen Theme choice (#42)
+	Count         int           `json:"count"`
+	ReadyCount    int           `json:"ready_count"`
+	Nodes         []ScreenNode  `json:"nodes"`
+	Edges         []ScreenEdge  `json:"edges"`
+	Matches       []ScreenMatch `json:"matches"`
+	Activity      []string      `json:"activity"`
 	Format        EventFormat   `json:"format"`               // #78
 	Segment       ShowSegment   `json:"segment,omitempty"`    // only meaningful when Format is GameShow
 	Round         int           `json:"round,omitempty"`      // 1-based; only meaningful when Segment is "round"
