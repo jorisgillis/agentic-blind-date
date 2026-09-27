@@ -1,8 +1,8 @@
 ---
 label: wayfinder:task
 title: Build the Themes
-status: open
-assignee:
+status: closed
+assignee: claude
 blocked_by: [03-three-theme-looks.md, 07-tailwind-build-step.md]
 ---
 
@@ -23,3 +23,11 @@ The build is specced in GitHub issue #36 ("Spec: Themes") and split into these t
 - #44 Theme sound
 
 This ticket closes when they are done.
+
+## Resolution
+
+Done: #40–#44 are all built and merged, plus a code-review fix batch
+(commits through "fix: Apply code-review findings for the Themes batch
+(#40-#44)"). Tokens, both pickers, motion and sound all landed, with the
+manual checklists the spec called for. The Game Show's own five Theme
+moments (#85) build directly on this token set.

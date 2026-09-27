@@ -1,7 +1,7 @@
 ---
 label: wayfinder:map
 title: New UI and Themes
-status: open
+status: closed
 ---
 
 # New UI and Themes
@@ -42,7 +42,9 @@ This is a local-markdown tracker. Each ticket is a file in `issues/`, and the li
 
 ## Not yet specified
 
-Nothing: every decision toward the destination is made. What remains is building ("Build the Themes", GitHub #40–#44) and building the Game Show from "Spec: Game Show event format" (#75). The map's destination is reached.
+Nothing: both destinations are reached. The Themes are built and shipped
+(#40–#44, closed with "Build the Themes"), and the Game Show is fully
+built (#76–#85, its 10 build tickets, plus a code-review fix batch).
 
 ## Out of scope
 
