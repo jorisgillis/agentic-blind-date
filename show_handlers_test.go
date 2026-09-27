@@ -97,9 +97,6 @@ func TestAdvanceShow_RejectedInTheClassicFlow(t *testing.T) {
 	}
 }
 
-// TestHostConsole_ShowsTheRoundCountdownAndAnswerCount covers #79: while a
-// Round is open, the host console shows the countdown and answer count
-// instead of the next-action button, plus a way to close the Round early.
 // TestHostConsole_ShowsTheBackgroundAssessmentProgress covers #81: the host
 // console shows how many candidate Pairs have been assessed so far, before
 // the matchmaking segment.
@@ -118,6 +115,9 @@ func TestHostConsole_ShowsTheBackgroundAssessmentProgress(t *testing.T) {
 	}
 }
 
+// TestHostConsole_ShowsTheRoundCountdownAndAnswerCount covers #79: while a
+// Round is open, the host console shows the countdown and answer count
+// instead of the next-action button, plus a way to close the Round early.
 func TestHostConsole_ShowsTheRoundCountdownAndAnswerCount(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	if err := deps.db.SetEventFormat(GameShow); err != nil {
@@ -298,6 +298,34 @@ func TestSubmitRoundAnswer_RejectedOutsideAnOpenRound(t *testing.T) {
 
 	if resp := post(t, srv, "/user/round-answer/p", url.Values{"answer": {"Tabs"}}); resp.StatusCode != 400 {
 		t.Errorf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+// TestAdvanceShow_EnteringMatchmakingPairsEveryoneThroughTheMux covers #82:
+// advancing all the way into the matchmaking segment pairs every ready
+// Participant, through the mux.
+func TestAdvanceShow_EnteringMatchmakingPairsEveryoneThroughTheMux(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+
+	for i := 0; i < TotalFixedQuestions; i++ {
+		post(t, srv, "/admin/host/advance", nil)     // open Round i
+		post(t, srv, "/admin/host/close-round", nil) // close it early
+	}
+	post(t, srv, "/admin/host/advance", nil) // -> matchmaking
+
+	a, b := reload(t, deps.db, "a"), reload(t, deps.db, "b")
+	if a.MatchedWith != "b" || b.MatchedWith != "a" {
+		t.Errorf("want a and b paired, got a.MatchedWith=%q b.MatchedWith=%q", a.MatchedWith, b.MatchedWith)
+	}
+
+	body := readBody(t, get(t, srv, "/admin/host"))
+	if !strings.Contains(body, "Matchmaking") {
+		t.Errorf("want the Matchmaking segment shown, got:\n%s", body)
 	}
 }
 

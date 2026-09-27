@@ -52,6 +52,11 @@
       <p id="round-callout-majority" class="text-xl font-display font-bold"></p>
       <p id="round-callout-minority" class="text-sm text-ink-muted mt-1"></p>
     </div>
+    <!-- Drumroll (#82): the matchmaking segment pairs everyone at once, off-screen. -->
+    <div id="drumroll" class="absolute inset-0 flex-col items-center justify-center gap-4 bg-page/95" style="display:none">
+      <p class="text-6xl">🔮</p>
+      <p class="text-2xl font-display font-bold">The agents are deciding...</p>
+    </div>
   </div>
 
   <footer class="flex-shrink-0 px-8 py-3 border-t border-line font-mono text-sm text-ink-muted overflow-hidden" style="height:44px">
@@ -296,6 +301,9 @@ function updateGraph(data) {
   } else {
     calloutEl.classList.add('hidden');
   }
+
+  // Drumroll (#82): the stage during the matchmaking segment.
+  document.getElementById('drumroll').style.display = data.segment === 'matchmaking' ? 'flex' : 'none';
 
   // The Reveal (#43, #44): a brief highlight flash across the whole screen, once.
   if (data.revealed && !hasRevealed) {

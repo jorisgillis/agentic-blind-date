@@ -30,6 +30,16 @@ func (a *Activity) ParticipantReady(persona string) {
 func (a *Activity) MatchmakingStarted() { a.log("🔮 The matchmaker agents are at work...") }
 func (a *Activity) RematchComplete()    { a.log("💞 Rematch complete") }
 
+// MatchmakingComplete announces a Game Show's matchmaking segment has
+// paired everyone it could (#82).
+func (a *Activity) MatchmakingComplete() { a.log("💞 Matchmaking complete") }
+
+// Wildcard announces the odd Participant out of a Game Show's matchmaking
+// segment (#82).
+func (a *Activity) Wildcard(persona string) {
+	a.log(fmt.Sprintf("🃏 %s is the wildcard!", persona))
+}
+
 // MatchingAgainstPool announces Continuous Matching has started for a newcomer.
 func (a *Activity) MatchingAgainstPool(persona string) {
 	a.log(fmt.Sprintf("🔮 Matching %s against existing pool...", persona))

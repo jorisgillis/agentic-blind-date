@@ -345,6 +345,61 @@ func matchmakingWithPool(t *testing.T) (*Matchmaking, *DB, *fakeLLM) {
 	return NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), NewRelationships(db)), db, llm
 }
 
+// TestMatchmaking_RunGameShowMatchmakingPairsEveryoneAtOnce and
+// TestMatchmaking_RunGameShowMatchmakingMakesNoLLMCalls cover #82: the
+// matchmaking segment pairs every ready Participant through the
+// Relationship module (honouring the Key Invariant) without calling the
+// LLM, reading only the cache background assessment (#81) populated.
+func TestMatchmaking_RunGameShowMatchmakingPairsEveryoneAtOnce(t *testing.T) {
+	db := newTestDB(t)
+	llm := newFakeLLM().on("matchmaker", `{"score": 70}`)
+	for _, id := range []string{"A", "B", "C", "D"} {
+		seed(t, db, id, id, "ready")
+	}
+	mm := NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), NewRelationships(db))
+
+	if err := mm.RunGameShowMatchmaking(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{"A", "B", "C", "D"} {
+		p := reload(t, db, id)
+		if p.MatchedWith == "" {
+			t.Errorf("%s should be paired", id)
+			continue
+		}
+		if partner := reload(t, db, p.MatchedWith); partner.MatchedWith != id {
+			t.Errorf("Key Invariant: %s says %s, but %s says %q", id, p.MatchedWith, p.MatchedWith, partner.MatchedWith)
+		}
+	}
+}
+
+func TestMatchmaking_RunGameShowMatchmakingMakesNoLLMCalls(t *testing.T) {
+	db := newTestDB(t)
+	llm := newFakeLLM().on("matchmaker", `{"score": 70}`)
+	for _, id := range []string{"A", "B", "C"} { // odd: leaves a wildcard
+		seed(t, db, id, id, "ready")
+	}
+	mm := NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), NewRelationships(db))
+
+	if err := mm.RunGameShowMatchmaking(); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := llm.callsMatching("matchmaker"); n != 0 {
+		t.Errorf("want no LLM calls, got %d", n)
+	}
+	var wildcards int
+	for _, id := range []string{"A", "B", "C"} {
+		if reload(t, db, id).Wildcard {
+			wildcards++
+		}
+	}
+	if wildcards != 1 {
+		t.Errorf("want exactly one wildcard among an odd number of Participants, got %d", wildcards)
+	}
+}
+
 func TestMatchmaking_ReportsFailures(t *testing.T) {
 	t.Run("rematch: breaking the Matches fails", func(t *testing.T) {
 		mm, db, _ := matchmakingWithPool(t)

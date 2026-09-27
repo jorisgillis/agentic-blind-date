@@ -10,6 +10,7 @@ import (
 // "persona_lookup" and "activity_read", a read) is, not which SQL column it
 // touches: "create", "persona_lookup", "delete", "interests", "persona",
 // "profile", "answers", "pipeline_step", "start_interview", "pair", "unpair",
+// "wildcard",
 // "activity_read", "reset_participants", "reset_activity", "reset_event_state",
 // "reset_show_state" and "reveal" (see ParticipantChange.tag and
 // DB.checkFault's call sites). This is a test-only hook on DB (see

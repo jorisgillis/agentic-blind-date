@@ -520,6 +520,47 @@ func TestMatcher_AssessmentProgress(t *testing.T) {
 	}
 }
 
+// TestMatcher_MatchPoolFromCache_UsesTheCacheAndDefaultsWithoutCallingTheLLM
+// covers #82: a cached Pair's genuine assessment is used; an unassessed Pair
+// falls back to the default, and neither ever calls the LLM.
+func TestMatcher_MatchPoolFromCache_UsesTheCacheAndDefaultsWithoutCallingTheLLM(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", matchReply)
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	// N and A share a language (so they rank each other's top candidate);
+	// same for B and C, with a different language, so the pairing is
+	// deterministic regardless of tie-breaking.
+	n, a := testParticipant("N", "N", []string{"Go"}), testParticipant("A", "A", []string{"Go"})
+	b, c := testParticipant("B", "B", []string{"Rust"}), testParticipant("C", "C", []string{"Rust"})
+	for _, p := range []*Participant{n, a, b, c} {
+		p.PipelineStep = StepReady
+	}
+	if _, err := m.ScorePair(n, a); err != nil { // as background assessment (#81) would
+		t.Fatal(err)
+	}
+	// B-C is never assessed.
+
+	matches := m.MatchPoolFromCache([]*Participant{n, a, b, c})
+
+	if n := llm.callsMatching("matchmaker"); n != 1 { // only the pre-seeded ScorePair call
+		t.Errorf("MatchPoolFromCache must not call the LLM, got %d total calls", n)
+	}
+	var sawCached, sawDefault bool
+	for _, match := range matches {
+		if match.Genuine && match.Result.Score == 87 {
+			sawCached = true
+		}
+		if !match.Genuine && match.Result.Score == defaultMatchResult().Score {
+			sawDefault = true
+		}
+	}
+	if !sawCached {
+		t.Errorf("want the cached assessment used for N-A, got %+v", matches)
+	}
+	if !sawDefault {
+		t.Errorf("want a default assessment for the unassessed Pair, got %+v", matches)
+	}
+}
+
 func TestMatcher_TheNewcomerIsNotTheirOwnCandidateAndOnlyReadyParticipantsArePaired(t *testing.T) {
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(nil))
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)

@@ -28,6 +28,7 @@ type Participant struct {
 	Interests      Interests
 	PipelineStep   Step
 	MatchedWith    string
+	Wildcard       bool // the odd Participant out of a Game Show's matchmaking segment (#82)
 	CompatScore    int
 	CompatReason   string
 	RedFlags       string
@@ -140,6 +141,7 @@ func NewDB(path string) (*DB, error) {
 			interests       TEXT NOT NULL DEFAULT '{}',
 			pipeline_step    TEXT NOT NULL DEFAULT 'fetching_github',
 			matched_with     TEXT REFERENCES participants(id),
+			wildcard         INTEGER NOT NULL DEFAULT 0,
 			compat_score     INTEGER NOT NULL DEFAULT 0,
 			compat_reason    TEXT NOT NULL DEFAULT '',
 			red_flags        TEXT NOT NULL DEFAULT '[]',
@@ -185,6 +187,7 @@ func NewDB(path string) (*DB, error) {
 		`UPDATE participants SET questions = custom_questions WHERE custom_questions IS NOT NULL`,
 		`ALTER TABLE participants DROP COLUMN extra_answers`,                              // ExtraAnswers live in profile_json
 		`UPDATE participants SET pipeline_step = 'ready' WHERE pipeline_step = 'matched'`, // Relationship State is not a Pipeline Step
+		`ALTER TABLE participants ADD COLUMN wildcard INTEGER NOT NULL DEFAULT 0`,
 	} {
 		sqlDB.Exec(m)
 	}
@@ -248,7 +251,7 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 		&p.PersonaName, &p.PersonaColor, &p.PersonaSymbol, &p.PersonaTagline,
 		&profileJSON, &questionsJSON, &answersJSON, &interestsJSON,
 		&p.PipelineStep,
-		&p.MatchedWith, &p.CompatScore, &p.CompatReason,
+		&p.MatchedWith, &p.Wildcard, &p.CompatScore, &p.CompatReason,
 		&p.RedFlags, &p.GreenFlags, &p.Icebreakers, &p.CreatedAt,
 	)
 	if err != nil {
@@ -283,7 +286,7 @@ const selectParticipant = `
 	SELECT id, github_handle, has_github, name,
 	       persona_name, persona_color, persona_symbol, persona_tagline,
 	       profile_json, questions, answers_json, interests, pipeline_step,
-	       COALESCE(matched_with, ''), compat_score, compat_reason,
+	       COALESCE(matched_with, ''), wildcard, compat_score, compat_reason,
 	       red_flags, green_flags, icebreakers, created_at
 	FROM participants`
 

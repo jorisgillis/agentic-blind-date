@@ -283,12 +283,25 @@ type Match struct {
 // Participants left over are paired by heuristic and assessed. Each Participant
 // ends up in at most one Match. When the LLM fails, the default assessment is used.
 func (m *Matcher) MatchPool(participants []*Participant) []Match {
+	return m.matchPool(participants, m.assessAll)
+}
+
+// MatchPoolFromCache pairs the Participants exactly like MatchPool, but reads
+// only the LLM cache: a Pair without a cached assessment falls back to the
+// default rather than calling the LLM live, so a Game Show's matchmaking
+// segment — run after background assessment (#81) has populated the cache —
+// makes no new LLM calls (#82).
+func (m *Matcher) MatchPoolFromCache(participants []*Participant) []Match {
+	return m.matchPool(participants, m.assessAllFromCache)
+}
+
+func (m *Matcher) matchPool(participants []*Participant, assess func([][2]*Participant) []Match) []Match {
 	if len(participants) < 2 {
 		return nil
 	}
 	candidates := m.candidatePairs(participants)
 	m.activity.EvaluatingCandidates(len(candidates))
-	scored := byScoreDesc(m.assessAll(candidates))
+	scored := byScoreDesc(assess(candidates))
 
 	var matches []Match
 	taken := map[string]bool{}
@@ -305,7 +318,7 @@ func (m *Matcher) MatchPool(participants []*Participant) []Match {
 			leftover = append(leftover, p)
 		}
 	}
-	return append(matches, m.assessAll(m.greedyMatch(leftover))...)
+	return append(matches, assess(m.greedyMatch(leftover))...)
 }
 
 // MatchNewcomer finds a partner for a Participant who just became ready, among
@@ -375,6 +388,37 @@ func (m *Matcher) assessAll(pairs [][2]*Participant) []Match {
 	}
 	wg.Wait()
 	return out
+}
+
+// assessAllFromCache is assessAll's counterpart for MatchPoolFromCache: it
+// never calls the LLM, so it needs no throttling semaphore either (#82).
+func (m *Matcher) assessAllFromCache(pairs [][2]*Participant) []Match {
+	out := make([]Match, len(pairs))
+	for i, pair := range pairs {
+		result, genuine := m.scoreOrDefaultFromCache(pair[0], pair[1])
+		out[i] = Match{A: pair[0], B: pair[1], Result: result, Genuine: genuine}
+		if genuine {
+			m.activity.Assessed(pair[0].PersonaName, pair[1].PersonaName, result.Score)
+		}
+	}
+	return out
+}
+
+// scoreOrDefaultFromCache returns a Pair's cached assessment, or the default
+// without ever calling the LLM (#82).
+func (m *Matcher) scoreOrDefaultFromCache(a, b *Participant) (result *matchResult, genuine bool) {
+	key := pairKey(a, b)
+	m.mu.Lock()
+	cached, ok := m.cache[key]
+	m.mu.Unlock()
+	if ok {
+		return cached, true
+	}
+	if cached, ok := m.db.GetLLMCache(key); ok {
+		m.remember(key, cached)
+		return cached, true
+	}
+	return defaultMatchResult(), false
 }
 
 // assessOrDefault scores a Pair, or falls back to a default assessment when

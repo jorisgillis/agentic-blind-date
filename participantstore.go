@@ -92,11 +92,16 @@ type ParticipantChange struct {
 	Interests    *Interests
 	Match        *matchResult // the Participant's own side of their current Match
 	MatchedWith  *string      // who they're matched with now; "" clears it
+	Wildcard     *bool        // the odd one out of a Game Show's matchmaking segment (#82)
 	Persona      *Persona
 	Profile      *GitHubProfile
 	Answers      map[string]string
 	PipelineStep *Step // guarded exactly like DB.AdvanceStep: only from the step right before it
 }
+
+// boolPtr is a convenience for ParticipantChange.Wildcard, which needs a
+// pointer to distinguish "set this" from "leave it alone".
+func boolPtr(b bool) *bool { return &b }
 
 // tag names what kind of change this is, for the test-only fault hook
 // (faults_test.go): each ParticipantChange in production sets exactly one
@@ -110,6 +115,8 @@ func (c ParticipantChange) tag() string {
 			return "unpair"
 		}
 		return "pair"
+	case c.Wildcard != nil:
+		return "wildcard"
 	case c.Persona != nil:
 		return "persona"
 	case c.Profile != nil:
@@ -158,6 +165,11 @@ func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 			}
 			if c.MatchedWith != nil {
 				if err := execFound(s.db.execCtx(), tx, c.ID, `UPDATE participants SET matched_with = ? WHERE id = ?`, *c.MatchedWith, c.ID); err != nil {
+					return err
+				}
+			}
+			if c.Wildcard != nil {
+				if err := execFound(s.db.execCtx(), tx, c.ID, `UPDATE participants SET wildcard = ? WHERE id = ?`, *c.Wildcard, c.ID); err != nil {
 					return err
 				}
 			}

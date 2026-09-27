@@ -69,6 +69,42 @@ func (mm *Matchmaking) Rematch() error {
 	return nil
 }
 
+// RunGameShowMatchmaking pairs every ready Participant at once, through the
+// Matcher's cache-only Pool matching: no new LLM calls, since background
+// assessment (#81) already populated the cache for anyone assessed so far.
+// An odd Participant out becomes the wildcard instead of being paired (#82).
+func (mm *Matchmaking) RunGameShowMatchmaking() error {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	participants, err := mm.participants.AllByStep(StepReady)
+	if err != nil {
+		return err
+	}
+	mm.activity.MatchmakingStarted()
+
+	taken := map[string]bool{}
+	for _, m := range mm.matcher.MatchPoolFromCache(participants) {
+		if _, err := mm.store(m); err != nil {
+			return err
+		}
+		taken[m.A.ID], taken[m.B.ID] = true, true
+	}
+
+	for _, p := range participants {
+		if taken[p.ID] {
+			continue
+		}
+		if err := mm.participants.Change(ParticipantChange{ID: p.ID, Wildcard: boolPtr(true)}); err != nil {
+			return err
+		}
+		mm.activity.Wildcard(p.PersonaName)
+	}
+
+	mm.activity.MatchmakingComplete()
+	return nil
+}
+
 // AssessCandidates triggers background, throttled LLM assessment of a
 // newly-ready Participant's candidate Pairs against the other ready
 // Participants, populating the Matcher's cache. Unlike Continuous Matching,

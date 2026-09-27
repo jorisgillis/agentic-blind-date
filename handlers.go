@@ -547,9 +547,17 @@ func (h *Handler) HostConsoleStream(w http.ResponseWriter, r *http.Request) {
 // next Round, start matchmaking or start the Reveal, depending on the
 // current segment (#78).
 func (h *Handler) AdvanceShow(w http.ResponseWriter, r *http.Request) {
+	before := h.show.State().Segment
 	if err := h.show.Advance(); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
+	}
+	// Entering the matchmaking segment pairs everyone ready, at once (#82) —
+	// the one place Show.Advance can reach it, so no other trigger is needed.
+	if before != SegmentMatchmaking && h.show.State().Segment == SegmentMatchmaking {
+		if err := h.matchmaking.RunGameShowMatchmaking(); err != nil {
+			log.Printf("Game Show matchmaking failed: %v", err)
+		}
 	}
 	http.Redirect(w, r, "/admin/host", http.StatusSeeOther)
 }
