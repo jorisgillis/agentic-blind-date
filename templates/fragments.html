@@ -55,6 +55,43 @@
     Round {{.Round}} of {{.TotalRounds}} — <span id="round-seconds-left">{{.SecondsLeft}}</span>s left
   </p>
   <p class="font-semibold text-on-persona" data-md>{{.Question.Text}}</p>
+  {{if eq (len .Question.Options) 2}}
+  <div class="relative h-32 select-none" style="perspective:600px">
+    <div id="swipe-card" class="absolute inset-0 rounded-2xl bg-overlay border border-on-persona/20 flex items-center justify-center text-on-persona/70 text-sm" style="transition: transform 300ms ease, opacity 300ms ease">
+      swipe or tap
+    </div>
+  </div>
+  <div class="flex gap-3">
+    <button type="button" onclick="abdSwipeRoundAnswer('l')" class="flex-1 bg-overlay hover:opacity-90 text-on-persona rounded-xl py-3 text-sm transition-colors">👈 {{index .Question.Options 0}}</button>
+    <button type="button" onclick="abdSwipeRoundAnswer('r')" class="flex-1 bg-overlay hover:opacity-90 text-on-persona rounded-xl py-3 text-sm transition-colors">{{index .Question.Options 1}} 👉</button>
+  </div>
+  <form id="round-answer-form" hx-post="/user/round-answer/{{.Participant.ID}}" hx-target="#round-answer" hx-swap="outerHTML" class="hidden">
+    <input type="hidden" name="answer" id="round-answer-value" value="" />
+  </form>
+  <script>
+    (function() {
+      var options = ["{{index .Question.Options 0}}", "{{index .Question.Options 1}}"];
+      var card = document.getElementById('swipe-card');
+      var form = document.getElementById('round-answer-form');
+      var value = document.getElementById('round-answer-value');
+      var startX = null;
+      window.abdSwipeRoundAnswer = function(dir) {
+        value.value = dir === 'l' ? options[0] : options[1];
+        card.style.transform = dir === 'l' ? 'translateX(-140%) rotate(-18deg)' : 'translateX(140%) rotate(18deg)';
+        card.style.opacity = '0';
+        setTimeout(function() { htmx.trigger(form, 'submit'); }, 200);
+      };
+      card.addEventListener('touchstart', function(e) { startX = e.touches[0].clientX; });
+      card.addEventListener('touchend', function(e) {
+        if (startX === null) return;
+        var dx = e.changedTouches[0].clientX - startX;
+        startX = null;
+        if (Math.abs(dx) < 60) return;
+        abdSwipeRoundAnswer(dx > 0 ? 'r' : 'l');
+      });
+    })();
+  </script>
+  {{else}}
   <form hx-post="/user/round-answer/{{.Participant.ID}}" hx-target="#round-answer" hx-swap="outerHTML" class="space-y-2">
     {{if .Question.Options}}
     {{range .Question.Options}}
@@ -65,6 +102,7 @@
     <button type="submit" class="w-full bg-overlay hover:opacity-90 text-on-persona font-bold rounded-xl py-3 text-sm transition-colors">Submit</button>
     {{end}}
   </form>
+  {{end}}
 </div>
 <script>
   (function() {

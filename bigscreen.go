@@ -55,9 +55,11 @@ type Snapshot struct {
 	Edges      []ScreenEdge  `json:"edges"`
 	Matches    []ScreenMatch `json:"matches"`
 	Activity   []string      `json:"activity"`
-	Format     EventFormat   `json:"format"`            // #78
-	Segment    ShowSegment   `json:"segment,omitempty"` // only meaningful when Format is GameShow
-	Round      int           `json:"round,omitempty"`   // 1-based; only meaningful when Segment is "round"
+	Format       EventFormat   `json:"format"`               // #78
+	Segment      ShowSegment   `json:"segment,omitempty"`    // only meaningful when Format is GameShow
+	Round        int           `json:"round,omitempty"`      // 1-based; only meaningful when Segment is "round"
+	RoundOpen    bool          `json:"round_open,omitempty"` // #80
+	RoundCallout *RoundCallout `json:"round_callout,omitempty"`
 }
 
 // BigScreen builds the Snapshot the Big Screen shows: Participants, Match
@@ -68,6 +70,7 @@ type BigScreen struct {
 	store   *ParticipantStore
 	db      *DB
 	matcher *Matcher
+	show    *Show
 
 	mu      sync.Mutex
 	changes <-chan struct{}
@@ -75,9 +78,9 @@ type BigScreen struct {
 }
 
 // NewBigScreen creates the Big Screen module.
-func NewBigScreen(db *DB, matcher *Matcher) *BigScreen {
+func NewBigScreen(db *DB, matcher *Matcher, show *Show) *BigScreen {
 	changes, _ := db.Subscribe() // kept for the process lifetime, like the module itself
-	return &BigScreen{store: NewParticipantStore(db), db: db, matcher: matcher, changes: changes}
+	return &BigScreen{store: NewParticipantStore(db), db: db, matcher: matcher, show: show, changes: changes}
 }
 
 // Snapshot returns the current Snapshot, building it only when something
@@ -172,9 +175,11 @@ func (b *BigScreen) build() *Snapshot {
 	}
 
 	if format == GameShow {
-		state := b.db.ShowState()
+		state := b.show.State()
 		snap.Segment = state.Segment
 		snap.Round = state.Round + 1
+		snap.RoundOpen = state.RoundOpen
+		snap.RoundCallout = b.show.RoundCallout()
 	}
 
 	return snap

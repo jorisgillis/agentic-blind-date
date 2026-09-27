@@ -3,11 +3,12 @@ package main
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestBigScreen_SnapshotIsCachedUntilSomethingChanges(t *testing.T) {
 	db := newTestDB(t)
-	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()))
+	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), NewShow(db, time.Now))
 
 	first := bs.Snapshot()
 	second := bs.Snapshot()
@@ -30,7 +31,7 @@ func TestBigScreen_EachMatchListedOnceWithBothPersonas(t *testing.T) {
 	seed(t, db, "a", "The Gopher", "ready")
 	seed(t, db, "b", "The Crab", "ready")
 	pair(t, db, "a", "b")
-	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()))
+	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), NewShow(db, time.Now))
 
 	snap := bs.Snapshot()
 
@@ -52,7 +53,7 @@ func TestBigScreen_MatchIdentityHiddenUntilTheReveal(t *testing.T) {
 	seed(t, db, "a", "The Gopher", "ready")
 	seed(t, db, "b", "The Crab", "ready")
 	pair(t, db, "a", "b")
-	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()))
+	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), NewShow(db, time.Now))
 
 	before := bs.Snapshot().Matches[0]
 	if before.A.Handle != "" || before.B.Handle != "" {
@@ -70,7 +71,7 @@ func TestBigScreen_MatchIdentityHiddenUntilTheReveal(t *testing.T) {
 // payload uses Event State vocabulary instead of "phase"/"phase_label".
 func TestBigScreen_PayloadKeysUseEventStateVocabulary(t *testing.T) {
 	db := newTestDB(t)
-	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()))
+	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), NewShow(db, time.Now))
 
 	data, err := json.Marshal(bs.Snapshot())
 	if err != nil {

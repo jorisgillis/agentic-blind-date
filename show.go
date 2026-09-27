@@ -239,6 +239,60 @@ func (s *Show) RoundSecondsLeft() int {
 	return int((remaining + time.Second - 1) / time.Second)
 }
 
+// RoundCallout is a closed, multiple-choice Round's majority answer and a
+// minority "hot take" for the stage view (#80).
+type RoundCallout struct {
+	MajorityAnswer string `json:"majority_answer"`
+	MajorityCount  int    `json:"majority_count"`
+	MinorityAnswer string `json:"minority_answer"`
+	MinorityCount  int    `json:"minority_count"`
+}
+
+// RoundCallout tallies the current Round's answers once it has closed: nil
+// while the Round is still open, outside a Round, for a free-text Question
+// (no Options), or when everyone answered the same way — there's no
+// minority to call out (#80).
+func (s *Show) RoundCallout() *RoundCallout {
+	state := s.State()
+	if state.Segment != SegmentRound || state.RoundOpen {
+		return nil
+	}
+	question := FixedQuestions[state.Round]
+	if question.Options == nil {
+		return nil
+	}
+	all, _ := s.store.All()
+	counts := map[string]int{}
+	for _, p := range all {
+		if answer, ok := p.Answers[question.ID]; ok {
+			counts[answer]++
+		}
+	}
+	if len(counts) < 2 {
+		return nil
+	}
+	callout := &RoundCallout{MinorityCount: -1}
+	for _, option := range question.Options { // fixed order: ties resolve consistently
+		n, ok := counts[option]
+		if !ok {
+			continue
+		}
+		if n > callout.MajorityCount {
+			callout.MajorityAnswer, callout.MajorityCount = option, n
+		}
+	}
+	for _, option := range question.Options {
+		n, ok := counts[option]
+		if !ok || option == callout.MajorityAnswer {
+			continue
+		}
+		if callout.MinorityCount == -1 || n < callout.MinorityCount {
+			callout.MinorityAnswer, callout.MinorityCount = option, n
+		}
+	}
+	return callout
+}
+
 // NextActionLabel names, for the host console, what Advance would do from
 // state — "" once there is nothing left (the Afterparty), and "" while a
 // Round is still open, since Advance is rejected then: the valid action is

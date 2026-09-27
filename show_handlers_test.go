@@ -199,6 +199,73 @@ func TestSubmitRoundAnswer_RecordsTheAnswerAndReRendersThePad(t *testing.T) {
 	}
 }
 
+// TestShowStatus_RendersSwipeCardsForATwoOptionRound and
+// TestShowStatus_RendersAnswerPadsForOtherRounds cover #80: a two-option
+// Round renders as a swipe card (with tap buttons as a fallback), while
+// every other Round keeps the colour answer pads, tested through the mux.
+func TestShowStatus_RendersSwipeCardsForATwoOptionRound(t *testing.T) {
+	original := FixedQuestions
+	FixedQuestions = []Question{{ID: "fixed_0", Text: "Tabs or spaces?", Options: []string{"Tabs", "Spaces"}}}
+	t.Cleanup(func() { FixedQuestions = original })
+
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, deps.db, "p", "P", "ready")
+	post(t, srv, "/admin/host/advance", nil) // -> Round 0
+
+	body := readBody(t, get(t, srv, "/user/show/p"))
+
+	if !strings.Contains(body, `id="swipe-card"`) {
+		t.Errorf("want a swipe card for a two-option Round, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Tabs") || !strings.Contains(body, "Spaces") {
+		t.Errorf("want both options offered as tap fallbacks, got:\n%s", body)
+	}
+}
+
+func TestShowStatus_RendersAnswerPadsForOtherRounds(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, deps.db, "p", "P", "ready")
+	post(t, srv, "/admin/host/advance", nil) // -> Round 0: three options, not two
+
+	body := readBody(t, get(t, srv, "/user/show/p"))
+
+	if strings.Contains(body, `id="swipe-card"`) {
+		t.Errorf("want answer pads, not a swipe card, for a three-option Round, got:\n%s", body)
+	}
+}
+
+// TestSwipeRoundAnswer_RecordsTheAnswerLikeATap covers #80: swiping a card
+// posts the same form as tapping — the mux can't tell them apart, and
+// shouldn't need to.
+func TestSwipeRoundAnswer_RecordsTheAnswerLikeATap(t *testing.T) {
+	original := FixedQuestions
+	FixedQuestions = []Question{{ID: "fixed_0", Text: "Tabs or spaces?", Options: []string{"Tabs", "Spaces"}}}
+	t.Cleanup(func() { FixedQuestions = original })
+
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	deps.db.CreateParticipant("p", "p", "P", true)
+	post(t, srv, "/admin/host/advance", nil) // -> Round 0
+
+	post(t, srv, "/user/round-answer/p", url.Values{"answer": {"Spaces"}}) // what a right-swipe posts
+
+	p, err := NewParticipantStore(deps.db).Get("p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Answers["fixed_0"]; got != "Spaces" {
+		t.Errorf("want the swiped answer recorded, got %q", got)
+	}
+}
+
 func TestSubmitRoundAnswer_UnknownParticipantIs404(t *testing.T) {
 	srv, _ := newTestServer(t, nil, nil)
 
@@ -225,7 +292,7 @@ func TestBigScreen_SnapshotCarriesTheShowSegmentInAGameShow(t *testing.T) {
 	if err := show.Advance(); err != nil { // -> Round 0
 		t.Fatal(err)
 	}
-	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()))
+	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), show)
 
 	snap := bs.Snapshot()
 
@@ -234,6 +301,45 @@ func TestBigScreen_SnapshotCarriesTheShowSegmentInAGameShow(t *testing.T) {
 	}
 	if snap.Segment != SegmentRound || snap.Round != 1 {
 		t.Errorf("want Round 1, got segment %q round %d", snap.Segment, snap.Round)
+	}
+	if !snap.RoundOpen {
+		t.Error("want RoundOpen true right after opening the Round")
+	}
+	if snap.RoundCallout != nil {
+		t.Errorf("want no callout while the Round is open, got %+v", snap.RoundCallout)
+	}
+}
+
+// TestBigScreen_SnapshotCarriesTheRoundCalloutOnceClosed covers #80: the
+// stage view carries the majority/minority callout once the Round closes.
+func TestBigScreen_SnapshotCarriesTheRoundCalloutOnceClosed(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	db.CreateParticipant("a", "a", "A", true)
+	db.CreateParticipant("b", "b", "B", true)
+	if err := show.Advance(); err != nil { // -> Round 0
+		t.Fatal(err)
+	}
+	show.SubmitRoundAnswer("a", "Tabs")
+	show.SubmitRoundAnswer("b", "Spaces")
+	if err := show.CloseRound(); err != nil {
+		t.Fatal(err)
+	}
+	bs := NewBigScreen(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), show)
+
+	snap := bs.Snapshot()
+
+	if snap.RoundOpen {
+		t.Error("want RoundOpen false once closed")
+	}
+	if snap.RoundCallout == nil {
+		t.Fatal("want a callout once the Round has closed")
+	}
+	if snap.RoundCallout.MinorityCount != 1 {
+		t.Errorf("want a minority of 1, got %+v", snap.RoundCallout)
 	}
 }
 

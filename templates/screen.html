@@ -47,6 +47,11 @@
         <p class="text-ink-muted/70 text-sm mt-2">Participants appear here as they register</p>
       </div>
     </div>
+    <!-- Round callout (#80): the majority answer and a minority "hot take" once a Round closes. -->
+    <div id="round-callout" class="absolute bottom-6 left-1/2 -translate-x-1/2 hidden bg-raised border border-line rounded-2xl px-8 py-4 text-center shadow-xl">
+      <p id="round-callout-majority" class="text-xl font-display font-bold"></p>
+      <p id="round-callout-minority" class="text-sm text-ink-muted mt-1"></p>
+    </div>
   </div>
 
   <footer class="flex-shrink-0 px-8 py-3 border-t border-line font-mono text-sm text-ink-muted overflow-hidden" style="height:44px">
@@ -278,6 +283,18 @@ function updateGraph(data) {
       ticker.textContent = data.activity[0];
       requestAnimationFrame(() => { ticker.style.opacity = '1'; });
     }
+  }
+
+  // Round callout (#80): the majority answer and a minority "hot take" once a Round closes.
+  const calloutEl = document.getElementById('round-callout');
+  if (data.round_callout) {
+    document.getElementById('round-callout-majority').textContent =
+      data.round_callout.majority_answer + ' — ' + data.round_callout.majority_count + ' votes';
+    document.getElementById('round-callout-minority').textContent =
+      '🔥 ' + data.round_callout.minority_count + ' said ' + data.round_callout.minority_answer;
+    calloutEl.classList.remove('hidden');
+  } else {
+    calloutEl.classList.add('hidden');
   }
 
   // The Reveal (#43, #44): a brief highlight flash across the whole screen, once.

@@ -83,7 +83,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{
-		db: db, store: NewParticipantStore(db), activity: NewActivity(db), bigscreen: NewBigScreen(db, matcher),
+		db: db, store: NewParticipantStore(db), activity: NewActivity(db), bigscreen: NewBigScreen(db, matcher, show),
 		admin: NewEventAdmin(db, matcher, matchmaking), show: show,
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, watcher: watcher,

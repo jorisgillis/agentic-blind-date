@@ -324,6 +324,105 @@ func TestShow_RoundSecondsLeft(t *testing.T) {
 	}
 }
 
+// TestShow_RoundCallout covers #80: a majority answer and a minority "hot
+// take", but only once the Round has closed, and only when there's an
+// actual minority to call out.
+func TestShow_RoundCallout(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	for _, id := range []string{"a", "b", "c"} {
+		if err := db.CreateParticipant(id, id, id, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := show.Advance(); err != nil { // -> Round 0: "Tabs or spaces?"
+		t.Fatal(err)
+	}
+
+	if got := show.RoundCallout(); got != nil {
+		t.Errorf("want no callout while the Round is open, got %+v", got)
+	}
+
+	for id, answer := range map[string]string{"a": "Tabs", "b": "Tabs", "c": "Spaces"} {
+		if err := show.SubmitRoundAnswer(id, answer); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := show.CloseRound(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := show.RoundCallout()
+	if got == nil {
+		t.Fatal("want a callout once the Round has closed")
+	}
+	if got.MajorityAnswer != "Tabs" || got.MajorityCount != 2 {
+		t.Errorf("want majority Tabs (2), got %+v", got)
+	}
+	if got.MinorityAnswer != "Spaces" || got.MinorityCount != 1 {
+		t.Errorf("want minority Spaces (1), got %+v", got)
+	}
+}
+
+func TestShow_RoundCalloutNilWithoutAMinority(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	db.CreateParticipant("a", "a", "A", true)
+	db.CreateParticipant("b", "b", "B", true)
+	if err := show.Advance(); err != nil { // -> Round 0
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b"} {
+		if err := show.SubmitRoundAnswer(id, "Tabs"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := show.CloseRound(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := show.RoundCallout(); got != nil {
+		t.Errorf("want no callout when everyone answered the same way, got %+v", got)
+	}
+}
+
+func TestShow_RoundCalloutNilForAFreeTextRound(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	show := NewShow(db, time.Now)
+	db.CreateParticipant("a", "a", "A", true)
+	db.CreateParticipant("b", "b", "B", true)
+	if err := show.Advance(); err != nil { // -> Round 0
+		t.Fatal(err)
+	}
+	if err := show.CloseRound(); err != nil {
+		t.Fatal(err)
+	}
+	if err := show.Advance(); err != nil { // -> Round 1: "What's your go-to language right now?" (free text)
+		t.Fatal(err)
+	}
+	for id, answer := range map[string]string{"a": "Go", "b": "Rust"} {
+		if err := show.SubmitRoundAnswer(id, answer); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := show.CloseRound(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := show.RoundCallout(); got != nil {
+		t.Errorf("want no callout for a free-text Round, got %+v", got)
+	}
+}
+
 func TestShowState_DefaultsToLobbyForAnUnreadableStoredValue(t *testing.T) {
 	db := newTestDB(t)
 	db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES (?, ?)`, showStateKey, "not json")
