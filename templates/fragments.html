@@ -43,6 +43,12 @@
   {{else}}
   <p class="text-center text-ink-muted text-sm">The show is over.</p>
   {{end}}
+  {{if gt .TotalPairs 0}}
+  <div class="bg-raised border border-line rounded-xl p-4 text-center space-y-1">
+    <p class="text-ink-muted text-xs uppercase tracking-widest">Background assessment</p>
+    <p class="text-sm">{{.AssessedPairs}} of {{.TotalPairs}} Pairs assessed</p>
+  </div>
+  {{end}}
   {{end}}
 </div>
 {{end}}

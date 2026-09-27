@@ -79,6 +79,51 @@ func TestOnboarding_FromRegistrationToReady(t *testing.T) {
 	}
 }
 
+// TestOnboarding_GameShowTriggersBackgroundAssessmentInsteadOfContinuousMatching
+// covers #81: in a Game Show, becoming ready assesses candidate Pairs in the
+// background instead of pairing anyone through Continuous Matching.
+func TestOnboarding_GameShowTriggersBackgroundAssessmentInsteadOfContinuousMatching(t *testing.T) {
+	gh := newFakeGitHub().
+		withProfile(&GitHubProfile{Login: "a", Languages: []string{"Go"}}).
+		withProfile(&GitHubProfile{Login: "b", Languages: []string{"Go"}})
+	llm := newFakeLLM().
+		on("interviewer", `{"questions": ["Why?"]}`).
+		on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`).
+		on("matchmaker", matchReply)
+	o, db := onboardingFor(t, llm, gh)
+	if err := db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+
+	idA, err := o.Register("A", "a", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answerEverything(t, o, db, idA)
+	eventually(t, "A ready", func() bool { return reload(t, db, idA).PipelineStep == StepReady })
+
+	idB, err := o.Register("B", "b", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answerEverything(t, o, db, idB)
+	eventually(t, "B ready", func() bool { return reload(t, db, idB).PipelineStep == StepReady })
+
+	eventually(t, "the background assessment", func() bool {
+		msgs, _ := db.GetRecentActivity(20)
+		return strings.Contains(strings.Join(msgs, "\n"), "🤝")
+	})
+
+	a, b := reload(t, db, idA), reload(t, db, idB)
+	if a.MatchedWith != "" || b.MatchedWith != "" {
+		t.Error("a Game Show must not pair Participants before the matchmaking segment")
+	}
+	msgs, _ := db.GetRecentActivity(20)
+	if strings.Contains(strings.Join(msgs, "\n"), "💘") {
+		t.Error("background assessment must not announce a Match")
+	}
+}
+
 func TestOnboarding_RegisteringAKnownHandleResumesTheSameParticipant(t *testing.T) {
 	o, _ := onboardingFor(t, newFakeLLM(), newFakeGitHub())
 

@@ -510,6 +510,11 @@ func (h *Handler) hostConsoleView() HostConsoleView {
 		view.RoundAnswerCount = h.show.RoundAnswerCount()
 		view.RoundSecondsLeft = h.show.RoundSecondsLeft()
 	}
+	if view.Active && (state.Segment == SegmentLobby || state.Segment == SegmentRound) {
+		if ready, err := h.store.AllByStep(StepReady); err == nil {
+			view.AssessedPairs, view.TotalPairs = h.matcher.AssessmentProgress(ready)
+		}
+	}
 	return view
 }
 

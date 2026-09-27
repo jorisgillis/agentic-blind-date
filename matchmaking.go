@@ -69,6 +69,19 @@ func (mm *Matchmaking) Rematch() error {
 	return nil
 }
 
+// AssessCandidates triggers background, throttled LLM assessment of a
+// newly-ready Participant's candidate Pairs against the other ready
+// Participants, populating the Matcher's cache. Unlike Continuous Matching,
+// this doesn't pair anyone and doesn't need the matching lock (#81).
+func (mm *Matchmaking) AssessCandidates(p *Participant) error {
+	ready, err := mm.participants.AllByStep(StepReady)
+	if err != nil {
+		return err
+	}
+	mm.matcher.AssessCandidates(p, ready)
+	return nil
+}
+
 // MatchNewcomer is Continuous Matching for a Participant who just became ready:
 // they are matched against the other ready Participants, taking over a weaker
 // Match when needed. A partner displaced by a take-over is matched straight

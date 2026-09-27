@@ -79,6 +79,8 @@ type HostConsoleView struct {
 	RoundOpen        bool   // #79
 	RoundAnswerCount int
 	RoundSecondsLeft int
+	AssessedPairs    int // background LLM assessment progress before the matchmaking segment (#81)
+	TotalPairs       int
 }
 
 // ShowStatusView is /user/show/{id}: a Participant's phone between Rounds

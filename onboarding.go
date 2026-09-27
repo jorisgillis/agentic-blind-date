@@ -12,6 +12,7 @@ import (
 // creates the Persona, computes Interests, makes them ready and hands them to
 // Continuous Matching. Preparation and finishing run in the background.
 type Onboarding struct {
+	db          *DB
 	store       *ParticipantStore
 	activity    *Activity
 	github      GitHubAPI
@@ -23,7 +24,7 @@ type Onboarding struct {
 // NewOnboarding creates the Onboarding module.
 func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding {
 	return &Onboarding{
-		store: NewParticipantStore(db), activity: NewActivity(db),
+		db: db, store: NewParticipantStore(db), activity: NewActivity(db),
 		github: github, interview: interview, personas: personas, matchmaking: matchmaking,
 	}
 }
@@ -136,8 +137,10 @@ func (o *Onboarding) finish(p *Participant) {
 }
 
 // becomeReady creates the Persona and Interests, makes the Participant ready,
-// and hands them to Continuous Matching. Failures to save the Persona or
-// Interests are logged rather than leaving the Participant stuck.
+// and hands them to Continuous Matching — or, in a Game Show, to background
+// assessment instead, since no one is paired before the matchmaking segment
+// (#81). Failures to save the Persona or Interests are logged rather than
+// leaving the Participant stuck.
 func (o *Onboarding) becomeReady(p *Participant) {
 	o.activity.CraftingPersona()
 	if p.Profile == nil {
@@ -156,6 +159,12 @@ func (o *Onboarding) becomeReady(p *Participant) {
 	}
 	o.activity.ParticipantReady(persona.Name)
 
+	if o.db.EventFormat() == GameShow {
+		if err := o.matchmaking.AssessCandidates(p); err != nil {
+			log.Printf("Background assessment for %s failed: %v", p.ID, err)
+		}
+		return
+	}
 	if err := o.matchmaking.MatchNewcomer(p); err != nil {
 		log.Printf("Continuous matching for %s failed: %v", p.ID, err)
 	}

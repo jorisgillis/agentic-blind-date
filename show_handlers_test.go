@@ -100,6 +100,24 @@ func TestAdvanceShow_RejectedInTheClassicFlow(t *testing.T) {
 // TestHostConsole_ShowsTheRoundCountdownAndAnswerCount covers #79: while a
 // Round is open, the host console shows the countdown and answer count
 // instead of the next-action button, plus a way to close the Round early.
+// TestHostConsole_ShowsTheBackgroundAssessmentProgress covers #81: the host
+// console shows how many candidate Pairs have been assessed so far, before
+// the matchmaking segment.
+func TestHostConsole_ShowsTheBackgroundAssessmentProgress(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.SetEventFormat(GameShow); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	seed(t, deps.db, "b", "The Crab", "ready")
+
+	body := readBody(t, get(t, srv, "/admin/host"))
+
+	if !strings.Contains(body, "0 of 1 Pairs assessed") {
+		t.Errorf("want the assessment progress shown, got:\n%s", body)
+	}
+}
+
 func TestHostConsole_ShowsTheRoundCountdownAndAnswerCount(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	if err := deps.db.SetEventFormat(GameShow); err != nil {

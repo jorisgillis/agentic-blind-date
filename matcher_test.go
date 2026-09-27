@@ -457,6 +457,69 @@ func TestMatcher_ParticipantsWithoutProfileOrAnswers(t *testing.T) {
 	}
 }
 
+// TestMatcher_AssessCandidatesPopulatesTheCacheWithoutPairing and
+// TestMatcher_AssessmentProgress cover #81: background assessment populates
+// the LLM cache, throttled, without pairing anyone, and the host console's
+// progress reflects it.
+func TestMatcher_AssessCandidatesPopulatesTheCacheWithoutPairing(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(nil))
+	db := newTestDB(t)
+	m := NewMatcher(db, newFakeGitHub(), llm)
+	n, a := readyDev("N"), readyDev("A")
+
+	m.AssessCandidates(n, []*Participant{n, a})
+
+	if got := llm.callsMatching("matchmaker"); got != 1 {
+		t.Errorf("want 1 LLM call, got %d", got)
+	}
+	if n.MatchedWith != "" || a.MatchedWith != "" {
+		t.Error("background assessment must not pair anyone")
+	}
+	if !m.cached(pairKey(n, a)) {
+		t.Error("want the assessment cached")
+	}
+
+	m.AssessCandidates(n, []*Participant{n, a}) // a second call reuses the cache
+	if got := llm.callsMatching("matchmaker"); got != 1 {
+		t.Errorf("want the cache reused, still 1 LLM call, got %d", got)
+	}
+}
+
+func TestMatcher_AssessCandidatesRetriesAFailedAssessmentLater(t *testing.T) {
+	llm := newFakeLLM().onErr("matchmaker", fakeError("LLM is down"))
+	db := newTestDB(t)
+	m := NewMatcher(db, newFakeGitHub(), llm)
+	n, a := readyDev("N"), readyDev("A")
+
+	m.AssessCandidates(n, []*Participant{n, a})
+
+	if m.cached(pairKey(n, a)) {
+		t.Error("a failed assessment must not be cached")
+	}
+}
+
+func TestMatcher_AssessmentProgress(t *testing.T) {
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(nil))
+	db := newTestDB(t)
+	m := NewMatcher(db, newFakeGitHub(), llm)
+	n, a, b := readyDev("N"), readyDev("A"), readyDev("B")
+	ready := []*Participant{n, a, b}
+
+	if assessed, total := m.AssessmentProgress(ready); assessed != 0 || total == 0 {
+		t.Errorf("want 0 assessed of some total before any assessment, got %d of %d", assessed, total)
+	}
+
+	m.AssessCandidates(n, ready)
+
+	assessed, total := m.AssessmentProgress(ready)
+	if assessed == 0 {
+		t.Errorf("want at least one Pair assessed, got %d of %d", assessed, total)
+	}
+	if assessed > total {
+		t.Errorf("assessed (%d) must not exceed total (%d)", assessed, total)
+	}
+}
+
 func TestMatcher_TheNewcomerIsNotTheirOwnCandidateAndOnlyReadyParticipantsArePaired(t *testing.T) {
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(nil))
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)

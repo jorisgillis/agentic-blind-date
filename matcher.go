@@ -388,6 +388,52 @@ func (m *Matcher) assessOrDefault(a, b *Participant) (result *matchResult, genui
 	return result, true
 }
 
+// AssessCandidates populates the LLM cache for p's candidate Pairs among the
+// ready Participants, throttled like any other assessment (assessAll's
+// two-at-a-time semaphore), so a Game Show's matchmaking segment needs no
+// LLM burst (#81). Doesn't pair anyone. A failed assessment isn't cached
+// (ScorePair's existing rule), so it's retried by a later overlapping call,
+// or falls back when the matchmaking segment assesses it directly.
+func (m *Matcher) AssessCandidates(p *Participant, ready []*Participant) {
+	var pairs [][2]*Participant
+	seen := map[string]bool{}
+	for _, c := range m.topCandidates(p, ready) {
+		if seen[pairKey(p, c)] {
+			continue
+		}
+		seen[pairKey(p, c)] = true
+		pairs = append(pairs, [2]*Participant{p, c})
+	}
+	m.assessAll(pairs)
+}
+
+// AssessmentProgress reports how many of the ready Participants' candidate
+// Pairs already have a cached assessment, out of how many there are: the
+// host console's background-assessment progress during a Game Show's Lobby
+// and Rounds (#81).
+func (m *Matcher) AssessmentProgress(ready []*Participant) (assessed, total int) {
+	pairs := m.candidatePairs(ready)
+	for _, pair := range pairs {
+		if m.cached(pairKey(pair[0], pair[1])) {
+			assessed++
+		}
+	}
+	return assessed, len(pairs)
+}
+
+// cached reports whether a Pair's assessment is already cached, in memory or
+// in the database, without triggering an LLM call.
+func (m *Matcher) cached(key string) bool {
+	m.mu.Lock()
+	_, ok := m.cache[key]
+	m.mu.Unlock()
+	if ok {
+		return true
+	}
+	_, ok = m.db.GetLLMCache(key)
+	return ok
+}
+
 // ScoredCandidate is another Participant ranked against one Participant by
 // the heuristic Pair score.
 type ScoredCandidate struct {
