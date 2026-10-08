@@ -176,7 +176,7 @@ func TestStreams_SendAHeartbeatWhenIdle(t *testing.T) {
 
 func TestRender_AMissingTemplateIsAnError(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
-	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking)
+	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, nil)
 	rec := httptest.NewRecorder()
 
 	h.render(rec, "no-such-template.html", nil)

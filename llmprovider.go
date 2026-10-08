@@ -95,5 +95,5 @@ func SelectLLM(lookup func(string) string) (LLM, error) {
 		jsonMode = b
 	}
 
-	return NewOpenAIClient(baseURL, apiKey, model, jsonMode, &http.Client{Timeout: timeout}), nil
+	return NewOpenAIClient(baseURL, apiKey, model, jsonMode, &http.Client{Timeout: timeout}, realClock{}), nil
 }

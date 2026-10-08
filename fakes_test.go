@@ -163,6 +163,14 @@ func (s *testSrv) streamChecks(path string) int {
 	return s.checks[path]
 }
 
+// OnStream records that the stream at path has looked at the current state,
+// so tests can wait for a stream to catch up.
+func (s *testSrv) OnStream(path string) {
+	s.mu.Lock()
+	s.checks[path]++
+	s.mu.Unlock()
+}
+
 func (s *testSrv) Client() *http.Client {
 	return &http.Client{Transport: handlerTransport{s.h}}
 }
@@ -213,13 +221,9 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations)
 	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking)
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
-	srv := &testSrv{URL: "http://test", h: buildMux(h), checks: map[string]int{}}
-	h.streamChecked = func(path string) {
-		srv.mu.Lock()
-		srv.checks[path]++
-		srv.mu.Unlock()
-	}
+	srv := &testSrv{URL: "http://test", checks: map[string]int{}}
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, srv)
+	srv.h = buildMux(h)
 	return srv, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
 }
 

@@ -78,15 +78,20 @@ type Handler struct {
 	relations   *Relationships
 	matchmaking *Matchmaking
 	tmpl        *template.Template
+	streams     StreamObserver
+}
 
-	// streamChecked, when set (tests only), is told each time a stream has
-	// looked at the current state, so tests can wait for a stream to catch up.
-	streamChecked func(path string)
+// StreamObserver is told each time an SSE stream has looked at the current
+// state, so a test can wait for a stream to catch up. Production wires nil:
+// nothing observes streams outside tests.
+type StreamObserver interface {
+	OnStream(path string)
 }
 
 // NewHandler creates a new Handler with the given dependencies.
 // It initializes the templates and takes the modules the pages use.
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler {
+// streams may be nil: production observes nothing.
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, streams StreamObserver) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -100,7 +105,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	return &Handler{
 		db: db, store: NewParticipantStore(db),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
-		tmpl: tmpl,
+		tmpl: tmpl, streams: streams,
 	}
 }
 
@@ -478,20 +483,6 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, h.buildGraphPayload())
 }
 
-// GET /bigscreen/state  — HTMX polled every 3s
-func (h *Handler) ScreenState(w http.ResponseWriter, r *http.Request) {
-	event := h.db.EventState()
-	participants, _ := h.store.All()
-	activity, _ := h.db.GetRecentActivity(8)
-	h.render(w, "fragment-screen-state.html", map[string]any{
-		"Event":        event,
-		"Participants": participants,
-		"Activity":     activity,
-		"Count":        len(participants),
-		"ReadyCount":   h.db.ReadyCount(),
-	})
-}
-
 // ── /data ──────────────────────────────────────────────────────────────────
 
 // GET /data
@@ -656,8 +647,8 @@ func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (do
 		if check() {
 			return
 		}
-		if h.streamChecked != nil {
-			h.streamChecked(r.URL.Path)
+		if h.streams != nil {
+			h.streams.OnStream(r.URL.Path)
 		}
 		select {
 		case <-r.Context().Done():

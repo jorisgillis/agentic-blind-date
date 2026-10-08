@@ -17,6 +17,17 @@ type LLM interface {
 	Chat(system, user string) (string, error)
 }
 
+// Clock paces the wait between retries: production sleeps for real, tests
+// inject a clock that returns at once so retry tests run instantly.
+type Clock interface {
+	Sleep(d time.Duration)
+}
+
+// realClock is the production Clock.
+type realClock struct{}
+
+func (realClock) Sleep(d time.Duration) { time.Sleep(d) }
+
 // OpenAIClient is an OpenAI-compatible chat completions adapter. Mistral,
 // Scaleway Generative APIs and Ollama all expose the same request and
 // response shape at POST {base}/chat/completions, so one adapter, configured
@@ -27,21 +38,26 @@ type OpenAIClient struct {
 	model      string
 	jsonMode   bool
 	httpClient *http.Client
-	retryDelay func(attempt int) time.Duration // wait before retry attempt 1, 2, ...
+	clock      Clock
 }
 
 // NewOpenAIClient creates an OpenAIClient. apiKey may be empty (no
 // Authorization header is sent, as Ollama needs none). httpClient's Timeout
-// bounds every call.
-func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *http.Client) *OpenAIClient {
+// bounds every call. clock paces the back-off between retries.
+func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *http.Client, clock Clock) *OpenAIClient {
 	return &OpenAIClient{
 		baseURL:    baseURL,
 		apiKey:     apiKey,
 		model:      model,
 		jsonMode:   jsonMode,
 		httpClient: httpClient,
-		retryDelay: func(attempt int) time.Duration { return time.Duration(1<<uint(attempt)) * time.Second },
+		clock:      clock,
 	}
+}
+
+// retryDelay is the exponential back-off before retry attempt 1, 2, ...
+func (c *OpenAIClient) retryDelay(attempt int) time.Duration {
+	return time.Duration(1<<uint(attempt)) * time.Second
 }
 
 type chatReq struct {
@@ -206,7 +222,7 @@ func (c *OpenAIClient) Chat(system, user string) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
-			time.Sleep(c.retryDelay(attempt))
+			c.clock.Sleep(c.retryDelay(attempt))
 		}
 		result, err := c.doChat(system, user)
 		if err == nil {

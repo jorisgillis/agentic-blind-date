@@ -135,6 +135,7 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "The Gopher", "ready")
+	setProfile(t, deps.db, "r", &GitHubProfile{Login: "r", Languages: []string{"Go"}, AccountAgeDays: 730})
 	seed(t, deps.db, "m", "M", "ready")
 	seed(t, deps.db, "m2", "M2", "ready")
 	pair(t, deps.db, "m", "m2")
@@ -142,6 +143,9 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	body := readBody(t, get(t, srv, "/user/wait/r"))
 	if !strings.Contains(body, "Tabs or spaces?") || !strings.Contains(body, "The Gopher") {
 		t.Errorf("wait page should show the persona and answers")
+	}
+	if !strings.Contains(body, "2 yrs") {
+		t.Errorf("wait page should show the GitHub account age")
 	}
 	if loc := get(t, srv, "/user/wait/m").Header.Get("Location"); loc != "/user/match/m" {
 		t.Errorf("matched: want match page, got %q", loc)
@@ -301,9 +305,6 @@ func TestBigScreen_GraphHasMatchedAndPotentialEdges(t *testing.T) {
 	}
 	if resp := get(t, srv, "/bigscreen"); resp.StatusCode != 200 {
 		t.Errorf("big screen: want 200, got %d", resp.StatusCode)
-	}
-	if body := readBody(t, get(t, srv, "/bigscreen/state")); !strings.Contains(body, "A") {
-		t.Errorf("screen state should list the participants")
 	}
 }
 

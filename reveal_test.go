@@ -101,7 +101,7 @@ func TestReveal_TheBigScreenSendsNoIdentitiesBeforeTheReveal(t *testing.T) {
 	setPersona(t, deps.db, "ada", "The Analyst", "")
 	forceStep(deps.db, "ada", StepReady)
 
-	for _, path := range []string{"/bigscreen/graph-data", "/bigscreen/state"} {
+	for _, path := range []string{"/bigscreen/graph-data"} {
 		body := readBody(t, get(t, srv, path))
 		if strings.Contains(body, "octocat") || strings.Contains(body, "Ada Lovelace") {
 			t.Errorf("%s reveals identities before the Reveal", path)

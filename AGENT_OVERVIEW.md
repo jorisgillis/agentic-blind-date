@@ -130,7 +130,6 @@ GitHub Fetch Profile
 | GET | `/user/wait-status/{id}` | HTMX fragment (polled 3s) |
 | GET | `/user/match/{id}` | Match results |
 | GET | `/bigscreen` | Projector view with D3 graph |
-| GET | `/bigscreen/state` | HTMX fragment (polled 3s) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel |
 | POST | `/admin/reveal` | Start matching |

@@ -10,12 +10,15 @@ import (
 
 const chatPath = "/chat/completions"
 
-// openAIFor builds an OpenAIClient against the fake upstream with a zero
-// retry delay, so retry tests run instantly.
+// instantClock is a Clock whose sleeps return at once, so retry tests run instantly.
+type instantClock struct{}
+
+func (instantClock) Sleep(time.Duration) {}
+
+// openAIFor builds an OpenAIClient against the fake upstream with an
+// instant clock, so retry tests run instantly.
 func openAIFor(u *upstream, apiKey, model string, jsonMode bool) *OpenAIClient {
-	c := NewOpenAIClient("https://llm.test", apiKey, model, jsonMode, u.client())
-	c.retryDelay = func(int) time.Duration { return 0 }
-	return c
+	return NewOpenAIClient("https://llm.test", apiKey, model, jsonMode, u.client(), instantClock{})
 }
 
 func TestOpenAIClient_SendsBothPromptsWithAnExplicitTemperatureAndReturnsTheReply(t *testing.T) {
@@ -173,8 +176,7 @@ func TestOpenAIClient_MalformedRepliesAreErrorsAndNotRetried(t *testing.T) {
 }
 
 func TestOpenAIClient_WithoutAnHTTPClient(t *testing.T) {
-	c := NewOpenAIClient("", "key", "m", true, nil)
-	c.retryDelay = func(int) time.Duration { return 0 }
+	c := NewOpenAIClient("", "key", "m", true, nil, instantClock{})
 
 	if _, err := c.Chat("s", "u"); err == nil {
 		t.Error("want error without an HTTP client")
@@ -187,8 +189,7 @@ func TestOpenAIClient_NetworkFailures(t *testing.T) {
 		"body breaks off": truncatedTransport{},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := NewOpenAIClient("https://llm.test", "key", "m", true, &http.Client{Transport: transport})
-			c.retryDelay = func(int) time.Duration { return 0 }
+			c := NewOpenAIClient("https://llm.test", "key", "m", true, &http.Client{Transport: transport}, instantClock{})
 			if _, err := c.Chat("s", "u"); err == nil {
 				t.Error("want an error")
 			}
@@ -199,8 +200,7 @@ func TestOpenAIClient_NetworkFailures(t *testing.T) {
 func TestOpenAIClient_ATimeoutIsRetriedLikeAnyOtherTransientFailure(t *testing.T) {
 	u := newUpstream().on(chatPath, 200, `{"choices": [{"message": {"content": "hi"}}]}`)
 	calls := 0
-	c := NewOpenAIClient("https://llm.test", "key", "m", true, &http.Client{Timeout: 20 * time.Millisecond})
-	c.retryDelay = func(int) time.Duration { return 0 }
+	c := NewOpenAIClient("https://llm.test", "key", "m", true, &http.Client{Timeout: 20 * time.Millisecond}, instantClock{})
 	c.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calls++
 		if calls < 2 {
@@ -226,10 +226,18 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestOpenAIClient_BacksOffExponentially(t *testing.T) {
-	c := NewOpenAIClient("", "key", "m", true, nil)
+	c := NewOpenAIClient("", "key", "m", true, nil, instantClock{})
 
 	if c.retryDelay(1) != 2*time.Second || c.retryDelay(2) != 4*time.Second {
 		t.Errorf("want 2s then 4s, got %v then %v", c.retryDelay(1), c.retryDelay(2))
+	}
+}
+
+func TestRealClock_SleepsForTheGivenDuration(t *testing.T) {
+	start := time.Now()
+	realClock{}.Sleep(time.Millisecond)
+	if elapsed := time.Since(start); elapsed < time.Millisecond {
+		t.Errorf("realClock.Sleep returned after %v, want at least 1ms", elapsed)
 	}
 }
 
