@@ -151,7 +151,7 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	}
 }
 
-func TestWaitStatus(t *testing.T) {
+func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")

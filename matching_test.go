@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestPairKey(t *testing.T) {
+func TestPairKey_returnsStableKey(t *testing.T) {
 	a := &Participant{ID: "aaa"}
 	b := &Participant{ID: "bbb"}
 
@@ -130,33 +130,7 @@ func TestPairScore_devEnvironments(t *testing.T) {
 	}
 }
 
-func TestExtractJSON_bareJSON(t *testing.T) {
-	input := `{"name": "foo"}`
-	got := extractJSON(input)
-	if got != input {
-		t.Errorf("expected %q, got %q", input, got)
-	}
-}
-
-func TestExtractJSON_markdownWrapped(t *testing.T) {
-	input := "```json\n{\"name\": \"foo\"}\n```"
-	got := extractJSON(input)
-	want := `{"name": "foo"}`
-	if got != want {
-		t.Errorf("expected %q, got %q", want, got)
-	}
-}
-
-func TestExtractJSON_trailingGarbage(t *testing.T) {
-	input := `Here you go: {"name": "foo"} done!`
-	got := extractJSON(input)
-	want := `{"name": "foo"}`
-	if got != want {
-		t.Errorf("expected %q, got %q", want, got)
-	}
-}
-
-func TestFmtInterests(t *testing.T) {
+func TestFmtInterests_formatsCategories(t *testing.T) {
 	if result := fmtInterests(Interests{}); result != "" {
 		t.Errorf("expected empty string for zero value, got %s", result)
 	}
@@ -176,7 +150,7 @@ func TestFmtInterests(t *testing.T) {
 	}
 }
 
-func TestExtractJSON(t *testing.T) {
+func TestExtractJSON_extractsFromVariousFormats(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
