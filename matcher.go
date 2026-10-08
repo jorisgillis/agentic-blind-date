@@ -263,6 +263,17 @@ func (m *Matcher) PairScore(a, b *Participant) int {
 		}
 	}
 
+	// Score the GitHub follow relationship: +5 if mutual, +3 if one-way
+	if a.HasGitHub && b.HasGitHub {
+		aFollowsB, bFollowsA := m.github.CheckMutualFollow(a.GitHubHandle, b.GitHubHandle)
+		switch {
+		case aFollowsB && bFollowsA:
+			score += 5
+		case aFollowsB || bFollowsA:
+			score += 3
+		}
+	}
+
 	return score
 }
 

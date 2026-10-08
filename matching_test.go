@@ -23,7 +23,7 @@ func TestPairKey_returnsStableKey(t *testing.T) {
 }
 
 func TestPairScore_languages(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go", "Python"})
 	b := testParticipant("b", "The b", []string{"Go", "Rust"})
 
@@ -40,7 +40,7 @@ func TestPairScore_languages(t *testing.T) {
 }
 
 func TestPairScore_answers(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", nil, participantOpts{answers: map[string]string{"0": "Tabs", "1": "Go"}})
 	b := testParticipant("b", "The b", nil, participantOpts{answers: map[string]string{"0": "Tabs", "1": "Python"}})
 
@@ -51,7 +51,7 @@ func TestPairScore_answers(t *testing.T) {
 }
 
 func TestPairScore_combined(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
 	b := testParticipant("b", "The b", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
 
@@ -62,7 +62,7 @@ func TestPairScore_combined(t *testing.T) {
 }
 
 func TestPairScore_noOverlap(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
 	b := testParticipant("b", "The b", []string{"Rust"}, participantOpts{answers: map[string]string{"0": "Spaces"}})
 
@@ -71,11 +71,62 @@ func TestPairScore_noOverlap(t *testing.T) {
 	}
 }
 
-// Note: Follow relationship scoring requires GitHub API access and is deferred for a follow-up
-// func TestPairScore_followRelationships
+func TestPairScore_followRelationships(t *testing.T) {
+	for name, tc := range map[string]struct {
+		follows [][2]string
+		want    int
+	}{
+		"mutual":  {follows: [][2]string{{"a", "b"}, {"b", "a"}}, want: 5},
+		"one-way": {follows: [][2]string{{"a", "b"}}, want: 3},
+		"reverse": {follows: [][2]string{{"b", "a"}}, want: 3},
+		"none":    {want: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gh := newFakeGitHub()
+			for _, f := range tc.follows {
+				gh.withFollow(f[0], f[1])
+			}
+			matcher := &Matcher{github: gh}
+			// Distinct languages keep the base score at 0, isolating the follow delta.
+			a := testParticipant("a", "The a", []string{"Go"})
+			b := testParticipant("b", "The b", []string{"Rust"})
+
+			if score := matcher.PairScore(a, b); score != tc.want {
+				t.Errorf("expected %d, got %d", tc.want, score)
+			}
+		})
+	}
+}
+
+func TestPairScore_followScoringCombinesWithOtherFactors(t *testing.T) {
+	gh := newFakeGitHub().withFollow("a", "b").withFollow("b", "a")
+	matcher := &Matcher{github: gh}
+	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{topics: []string{"web"}, answers: map[string]string{"0": "Tabs"}})
+	b := testParticipant("b", "The b", []string{"Go"}, participantOpts{topics: []string{"web"}, answers: map[string]string{"0": "Tabs"}})
+
+	// 3 (shared language) + 2 (shared topic) + 1 (shared answer) + 5 (mutual follow)
+	if score := matcher.PairScore(a, b); score != 11 {
+		t.Errorf("expected 11 (3 language + 2 topic + 1 answer + 5 mutual follow), got %d", score)
+	}
+}
+
+func TestPairScore_noFollowLookupWithoutGitHub(t *testing.T) {
+	gh := newFakeGitHub()
+	matcher := &Matcher{github: gh}
+	a := testParticipant("a", "The a", []string{"Go"})
+	b := testParticipant("b", "The b", []string{"Go"})
+	b.HasGitHub = false
+
+	if score := matcher.PairScore(a, b); score != 3 {
+		t.Errorf("expected 3 (shared language only), got %d", score)
+	}
+	if n := gh.followLookups(); n != 0 {
+		t.Errorf("follow lookups without a GitHub User: want 0, got %d", n)
+	}
+}
 
 func TestPairScore_topics(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{topics: []string{"web", "api"}})
 	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{topics: []string{"web", "data"}})
 
@@ -94,7 +145,7 @@ func TestPairScore_topics(t *testing.T) {
 }
 
 func TestPairScore_projectTypes(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{projectType: "Web"})
 	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{projectType: "Web"})
 
@@ -112,7 +163,7 @@ func TestPairScore_projectTypes(t *testing.T) {
 }
 
 func TestPairScore_devEnvironments(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{devEnv: []string{"IDE", "VIM"}})
 	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{devEnv: []string{"IDE", "Cloud"}})
 
