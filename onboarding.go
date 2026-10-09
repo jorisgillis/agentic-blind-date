@@ -70,15 +70,7 @@ func (o *Onboarding) prepare(participantID string) {
 
 	profile := &GitHubProfile{}
 	if p.HasGitHub {
-		handle := p.GitHubHandle
-		profile = &GitHubProfile{Login: handle, Name: handle}
-		o.db.LogActivity("🔍 Fetching a GitHub profile...")
-		fetched, err := o.github.FetchProfile(handle)
-		if err != nil {
-			log.Printf("Failed to fetch GitHub profile for @%s: %v", handle, err)
-		} else if fetched != nil {
-			profile = fetched
-		}
+		profile = o.githubProfile(p)
 	} else {
 		o.db.LogActivity("📝 Processing non-GitHub user...")
 	}
@@ -89,6 +81,20 @@ func (o *Onboarding) prepare(participantID string) {
 		return
 	}
 	o.db.LogActivity("✅ Ready for the interview!")
+}
+
+// githubProfile fetches the Participant's GitHub profile, falling back to a
+// bare profile built from the handle when the fetch fails.
+func (o *Onboarding) githubProfile(p *Participant) *GitHubProfile {
+	profile := &GitHubProfile{Login: p.GitHubHandle, Name: p.GitHubHandle}
+	o.db.LogActivity("🔍 Fetching a GitHub profile...")
+	fetched, err := o.github.FetchProfile(p.GitHubHandle)
+	if err != nil {
+		log.Printf("Failed to fetch GitHub profile for @%s: %v", p.GitHubHandle, err)
+	} else if fetched != nil {
+		profile = fetched
+	}
+	return profile
 }
 
 // Resume restarts onboarding work that was interrupted, for example by a
