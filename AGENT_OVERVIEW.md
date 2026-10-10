@@ -22,8 +22,8 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Go HTTP Server (main.go)                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │  DB (SQLite) │  │ GitHub Client│  │ Mistral Client│  │  Handlers  │ │
-│  │   (db.go)    │  │   (github.go)│  │  (mistral.go) │  │ (handlers.go)│ │
+│  │  DB (SQLite) │  │ GitHub Client│  │  LLM Client  │  │  Handlers  │ │
+│  │   (db.go)    │  │   (github.go)│  │   (llm.go)   │  │ (handlers.go)│ │
 │  └──────────────┘  └──────────────┘  └──────────────┘  └────────────┘ │
 │                              │                  │                   │
 │                              ▼                  ▼                   ▼
@@ -47,9 +47,9 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 | Component | File | Purpose |
 |-----------|------|---------|
 | **Server & Routing** | `main.go` | HTTP server setup, route registration, .env auto-loading |
-| **Database Layer** | `db.go` | SQLite schema, Participant type, all CRUD queries |
+| **Database Layer** | `db.go` | SQLite schema, Participant type, change feed, activity log, LLM cache; the Participant store (`participantstore.go`) owns Participant SQL |
 | **GitHub Client** | `github.go` | Fetches user profiles, repos, languages from GitHub API |
-| **Mistral Client** | `mistral.go` | Handles chat completions with Mistral AI API |
+| **LLM Client** | `llm.go` | OpenAI-compatible chat completions adapter (`OpenAIClient`) for Mistral, Scaleway and Ollama |
 | **AI Agents** | `agents.go` | Pipeline: Setup (persona, questions), Matching (3-phase algorithm) |
 | **Fixed Questions** | `questions.go` | 5 predefined opinionated questions |
 | **HTTP Handlers** | `handlers.go` | All route handlers, HTMX fragments, JSON endpoints |
@@ -219,7 +219,7 @@ agentic_blind_date/
 ├── main.go              # Entry point, server, routing, .env loading
 ├── db.go                # SQLite: schema, Participant struct, queries
 ├── github.go            # GitHub REST API client
-├── mistral.go           # Mistral chat completions client
+├── llm.go               # OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
 ├── agents.go            # AI pipeline: RunSetup, RunMatching
 ├── questions.go         # 5 fixed questions + constants
 ├── handlers.go          # All HTTP handlers

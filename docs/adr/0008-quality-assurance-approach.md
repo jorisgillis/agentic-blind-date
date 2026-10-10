@@ -44,7 +44,7 @@ We will adopt a **100% test coverage** target with the following approach:
 - **Location**: Same package or dedicated integration test packages
 
 ### Mocking Strategy
-- **External Services**: Use mock implementations for GitHubClient and MistralClient
+- **External Services**: Use mock implementations for GitHubClient and OpenAIClient
 - **Database**: Use in-memory SQLite for tests (already implemented in db_test.go)
 - **Templates**: Test template rendering with test data
 

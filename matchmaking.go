@@ -95,7 +95,7 @@ func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []string, error) {
 	all, err := mm.participants.All()
 	if err != nil {
-		return nil, nil, fmt.Errorf("GetAllParticipants: %w", err)
+		return nil, nil, fmt.Errorf("ParticipantStore.All: %w", err)
 	}
 	var newcomer *Participant
 	var others []*Participant

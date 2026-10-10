@@ -94,7 +94,7 @@ type ParticipantChange struct {
 	Persona      *Persona
 	Profile      *GitHubProfile
 	Answers      map[string]string
-	PipelineStep *Step // guarded exactly like DB.AdvanceStep: only from the step right before it
+	PipelineStep *Step // guarded exactly like advanceStep: only from the step right before it
 }
 
 // Change applies one or more Participant changes in a single transaction,
@@ -158,9 +158,9 @@ func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 	})
 }
 
-// advanceStep moves a Participant to the next Pipeline Step, guarded like
-// DB.AdvanceStep: ErrIllegalTransition unless they are at the step directly
-// before it, so a step is entered at most once.
+// advanceStep moves a Participant to the next Pipeline Step, guarded:
+// ErrIllegalTransition unless they are at the step directly before it, so
+// a step is entered at most once.
 func advanceStep(tx *sql.Tx, id string, to Step) error {
 	from, ok := previousStep[to]
 	if !ok {
@@ -177,10 +177,10 @@ func advanceStep(tx *sql.Tx, id string, to Step) error {
 }
 
 // StartInterview stores the profile and question set and opens the
-// Interview, all in one transaction, guarded like DB.StartInterview: it
-// fails with ErrIllegalTransition, writing nothing, unless the Participant
-// is still being prepared (so a second, concurrent preparation cannot swap
-// the questions of a running Interview).
+// Interview, all in one transaction, guarded: it fails with
+// ErrIllegalTransition, writing nothing, unless the Participant is still
+// being prepared (so a second, concurrent preparation cannot swap the
+// questions of a running Interview).
 func (s *ParticipantStore) StartInterview(id string, profile *GitHubProfile, questions []Question) error {
 	profileJSON, _ := json.Marshal(profile)     // plain data: cannot fail
 	questionsJSON, _ := json.Marshal(questions) // plain data: cannot fail

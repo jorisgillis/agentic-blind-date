@@ -136,7 +136,7 @@ The 180s default timeout covers the first request, which can be slow while the m
 
 ```
 main.go          server setup, route registration, .env auto-loading
-db.go            SQLite schema, Participant type, non-Participant queries (activity, LLM cache, Event State)
+db.go            SQLite schema, Participant type, non-Participant queries (activity, LLM cache)
 participantstore.go  the only component other modules use to read or write Participants
 github.go        GitHub public API client
 llm.go           OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
