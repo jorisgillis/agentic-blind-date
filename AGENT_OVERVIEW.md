@@ -28,8 +28,8 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 │                              │                  │                   │
 │                              ▼                  ▼                   ▼
 │                    ┌─────────────────┐  ┌──────────┐  ┌──────────┐
-│                    │  Agent Pipeline  │  │   D3.js  │  │  HTMX    │
-│                    │    (agents.go)   │  │(screen)  │  │(templates)│
+│                    │  Onboarding &   │  │   D3.js  │  │  HTMX    │
+│                    │  Matchmaking    │  │(screen)  │  │(templates)│
 │                    └─────────────────┘  └──────────┘  └──────────┘
 └─────────────────────────────────────────────────────────────────────┘
                               │
@@ -50,7 +50,8 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 | **Database Layer** | `db.go` | SQLite schema, Participant type, change feed, activity log, LLM cache; the Participant store (`participantstore.go`) owns Participant SQL |
 | **GitHub Client** | `github.go` | Fetches user profiles, repos, languages from GitHub API |
 | **LLM Client** | `llm.go` | OpenAI-compatible chat completions adapter (`OpenAIClient`) for Mistral, Scaleway and Ollama |
-| **AI Agents** | `agents.go` | Pipeline: Setup (persona, questions), Matching (3-phase algorithm) |
+| **Onboarding** | `onboarding.go` | Per-Participant preparation and Interview: GitHub fetch, questions, Persona, ready |
+| **Matchmaking** | `matchmaking.go` | Continuous Matching and the admin Rematch; the Matcher (`matcher.go`) runs the 3-phase algorithm |
 | **Fixed Questions** | `questions.go` | 5 predefined opinionated questions |
 | **HTTP Handlers** | `handlers.go` | All route handlers, HTMX fragments, JSON endpoints |
 | **Templates** | `templates/*.html` | Server-side rendered HTML with HTMX, Tailwind, D3.js |
@@ -77,15 +78,18 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 
 ## AI Pipeline
 
-### RunSetup (Per Participant, Async)
+### Onboarding (Per Participant, Async)
 ```
 GitHub Fetch Profile
-    → Profile Agent (Mistral) → Generate Persona + Tagline
-    → Interviewer Agent (Mistral) → Generate 3 Custom Questions
+    → Interview (Mistral) → Generate 3 Custom Questions
     → Store & Mark as "interviewing"
+    → Personas (Mistral) → Generate Persona + Tagline
+    → Mark as "ready" & hand to Continuous Matching
 ```
 
-### RunMatching (Triggered by Admin)
+### Matchmaking (Continuous Matching + Admin Rematch)
+The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`matchmaking.go`) runs one matching operation at a time.
+
 **Phase 1 - Candidate Selection:**
 - Score all pairs: +3 per shared language, +1 per matching answer
 - Each participant keeps **top 5 candidates**
@@ -220,7 +224,8 @@ agentic_blind_date/
 ├── db.go                # SQLite: schema, Participant struct, queries
 ├── github.go            # GitHub REST API client
 ├── llm.go               # OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
-├── agents.go            # AI pipeline: RunSetup, RunMatching
+├── onboarding.go        # Per-Participant pipeline: GitHub fetch, Interview, Persona
+├── matchmaking.go       # Continuous Matching + admin Rematch
 ├── questions.go         # 5 fixed questions + constants
 ├── handlers.go          # All HTTP handlers
 ├── AGENTS.md            # Project instructions for coding agents
