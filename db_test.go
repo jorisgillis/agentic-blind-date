@@ -377,12 +377,13 @@ func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
 // not at all.
 func TestReset_IsOneTransaction(t *testing.T) {
 	db := newTestDB(t)
+	events := NewEventStore(db)
 	db.CreateParticipant("p", "p", "P", true)
 	db.LogActivity("hello")
-	db.Reveal()
+	events.Reveal()
 	failWrites(t, db, "reset_activity")
 
-	if err := db.Reset(); err == nil {
+	if err := events.Reset(); err == nil {
 		t.Fatal("want the failure reported")
 	}
 
@@ -392,36 +393,39 @@ func TestReset_IsOneTransaction(t *testing.T) {
 	if msgs, _ := db.GetRecentActivity(10); len(msgs) != 1 {
 		t.Errorf("activity should be untouched, got %v", msgs)
 	}
-	if db.EventState() != Revealed {
-		t.Errorf("Event State should be untouched, got %s", db.EventState())
+	if events.State() != Revealed {
+		t.Errorf("Event State should be untouched, got %s", events.State())
 	}
 }
 
 func TestReset_ReportsAGenuineParticipantsDeleteFailure(t *testing.T) {
 	db := newTestDB(t)
+	events := NewEventStore(db)
 	db.CreateParticipant("p", "p", "P", true)
 	breakOnFault(t, db, "reset_participants")
 
-	if err := db.Reset(); err == nil {
+	if err := events.Reset(); err == nil {
 		t.Error("want a failure")
 	}
 }
 
 func TestReset_ReportsAGenuineActivityDeleteFailure(t *testing.T) {
 	db := newTestDB(t)
+	events := NewEventStore(db)
 	db.LogActivity("hello")
 	breakOnFault(t, db, "reset_activity")
 
-	if err := db.Reset(); err == nil {
+	if err := events.Reset(); err == nil {
 		t.Error("want a failure")
 	}
 }
 
 func TestReset_ChecksTheEventStateWriteToo(t *testing.T) {
 	db := newTestDB(t)
+	events := NewEventStore(db)
 	failWrites(t, db, "reset_event_state")
 
-	if err := db.Reset(); err == nil {
+	if err := events.Reset(); err == nil {
 		t.Error("want a failure")
 	}
 }

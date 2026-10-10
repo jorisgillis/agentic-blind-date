@@ -10,17 +10,17 @@ func TestEventState_OnlyTheRevealAndResetChangeIt(t *testing.T) {
 	seed(t, deps.db, "a", "A", "ready")
 	seed(t, deps.db, "b", "B", "ready")
 
-	if got := deps.db.EventState(); got != BeforeReveal {
+	if got := deps.events.State(); got != BeforeReveal {
 		t.Fatalf("a new event starts before the Reveal, got %q", got)
 	}
 	post(t, srv, "/admin/rematch", nil)
 	eventually(t, "rematched", func() bool { return reload(t, deps.db, "a").IsMatched() })
-	if got := deps.db.EventState(); got != BeforeReveal {
+	if got := deps.events.State(); got != BeforeReveal {
 		t.Errorf("a rematch must not change the Event State, got %q", got)
 	}
 
 	post(t, srv, "/admin/reveal", nil)
-	if got := deps.db.EventState(); got != Revealed || !got.IsRevealed() {
+	if got := deps.events.State(); got != Revealed || !got.IsRevealed() {
 		t.Errorf("after the Reveal: got %q", got)
 	}
 	var graph struct {
@@ -32,7 +32,7 @@ func TestEventState_OnlyTheRevealAndResetChangeIt(t *testing.T) {
 	}
 
 	post(t, srv, "/admin/reset", nil)
-	if got := deps.db.EventState(); got != BeforeReveal {
+	if got := deps.events.State(); got != BeforeReveal {
 		t.Errorf("Reset returns the event to before the Reveal, got %q", got)
 	}
 }
@@ -43,7 +43,7 @@ func TestEventState_ExistingDatabasesKeepTheirState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db.Reveal()
+	NewEventStore(db).Reveal()
 	db.Close()
 
 	reopened, err := NewDB(path)
@@ -51,7 +51,7 @@ func TestEventState_ExistingDatabasesKeepTheirState(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if got := reopened.EventState(); got != Revealed {
+	if got := NewEventStore(reopened).State(); got != Revealed {
 		t.Errorf("want revealed after reopening, got %q", got)
 	}
 }

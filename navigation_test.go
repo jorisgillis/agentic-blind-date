@@ -32,7 +32,7 @@ func TestDestination_EveryParticipantHasOnePlaceToBe(t *testing.T) {
 
 func TestSubmitAnswer_WhileMatchedGoesToTheRightPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal()
+	deps.events.Reveal()
 	seed(t, deps.db, "a", "A", "ready")
 	seed(t, deps.db, "b", "B", "ready")
 	pair(t, deps.db, "a", "b")

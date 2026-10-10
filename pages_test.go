@@ -82,7 +82,7 @@ func TestLanding_UnknownCookieIsClearedAndTheFormShown(t *testing.T) {
 
 func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "i", "I", "interviewing")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
@@ -105,7 +105,7 @@ func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 
 func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "f", "F", "fetching_github")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
@@ -133,7 +133,7 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 
 func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "The Gopher", "ready")
 	setProfile(t, deps.db, "r", &GitHubProfile{Login: "r", Languages: []string{"Go"}, AccountAgeDays: 730})
 	seed(t, deps.db, "m", "M", "ready")
@@ -157,7 +157,7 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 
 func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
 	seed(t, deps.db, "m2", "M2", "ready")
@@ -176,7 +176,7 @@ func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 
 func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	seed(t, deps.db, "c", "The Snake", "ready")
@@ -277,7 +277,7 @@ func TestExplore_ShowsPersonasOnlyNotHandlesOrNames(t *testing.T) {
 func TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
 	srv, deps := newTestServer(t, llm, nil)
-	deps.db.Reveal()
+	deps.events.Reveal()
 	seed(t, deps.db, "a", "A", "ready")
 	seed(t, deps.db, "b", "B", "ready")
 
@@ -386,7 +386,7 @@ func stream(t *testing.T, srv *testSrv, path string, timeout time.Duration) stri
 
 func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal()
+	deps.events.Reveal()
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	pair(t, deps.db, "a", "b")
@@ -412,7 +412,7 @@ func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t
 
 func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal()
+	deps.events.Reveal()
 	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
 	setProfile(t, deps.db, "ada", &GitHubProfile{})
 	setPersona(t, deps.db, "ada", "The Analyst", "Computes")

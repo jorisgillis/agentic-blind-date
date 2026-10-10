@@ -95,7 +95,7 @@ func TestRematch_AFailureIsShownInTheActivityFeed(t *testing.T) {
 
 func TestMatchPage_WithAPartnerWhoIsGoneStillRenders(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal()
+	deps.events.Reveal()
 	seed(t, deps.db, "a", "A", "ready")
 	deps.db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'a'`)
 

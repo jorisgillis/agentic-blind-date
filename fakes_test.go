@@ -202,6 +202,7 @@ func (t handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // testDeps bundles the fakes behind a test server so tests can script and inspect them.
 type testDeps struct {
 	db          *DB
+	events      *EventStore
 	llm         *fakeLLM
 	github      *fakeGitHub
 	onboarding  *Onboarding
@@ -237,7 +238,7 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	srv := &testSrv{URL: "http://test", checks: map[string]int{}}
 	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, srv)
 	srv.h = buildMux(h)
-	return srv, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
+	return srv, &testDeps{db: db, events: NewEventStore(db), llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
 }
 
 // forceStep puts a Participant at any Pipeline Step, bypassing the guarded transitions (test setup only).

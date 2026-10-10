@@ -72,6 +72,7 @@ type graphEdge struct {
 type Handler struct {
 	db          *DB
 	store       *ParticipantStore
+	events      *EventStore
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -103,7 +104,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	return &Handler{
-		db: db, store: NewParticipantStore(db),
+		db: db, store: NewParticipantStore(db), events: NewEventStore(db),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
 	}
@@ -382,7 +383,7 @@ func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) buildGraphPayload() map[string]any {
-	event := h.db.EventState()
+	event := h.events.State()
 	participants, _ := h.store.All()
 	activity, _ := h.db.GetRecentActivity(3)
 
@@ -487,7 +488,7 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 
 // GET /data
 func (h *Handler) DataIndex(w http.ResponseWriter, r *http.Request) {
-	event := h.db.EventState()
+	event := h.events.State()
 	participants, _ := h.store.All()
 	activity, _ := h.db.GetRecentActivity(20)
 	h.render(w, "data.html", map[string]any{
@@ -536,7 +537,7 @@ func (h *Handler) DataActivity(w http.ResponseWriter, r *http.Request) {
 
 // GET /data/state
 func (h *Handler) DataState(w http.ResponseWriter, r *http.Request) {
-	event := h.db.EventState()
+	event := h.events.State()
 	writeJSON(w, map[string]any{
 		"phase": event,
 		"count": h.db.ParticipantCount(),
@@ -555,7 +556,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 // GET /admin
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
-	event := h.db.EventState()
+	event := h.events.State()
 	h.render(w, "admin.html", map[string]any{
 		"Event": event,
 		"Count": h.db.ParticipantCount(),
@@ -565,7 +566,7 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/reveal: the admin reveals every Match once everybody is seated.
 func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
-	if err := h.db.Reveal(); err != nil {
+	if err := h.events.Reveal(); err != nil {
 		http.Error(w, "reveal failed: "+err.Error(), 500)
 		return
 	}
@@ -575,7 +576,7 @@ func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/reset
 func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
-	if err := h.db.Reset(); err != nil {
+	if err := h.events.Reset(); err != nil {
 		http.Error(w, "reset failed: "+err.Error(), 500)
 		return
 	}
