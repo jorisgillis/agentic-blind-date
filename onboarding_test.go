@@ -112,6 +112,26 @@ func TestOnboarding_SubmittingTheLastAnswerTwiceCreatesOnePersona(t *testing.T) 
 	}
 }
 
+// TestOnboarding_ASecondFinishStopsAtTheGuard covers finish's guard
+// synchronously: the Participant already left the Interview, so the guard
+// rejects the move into Persona creation while the test is still running,
+// instead of inside a fire-and-forget goroutine racing the coverage profile.
+func TestOnboarding_ASecondFinishStopsAtTheGuard(t *testing.T) {
+	llm := newFakeLLM()
+	o, db := onboardingFor(t, llm, newFakeGitHub())
+	db.CreateParticipant("p", "p", "P", true)
+	forceStep(db, "p", StepCreatingPersona)
+
+	o.finish(reload(t, db, "p")) // stops at the guard: no Persona is created
+
+	if n := llm.callsMatching("personality generator"); n != 0 {
+		t.Errorf("personas created: want 0, got %d", n)
+	}
+	if step := reload(t, db, "p").PipelineStep; step != StepCreatingPersona {
+		t.Errorf("step: want %s, got %s", StepCreatingPersona, step)
+	}
+}
+
 func TestOnboarding_RegisteringAgainResumesAPreparationThatNeverFinished(t *testing.T) {
 	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "octo"})
 	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`)
