@@ -240,6 +240,9 @@ func TestLLMCache(t *testing.T) {
 
 func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
 	db := newTestDB(t)
+	// The LLM cache is DB-owned (no store expresses it), and this row is
+	// deliberately in the legacy comma-joined format that SetLLMCache's
+	// JSON encoding cannot produce.
 	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 85, 'x', 'red1,red2', 'g', 'i')`)
 
 	if _, exists := db.GetLLMCache("a:b"); exists {
@@ -253,6 +256,8 @@ func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Migration-test setup: recreate the old schema, whose extra_answers
+	// column NewDB's migration must drop.
 	old.db.Exec(`ALTER TABLE participants ADD COLUMN extra_answers TEXT NOT NULL DEFAULT '{}'`)
 	old.Close()
 
@@ -267,6 +272,8 @@ func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
 	if _, err := db.GetParticipant("id-1"); err != nil {
 		t.Fatalf("GetParticipant after migration: %v", err)
 	}
+	// Migration-test check: the schema itself is inspected, which no store
+	// read does.
 	var n int
 	db.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name = 'extra_answers'`).Scan(&n)
 	if n != 0 {
@@ -282,6 +289,8 @@ func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
 	}
 	old.CreateParticipant("gh", "octocat", "Octo", true)
 	old.CreateParticipant("ng", "no-github-1234abcd", "Ada", true)
+	// Migration-test setup: drop has_github to recreate the schema from
+	// before the column existed, so the one-time backfill runs.
 	if _, err := old.db.Exec(`ALTER TABLE participants DROP COLUMN has_github`); err != nil {
 		t.Fatal(err)
 	}
@@ -294,6 +303,10 @@ func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
 	if !reload(t, db, "gh").HasGitHub || reload(t, db, "ng").HasGitHub {
 		t.Error("backfill: the generated-handle Participant has no GitHub account, the other does")
 	}
+	// The store cannot express this: has_github is recorded at registration
+	// and no ParticipantChange carries it. The raw write simulates a
+	// Participant whose flag was set after the backfill, which a second
+	// backfill must not clobber.
 	db.db.Exec(`UPDATE participants SET has_github = 1 WHERE id = 'ng'`)
 	db.Close()
 
@@ -308,6 +321,8 @@ func TestInTx_ReportsAFailedCommit(t *testing.T) {
 	db := newTestDB(t)
 
 	err := db.inTx(func(tx *sql.Tx) error {
+		// Raw SQL is the fault itself: ending the transaction inside the
+		// test's own callback is the only way to make the commit fail.
 		_, err := tx.Exec(`ROLLBACK`) // the transaction ends early, so the commit fails
 		return err
 	})
@@ -335,6 +350,8 @@ func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
 		t.Run(column, func(t *testing.T) {
 			db := newTestDB(t)
 			db.CreateParticipant("p", "p", "P", true)
+			// Corruption setup: '{broken' is not JSON the store could ever
+			// write (it marshals), so the undecodable row is seeded directly.
 			db.db.Exec(`UPDATE participants SET ` + column + ` = '{broken' WHERE id = 'p'`)
 
 			if _, err := db.GetParticipant("p"); err == nil {
@@ -367,6 +384,8 @@ func TestDB_ReadsAndWritesAgainstABrokenDatabase(t *testing.T) {
 
 func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
 	db := newTestDB(t)
+	// The LLM cache is DB-owned (no store expresses it), and a 'null' list is
+	// a legacy value SetLLMCache's JSON encoding cannot produce (it writes '[]').
 	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 5, 'x', 'null', '[]', '[]')`)
 
 	r, ok := db.GetLLMCache("a:b")
@@ -437,6 +456,8 @@ func TestReset_ChecksTheEventStateWriteToo(t *testing.T) {
 
 func TestCreateParticipant_ReportsADamagedSchema(t *testing.T) {
 	db := newTestDB(t)
+	// Deliberately damaged schema: no store operation drops a column; the
+	// test covers the error path when the persona-lookup read fails.
 	db.db.Exec(`ALTER TABLE participants DROP COLUMN persona_symbol`)
 
 	if err := db.CreateParticipant("p", "p", "P", true); err == nil {

@@ -28,6 +28,17 @@ We will adopt a **100% test coverage** target with the following approach:
 - Error paths are covered with test-only fault injection (SQLite triggers that make writes fail, a closed database for reads, failing HTTP transports), not with hooks in production code; checks that cannot fail (for example `json.Marshal` of plain data) are removed rather than tested
 
 > Amended 2026-09-24: the `main()` exclusion and the gate script.
+> Amended 2026-10-10: raw SQL in tests is ratified only in the classes below (#110).
+
+### Raw SQL in Tests
+
+Test setup writes through the Participant store wherever the store can express the setup; raw SQL remains only where it deliberately cannot, and every remaining statement records its reason at the site. The ratified exception classes:
+
+- **Fault injection** — the mechanism above: SQLite triggers, temporary views and a closed database, living entirely in `faults_test.go`.
+- **Schema-migration tests** — recreating an old schema or a legacy row (a dropped column, the removed `'matched'` Pipeline Step) that `NewDB`'s migrations then rewrite.
+- **Corruption setup for decode/scan tests** — undecodable JSON (`'{broken'`, `'not json'`, `profile_json = 'null'`) the store can never write, because it always marshals well-formed data.
+- **Seeding the DB-owned LLM cache** — legacy or undecodable `llm_cache` rows (comma-joined lists, `'null'` lists) that `SetLLMCache`'s JSON encoding cannot produce; no store expresses the cache.
+- **Test setup that deliberately bypasses guarded transitions or writes deliberately-invalid state** — `forceStep`, `forceQuestions` and `forceInterview` stage what the guarded store cannot express (an arbitrary Pipeline Step, a question set outside `StartInterview`'s combined write, a forced mid-Interview row), and a dangling `matched_with` names a partner that does not exist, which no pairing operation produces.
 
 ### Testing Pyramid
 

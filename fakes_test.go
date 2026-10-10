@@ -241,7 +241,10 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	return srv, &testDeps{db: db, events: NewEventStore(db), llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
 }
 
-// forceStep puts a Participant at any Pipeline Step, bypassing the guarded transitions (test setup only).
+// forceStep puts a Participant at any Pipeline Step, bypassing the guarded
+// transitions (test setup only): the store's PipelineStep change only moves
+// one step forward, so forcing an arbitrary step is not expressible through
+// ParticipantStore.Change.
 func forceStep(db *DB, id string, step Step) {
 	db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
 	db.changed()
@@ -256,28 +259,52 @@ func forceQuestions(db *DB, id string, questions []Question) {
 	db.changed()
 }
 
-// setProfile, setPersona and updateAnswers are test-setup conveniences that
-// write through the Participant store, now that DB's own per-column setters
+// forceInterview stages a Participant mid-Interview — a question set, the
+// answers so far and the Pipeline Step, in one write — bypassing the store
+// (test setup only, like forceStep and forceQuestions): no production code
+// sets Questions outside StartInterview's guarded, combined write, and the
+// store's PipelineStep change only moves one step forward, so a forced
+// mid-Interview state is not expressible through ParticipantStore.Change.
+func forceInterview(db *DB, id string, questions []Question, answers map[string]string, step Step) {
+	questionsJSON, _ := json.Marshal(questions)
+	answersJSON, _ := json.Marshal(answers)
+	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
+		string(questionsJSON), string(answersJSON), step, id)
+}
+
+// changeParticipant applies one Participant change through the Participant
+// store, failing the test when it does not go through: the one wrapper the
+// test-setup conveniences below share, now that DB's own per-column setters
 // are gone (#53).
-func setProfile(t *testing.T, db *DB, id string, profile *GitHubProfile) {
+func changeParticipant(t *testing.T, db *DB, change ParticipantChange) {
 	t.Helper()
-	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Profile: profile}); err != nil {
+	if err := NewParticipantStore(db).Change(change); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// setProfile, setPersona and updateAnswers stage one Participant field each.
+func setProfile(t *testing.T, db *DB, id string, profile *GitHubProfile) {
+	t.Helper()
+	changeParticipant(t, db, ParticipantChange{ID: id, Profile: profile})
 }
 
 func setPersona(t *testing.T, db *DB, id, name, tagline string) {
 	t.Helper()
-	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Persona: &Persona{Name: name, Tagline: tagline}}); err != nil {
-		t.Fatal(err)
-	}
+	changeParticipant(t, db, ParticipantChange{ID: id, Persona: &Persona{Name: name, Tagline: tagline}})
 }
 
 func updateAnswers(t *testing.T, db *DB, id string, answers map[string]string) {
 	t.Helper()
-	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Answers: answers}); err != nil {
-		t.Fatal(err)
-	}
+	changeParticipant(t, db, ParticipantChange{ID: id, Answers: answers})
+}
+
+// withoutProfile corrupts a Participant's profile to JSON 'null', leaving
+// them without one. Corruption setup: the store cannot express this — a nil
+// Profile in a ParticipantChange means "leave the column alone", and a
+// non-nil profile marshals to an object, never 'null'.
+func withoutProfile(db *DB, id string) {
+	db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = ?`, id)
 }
 
 // eventually polls cond until it holds or the deadline passes.

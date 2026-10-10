@@ -97,6 +97,10 @@ func TestMatchPage_WithAPartnerWhoIsGoneStillRenders(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal()
 	seed(t, deps.db, "a", "A", "ready")
+	// Deliberately invalid state: a partner that does not exist. No store
+	// operation produces it — pairing only ever names an existing Participant
+	// and matched_with's single writer is the Relationships module — so the
+	// impossible state is written directly.
 	deps.db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'a'`)
 
 	if resp := get(t, srv, "/user/match/a"); resp.StatusCode != 200 {
@@ -107,7 +111,7 @@ func TestMatchPage_WithAPartnerWhoIsGoneStillRenders(t *testing.T) {
 func TestWaitPage_WithoutAProfileStillRenders(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")
-	deps.db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = 'a'`)
+	withoutProfile(deps.db, "a")
 
 	if resp := get(t, srv, "/user/wait/a"); resp.StatusCode != 200 {
 		t.Errorf("want 200, got %d", resp.StatusCode)

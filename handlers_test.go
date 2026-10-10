@@ -376,15 +376,7 @@ func TestSubmitAnswer(t *testing.T) {
 
 	// Create a participant in interviewing state with questions
 	db.CreateParticipant("id-1", "user1", "User 1", true)
-	p, _ := db.GetParticipant("id-1")
-	p.Questions = FixedQuestions
-	p.Answers = map[string]string{}
-	p.PipelineStep = "interviewing"
-	// Need to update the participant in DB with questions
-	questionsJSON, _ := json.Marshal(FixedQuestions)
-	answersJSON, _ := json.Marshal(map[string]string{})
-	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
-		string(questionsJSON), string(answersJSON), "interviewing", "id-1")
+	forceInterview(db, "id-1", FixedQuestions, map[string]string{}, StepInterviewing)
 
 	// Submit a valid answer
 	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
@@ -399,7 +391,7 @@ func TestSubmitAnswer(t *testing.T) {
 	}
 
 	// Verify answer was stored - need to reload from DB
-	p, _ = db.GetParticipant("id-1")
+	p, _ := db.GetParticipant("id-1")
 	if p.Answers == nil {
 		t.Fatal("Answers is nil")
 	}
@@ -526,20 +518,13 @@ func TestSubmitAnswer_NoMoreQuestions(t *testing.T) {
 
 	// Create a participant with only 2 questions and both answered
 	db.CreateParticipant("id-1", "user1", "User 1", true)
-	p, _ := db.GetParticipant("id-1")
-	p.Questions = []Question{
+	forceInterview(db, "id-1", []Question{
 		{ID: "q0", Text: "Q1?"},
 		{ID: "q1", Text: "Q2?"},
-	}
-	p.Answers = map[string]string{
+	}, map[string]string{
 		"q0": "A1",
 		"q1": "A2",
-	}
-	p.PipelineStep = "interviewing"
-	questionsJSON, _ := json.Marshal(p.Questions)
-	answersJSON, _ := json.Marshal(p.Answers)
-	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
-		string(questionsJSON), string(answersJSON), "interviewing", "id-1")
+	}, StepInterviewing)
 
 	// Submit another answer (should fail)
 	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
@@ -559,16 +544,9 @@ func TestSubmitAnswer_MultiSelectInvalidJSON(t *testing.T) {
 
 	// Create a participant with multi-select questions
 	db.CreateParticipant("id-1", "user1", "User 1", true)
-	p, _ := db.GetParticipant("id-1")
-	p.Questions = []Question{
+	forceInterview(db, "id-1", []Question{
 		{ID: "q1", Text: "Select languages", MaxSelections: 3, Mode: MultiSelect},
-	}
-	p.Answers = map[string]string{}
-	p.PipelineStep = "interviewing"
-	questionsJSON, _ := json.Marshal(p.Questions)
-	answersJSON, _ := json.Marshal(map[string]string{})
-	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
-		string(questionsJSON), string(answersJSON), "interviewing", "id-1")
+	}, map[string]string{}, StepInterviewing)
 
 	// Submit invalid JSON for multi-select
 	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
@@ -588,16 +566,9 @@ func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
 
 	// Create a participant with multi-select questions (max 2 selections)
 	db.CreateParticipant("id-1", "user1", "User 1", true)
-	p, _ := db.GetParticipant("id-1")
-	p.Questions = []Question{
+	forceInterview(db, "id-1", []Question{
 		{ID: "q1", Text: "Select languages", MaxSelections: 2, Mode: MultiSelect},
-	}
-	p.Answers = map[string]string{}
-	p.PipelineStep = "interviewing"
-	questionsJSON, _ := json.Marshal(p.Questions)
-	answersJSON, _ := json.Marshal(map[string]string{})
-	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
-		string(questionsJSON), string(answersJSON), "interviewing", "id-1")
+	}, map[string]string{}, StepInterviewing)
 
 	// Submit too many selections
 	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",

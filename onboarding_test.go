@@ -207,7 +207,7 @@ func TestOnboarding_AParticipantBecomesReadyEvenIfPersonaOrInterestsCannotBeSave
 func TestOnboarding_AParticipantWithoutAProfileStillGetsAPersona(t *testing.T) {
 	o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
 	awaitingPersona(t, db, "p")
-	db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = 'p'`)
+	withoutProfile(db, "p")
 
 	o.Resume()
 

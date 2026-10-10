@@ -217,6 +217,9 @@ func TestRelationshipsPartnerOf_AnUndecodableAssessmentIsReportedNotEmptied(t *t
 	ps := readyParticipants(t, db, "A", "B")
 	rel := NewRelationships(db)
 	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+	// Corruption setup: undecodable assessment columns, which the store can
+	// never write (it always marshals well-formed JSON), to cover the strict
+	// decode rule on the Participant-table path.
 	db.db.Exec(`UPDATE participants SET red_flags = 'not json', icebreakers = '' WHERE id = 'A'`)
 
 	_, result, err := rel.PartnerOf("A")
@@ -248,6 +251,10 @@ func TestNewDB_MigratesTheOldMatchedPipelineStep(t *testing.T) {
 	}
 	old.CreateParticipant("A", "a", "A", true)
 	old.CreateParticipant("B", "b", "B", true)
+	// Migration-test setup: recreate a pre-migration row at the legacy
+	// 'matched' Pipeline Step, which the store's guarded transitions cannot
+	// write (Relationship State is not a Pipeline Step) — NewDB's migration
+	// must turn it into 'ready', keeping the partner.
 	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'B' WHERE id = 'A'`)
 	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'A' WHERE id = 'B'`)
 	old.Close()
@@ -338,6 +345,10 @@ func TestRelationships_UnknownParticipantsAndABrokenDatabase(t *testing.T) {
 	if _, _, err := rel.PartnerOf("ghost"); err == nil {
 		t.Error("the partner of an unknown Participant should be an error")
 	}
+	// Deliberately invalid state: a partner that does not exist. No store
+	// operation produces it — pairing only ever names an existing Participant
+	// and matched_with's single writer is the Relationships module — so the
+	// impossible state is written directly.
 	db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'A'`)
 	if _, _, err := rel.PartnerOf("A"); err == nil {
 		t.Error("a partner that no longer exists should be an error")
