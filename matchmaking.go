@@ -20,15 +20,15 @@ type Matchmaking struct {
 	participants *ParticipantStore
 	matcher      *Matcher
 	relations    *Relationships
-	maxChain     int        // a field, not a const, so a test can shrink it
+	maxChain     int
 	mu           sync.Mutex // one matching operation at a time
 }
 
 // NewMatchmaking creates the Matchmaking module.
-func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking {
+func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships, maxChain int) *Matchmaking {
 	return &Matchmaking{
 		db: db, participants: NewParticipantStore(db),
-		matcher: matcher, relations: relations, maxChain: defaultMaxChain,
+		matcher: matcher, relations: relations, maxChain: maxChain,
 	}
 }
 

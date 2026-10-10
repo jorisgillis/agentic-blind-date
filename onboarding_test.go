@@ -11,7 +11,7 @@ func onboardingFor(t *testing.T, llm *fakeLLM, gh GitHubAPI) (*Onboarding, *DB) 
 	db := newTestDB(t)
 	interview := NewInterview(db, llm)
 	matcher := NewMatcher(db, gh, llm)
-	matchmaking := NewMatchmaking(db, matcher, NewRelationships(db))
+	matchmaking := NewMatchmaking(db, matcher, NewRelationships(db), defaultMaxChain)
 	return NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking), db
 }
 

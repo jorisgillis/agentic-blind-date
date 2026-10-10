@@ -61,7 +61,7 @@ func main() {
 	matcher := NewMatcher(db, github, llm)
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, matcher, relations)
+	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
 	onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart

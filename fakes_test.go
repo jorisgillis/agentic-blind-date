@@ -232,7 +232,7 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	matcher := NewMatcher(db, gh, llm)
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, matcher, relations)
+	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
 	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking)
 	srv := &testSrv{URL: "http://test", checks: map[string]int{}}
 	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, srv)

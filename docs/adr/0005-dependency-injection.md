@@ -52,7 +52,7 @@ func NewInterview(db *DB, llm LLM) *Interview
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
 func NewRelationships(db *DB) *Relationships
 func NewPersonas(llm LLM) *Personas
-func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking
+func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships, maxChain int) *Matchmaking
 func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding
 
 // HTTP handlers
@@ -82,7 +82,7 @@ func main() {
     matcher := NewMatcher(db, github, llm)
     interview := NewInterview(db, llm)
     relations := NewRelationships(db)
-    matchmaking := NewMatchmaking(db, matcher, relations)
+    matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
     onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
     h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
 

@@ -253,7 +253,7 @@ func TestMatchNewcomer_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *
 	db := newTestDB(t)
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70}))
 	gh := newFakeGitHub()
-	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), NewRelationships(db))
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), NewRelationships(db), defaultMaxChain)
 	for _, id := range []string{"A", "B", "N"} {
 		db.CreateParticipant(id, id, id, true)
 		setProfile(t, db, id, &GitHubProfile{Login: id})
@@ -279,7 +279,7 @@ func TestMatchNewcomer_ADisplacedPartnerIsRematchedRightAway(t *testing.T) {
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70, {"B", "C"}: 60}))
 	gh := newFakeGitHub()
 	rel := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel, defaultMaxChain)
 	for _, id := range []string{"A", "B", "C", "D", "N"} {
 		seed(t, db, id, id, "ready")
 	}
@@ -305,7 +305,7 @@ func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70, {"B", "C"}: 60, {"D", "A"}: 80}))
 	gh := newFakeGitHub()
 	rel := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel, defaultMaxChain)
 	for _, id := range []string{"A", "B", "C", "D", "N"} {
 		seed(t, db, id, id, "ready")
 	}
@@ -331,9 +331,9 @@ func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain
 // isn't guaranteed to end on its own. The fake LLM here returns a different
 // score on every call (call count mod 10, offset well above every seeded
 // Match score), so the "assessments are cached and scores only rise" argument
-// for why chains end on their own does not apply; maxChain is shrunk on this
-// Matchmaking instance so the bound is reached within a small, deterministic
-// pool instead of needing hundreds of Participants.
+// for why chains end on their own does not apply; the Matchmaking is built
+// with a bound of 3 so it is reached within a small, deterministic pool
+// instead of needing hundreds of Participants.
 func TestMatchNewcomer_APathologicalChainStopsAtTheBound(t *testing.T) {
 	db := newTestDB(t)
 	var calls int64
@@ -343,8 +343,7 @@ func TestMatchNewcomer_APathologicalChainStopsAtTheBound(t *testing.T) {
 	})
 	gh := newFakeGitHub()
 	rel := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
-	matchmaking.maxChain = 3
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel, 3)
 	for _, id := range []string{"A", "B", "C", "D", "E", "F", "N"} {
 		seed(t, db, id, id, "ready")
 	}
@@ -367,7 +366,7 @@ func matchmakingWithPool(t *testing.T) (*Matchmaking, *DB, *fakeLLM) {
 	for _, id := range []string{"A", "B", "N"} {
 		seed(t, db, id, id, "ready")
 	}
-	return NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), NewRelationships(db)), db, llm
+	return NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), NewRelationships(db), defaultMaxChain), db, llm
 }
 
 func TestMatchmaking_ReportsFailures(t *testing.T) {
