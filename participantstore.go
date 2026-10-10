@@ -90,7 +90,7 @@ type ParticipantChange struct {
 	Delete       bool
 	Interests    *Interests
 	Match        *matchResult // the Participant's own side of their current Match
-	MatchedWith  *string      // who they're matched with now; "" clears it
+	MatchedWith  *string      // who they're matched with now; "" clears it — the pairing data's single writer is the Relationships module
 	Persona      *Persona
 	Profile      *GitHubProfile
 	Answers      map[string]string
@@ -126,6 +126,9 @@ func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 				}
 			}
 			if c.MatchedWith != nil {
+				// Every writer of the pairing data goes through the
+				// Relationships module: its mutex-serialized read-then-write
+				// is what keeps the Key Invariant.
 				if err := execFound(tx, c.ID, `UPDATE participants SET matched_with = ? WHERE id = ?`, *c.MatchedWith, c.ID); err != nil {
 					return err
 				}

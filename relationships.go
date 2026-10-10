@@ -12,6 +12,11 @@ import (
 // serializes them against each other — without it, a Remove interleaved
 // between another goroutine's read and write could unpair or delete a
 // Participant the other goroutine still thinks is a valid partner.
+//
+// The pairing data — the matched_with column — has a single writer: this
+// module. The Key Invariant rests on mu serializing each read-then-write
+// above, so a matched_with write from anywhere else would silently bypass
+// it: every writer of the pairing data goes through Relationships.
 type Relationships struct {
 	mu    sync.Mutex
 	store *ParticipantStore
