@@ -220,12 +220,16 @@ func notFoundOr(err error, id string) error {
 }
 
 // decodeMatchResult decodes a Match assessment's score, reason and three
-// flag/icebreaker lists. If any list is undecodable, the whole assessment is
-// invalid, so a legacy or corrupt row is rejected outright rather than
-// half-served — the rule the LLM cache uses, since a bad cache entry simply
-// means the pair gets re-scored. A Participant's own current Match is read
-// more leniently (decodeList, in relationships.go): once a Match is made,
-// one corrupted flag list shouldn't make the Match itself unreadable.
+// flag/icebreaker lists. It is the one codec for Match assessments: the
+// Participant table (scanParticipant) and the LLM cache (GetLLMCache) both
+// read through it, so undecodable data follows a single rule everywhere —
+// strict: any undecodable list invalidates the whole assessment. On the
+// Participant table that reports the row (a row that fails to scan is an
+// error, spec #53); in the LLM cache it counts as a miss, so the Pair is
+// simply re-scored. The trade-off, chosen deliberately: a Participant with
+// one corrupt list is unreadable until the row is fixed, where a lenient
+// rule would keep them readable with that list emptied — the price of never
+// half-serving an assessment.
 func decodeMatchResult(score int, reason, red, green, ice string) (*matchResult, error) {
 	r := &matchResult{Score: score, Reason: reason}
 	for _, f := range []struct {

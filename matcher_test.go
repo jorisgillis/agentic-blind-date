@@ -290,7 +290,8 @@ func TestMatcherMatchPool_NeedsTwoParticipants(t *testing.T) {
 
 func matchedDev(id, partner string, score int) *Participant {
 	p := testParticipant(id, id, []string{"Go"})
-	p.PipelineStep, p.MatchedWith, p.CompatScore = "matched", partner, score
+	p.PipelineStep, p.MatchedWith = "matched", partner
+	p.Assessment = &matchResult{Score: score}
 	return p
 }
 

@@ -338,7 +338,7 @@ func (m *Matcher) MatchNewcomer(newcomer *Participant, others []*Participant) *M
 	if len(unmatched) > 0 {
 		return m.bestFor(newcomer, unmatched, func(Match) bool { return true })
 	}
-	return m.bestFor(newcomer, matched, func(c Match) bool { return c.Result.Score > c.B.CompatScore })
+	return m.bestFor(newcomer, matched, func(c Match) bool { return c.Result.Score > c.B.Assessment.Score })
 }
 
 // bestFor assesses the newcomer against their top candidates in pool and

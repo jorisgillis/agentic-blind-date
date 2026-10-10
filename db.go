@@ -26,12 +26,12 @@ type Participant struct {
 	Interests      Interests
 	PipelineStep   Step
 	MatchedWith    string
-	CompatScore    int
-	CompatReason   string
-	RedFlags       string
-	GreenFlags     string
-	Icebreakers    string
-	CreatedAt      time.Time
+	// Assessment is the Participant's own side of their current Match, decoded
+	// from the five compat_* columns; nil when the Participant is unmatched.
+	// The columns are written by the Participant store's Change and read by
+	// the same codec as the LLM cache (decodeMatchResult).
+	Assessment *matchResult
+	CreatedAt  time.Time
 }
 
 // DisplayHandle is how the Participant is identified on screen: "@handle" for
@@ -147,13 +147,15 @@ func (db *DB) SetMaxOpenConns(n int) {
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {
 	p := &Participant{}
 	var profileJSON, questionsJSON, answersJSON, interestsJSON string
+	var compatScore int
+	var compatReason, redFlags, greenFlags, icebreakers string
 	err := row.Scan(
 		&p.ID, &p.GitHubHandle, &p.HasGitHub, &p.Name,
 		&p.PersonaName, &p.PersonaColor, &p.PersonaSymbol, &p.PersonaTagline,
 		&profileJSON, &questionsJSON, &answersJSON, &interestsJSON,
 		&p.PipelineStep,
-		&p.MatchedWith, &p.CompatScore, &p.CompatReason,
-		&p.RedFlags, &p.GreenFlags, &p.Icebreakers, &p.CreatedAt,
+		&p.MatchedWith, &compatScore, &compatReason,
+		&redFlags, &greenFlags, &icebreakers, &p.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -178,6 +180,17 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 		if err := json.Unmarshal([]byte(interestsJSON), &p.Interests); err != nil {
 			return nil, err
 		}
+	}
+
+	// The Match assessment is decoded by the same codec — and under the same
+	// rule for undecodable data — as the LLM cache, so a corrupt row is
+	// reported here rather than half-served. It is kept only while matched.
+	assessment, err := decodeMatchResult(compatScore, compatReason, redFlags, greenFlags, icebreakers)
+	if err != nil {
+		return nil, err
+	}
+	if p.MatchedWith != "" {
+		p.Assessment = assessment
 	}
 
 	return p, nil

@@ -30,6 +30,9 @@ func TestCreateAndGetParticipant(t *testing.T) {
 	if p.PipelineStep != "fetching_github" {
 		t.Errorf("PipelineStep: want fetching_github, got %s", p.PipelineStep)
 	}
+	if p.Assessment != nil {
+		t.Errorf("Assessment: want nil while unmatched, got %+v", p.Assessment)
+	}
 }
 
 func TestGetParticipantByHandle(t *testing.T) {
@@ -326,7 +329,9 @@ func TestNewDB_ReportsADatabaseThatCannotBeOpened(t *testing.T) {
 }
 
 func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
-	for _, column := range []string{"profile_json", "questions", "answers_json", "interests"} {
+	// The three list columns hold the Match assessment, decoded by the same
+	// strict codec as the LLM cache: undecodable data fails the row's scan.
+	for _, column := range []string{"profile_json", "questions", "answers_json", "interests", "red_flags", "green_flags", "icebreakers"} {
 		t.Run(column, func(t *testing.T) {
 			db := newTestDB(t)
 			db.CreateParticipant("p", "p", "P", true)

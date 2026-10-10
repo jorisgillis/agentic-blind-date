@@ -326,6 +326,8 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "match.html", map[string]any{
 		"Me":          p,
 		"Match":       match,
+		"Score":       result.Score,
+		"Reason":      result.Reason,
 		"RedFlags":    result.RedFlags,
 		"GreenFlags":  result.GreenFlags,
 		"Icebreakers": result.Icebreakers,
@@ -422,7 +424,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 		edges = append(edges, graphEdge{
 			Source:  p.ID,
 			Target:  p.MatchedWith,
-			Score:   p.CompatScore,
+			Score:   p.Assessment.Score,
 			Matched: true,
 		})
 	}

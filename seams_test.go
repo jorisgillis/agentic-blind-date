@@ -212,8 +212,8 @@ func TestOnboarding_SecondReadyParticipantIsMatchedWithoutAnAdminRematch(t *test
 	eventually(t, "second participant matched with the first", func() bool {
 		return reload(t, deps.db, second.ID).MatchedWith == first.ID
 	})
-	if f := reload(t, deps.db, first.ID); f.MatchedWith != second.ID || f.CompatScore != 88 {
-		t.Errorf("first participant: matched with %q at %d", f.MatchedWith, f.CompatScore)
+	if f := reload(t, deps.db, first.ID); f.MatchedWith != second.ID || f.Assessment == nil || f.Assessment.Score != 88 {
+		t.Errorf("first participant: matched with %q at %+v", f.MatchedWith, f.Assessment)
 	}
 }
 

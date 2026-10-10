@@ -266,8 +266,8 @@ func TestMatchNewcomer_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *
 		t.Fatal(err)
 	}
 
-	if n, a := reload(t, db, "N"), reload(t, db, "A"); n.MatchedWith != "A" || a.MatchedWith != "N" || a.CompatScore != 70 {
-		t.Errorf("want N and A matched at 70, got N→%q A→%q (%d)", n.MatchedWith, a.MatchedWith, a.CompatScore)
+	if n, a := reload(t, db, "N"), reload(t, db, "A"); n.MatchedWith != "A" || a.MatchedWith != "N" || a.Assessment == nil || a.Assessment.Score != 70 {
+		t.Errorf("want N and A matched at 70, got N→%q A→%q (%+v)", n.MatchedWith, a.MatchedWith, a.Assessment)
 	}
 	if b := reload(t, db, "B"); b.MatchedWith != "" || b.PipelineStep != "ready" {
 		t.Errorf("displaced B should be ready and unmatched, got step %s matched with %q", b.PipelineStep, b.MatchedWith)
