@@ -108,6 +108,8 @@ The organiser picks the provider for the whole deployment with `LLM_PROVIDER`. E
 
 An unknown `LLM_PROVIDER` or a missing required key or model stops the app at startup with a clear message, before the event.
 
+Transient failures — network errors, timeouts, `429 Too Many Requests` and `5xx` responses — are retried up to twice with exponential back-off. When the provider answers `429`, the error message carries a hint: it may be a workspace or organisation spending cap on the API key rather than an ordinary rate limit.
+
 #### Running against Ollama
 
 Ollama has no universal default model, so pull one first and name it in `LLM_MODEL`:
@@ -134,12 +136,13 @@ The 180s default timeout covers the first request, which can be slow while the m
 
 ```
 main.go          server setup, route registration, .env auto-loading
-db.go            SQLite schema, Participant type, non-Participant queries (activity, LLM cache, Event State)
+db.go            SQLite schema, Participant type, non-Participant queries (activity, LLM cache)
 participantstore.go  the only component other modules use to read or write Participants
 github.go        GitHub public API client
 llm.go           OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
 llmprovider.go   LLM provider selection from LLM_* settings
-agents.go        agent pipeline (RunSetup, RunMatching, greedy matching)
+onboarding.go    per-Participant pipeline (GitHub fetch, Interview, Persona)
+matchmaking.go   Continuous Matching + admin Rematch
 handlers.go      HTTP handlers + /data JSON endpoints + /bigscreen/graph-data
 questions.go     fixed Q&A question definitions
 
@@ -209,9 +212,9 @@ curl -X POST http://localhost:8080/admin/reset
 
 ### How matching works
 
-Matching is a three-phase process (`agents.go`):
+Matching is a three-phase process (`matcher.go`):
 
-**Phase 1 — Candidate selection** (`pairScore` + `top5Candidates` + `collectCandidatePairs`)
+**Phase 1 — Candidate selection** (`PairScore` + `topCandidates` + `candidatePairs`)
 
 For each participant, every other participant is scored with a heuristic:
 - +3 points per shared programming language
@@ -222,7 +225,7 @@ top-5 list are collected — at most N×5 pairs, typically fewer after
 deduplication. This caps the number of Mistral calls at a manageable level
 regardless of event size.
 
-**Phase 2 — LLM scoring** (`generateMatch`)
+**Phase 2 — LLM scoring** (`ScorePair`)
 
 Every unique candidate pair gets a Mistral API call, two running in parallel.
 Results are cached in memory so no pair is scored twice. Each call produces:

@@ -188,7 +188,7 @@ func TestInterview_CompletingWithoutAProfileAndWithAFreeTextLanguage(t *testing.
 	db := newTestDB(t)
 	iv := NewInterview(db, newFakeLLM())
 	p := participantInInterview(t, db, []Question{{ID: "extra_0", Text: "Top languages?"}})
-	db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = 'p-1'`)
+	withoutProfile(db, "p-1")
 	p = reload(t, db, "p-1")
 
 	if done, err := iv.Submit(p, "Zig"); !done || err != nil {

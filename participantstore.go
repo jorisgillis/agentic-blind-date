@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -91,38 +90,11 @@ type ParticipantChange struct {
 	Delete       bool
 	Interests    *Interests
 	Match        *matchResult // the Participant's own side of their current Match
-	MatchedWith  *string      // who they're matched with now; "" clears it
+	MatchedWith  *string      // who they're matched with now; "" clears it — the pairing data's single writer is the Relationships module
 	Persona      *Persona
 	Profile      *GitHubProfile
 	Answers      map[string]string
-	PipelineStep *Step // guarded exactly like DB.AdvanceStep: only from the step right before it
-}
-
-// tag names what kind of change this is, for the test-only fault hook
-// (faults_test.go): each ParticipantChange in production sets exactly one
-// concern, so one tag identifies the whole change.
-func (c ParticipantChange) tag() string {
-	switch {
-	case c.Delete:
-		return "delete"
-	case c.MatchedWith != nil:
-		if *c.MatchedWith == "" {
-			return "unpair"
-		}
-		return "pair"
-	case c.Persona != nil:
-		return "persona"
-	case c.Profile != nil:
-		return "profile"
-	case c.Interests != nil:
-		return "interests"
-	case c.Answers != nil:
-		return "answers"
-	case c.PipelineStep != nil:
-		return "pipeline_step"
-	default:
-		return ""
-	}
+	PipelineStep *Step // guarded exactly like advanceStep: only from the step right before it
 }
 
 // Change applies one or more Participant changes in a single transaction,
@@ -132,24 +104,21 @@ func (c ParticipantChange) tag() string {
 func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 	return s.db.inTx(func(tx *sql.Tx) error {
 		for _, c := range changes {
-			if err := s.db.checkFault(c.tag()); err != nil {
-				return err
-			}
 			if c.Delete {
-				if err := execFound(s.db.execCtx(), tx, c.ID, `DELETE FROM participants WHERE id = ?`, c.ID); err != nil {
+				if err := execFound(tx, c.ID, `DELETE FROM participants WHERE id = ?`, c.ID); err != nil {
 					return err
 				}
 				continue
 			}
 			if c.Interests != nil {
 				encoded, _ := json.Marshal(c.Interests) // plain data: cannot fail
-				if err := execFound(s.db.execCtx(), tx, c.ID, `UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
+				if err := execFound(tx, c.ID, `UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
 					return err
 				}
 			}
 			if c.Match != nil {
 				red, green, ice := encodeMatchResult(c.Match)
-				if err := execFound(s.db.execCtx(), tx, c.ID, `
+				if err := execFound(tx, c.ID, `
 					UPDATE participants SET compat_score = ?, compat_reason = ?,
 					    red_flags = ?, green_flags = ?, icebreakers = ?
 					WHERE id = ?`, c.Match.Score, c.Match.Reason, red, green, ice, c.ID); err != nil {
@@ -157,30 +126,33 @@ func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 				}
 			}
 			if c.MatchedWith != nil {
-				if err := execFound(s.db.execCtx(), tx, c.ID, `UPDATE participants SET matched_with = ? WHERE id = ?`, *c.MatchedWith, c.ID); err != nil {
+				// Every writer of the pairing data goes through the
+				// Relationships module: its mutex-serialized read-then-write
+				// is what keeps the Key Invariant.
+				if err := execFound(tx, c.ID, `UPDATE participants SET matched_with = ? WHERE id = ?`, *c.MatchedWith, c.ID); err != nil {
 					return err
 				}
 			}
 			if c.Persona != nil {
-				if err := execFound(s.db.execCtx(), tx, c.ID, `UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`,
+				if err := execFound(tx, c.ID, `UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`,
 					c.Persona.Name, c.Persona.Tagline, c.ID); err != nil {
 					return err
 				}
 			}
 			if c.Profile != nil {
 				encoded, _ := json.Marshal(c.Profile) // plain data: cannot fail
-				if err := execFound(s.db.execCtx(), tx, c.ID, `UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
+				if err := execFound(tx, c.ID, `UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
 					return err
 				}
 			}
 			if c.Answers != nil {
 				encoded, _ := json.Marshal(c.Answers) // plain data: cannot fail
-				if err := execFound(s.db.execCtx(), tx, c.ID, `UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
+				if err := execFound(tx, c.ID, `UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
 					return err
 				}
 			}
 			if c.PipelineStep != nil {
-				if err := advanceStep(s.db.execCtx(), tx, c.ID, *c.PipelineStep); err != nil {
+				if err := advanceStep(tx, c.ID, *c.PipelineStep); err != nil {
 					return err
 				}
 			}
@@ -189,15 +161,15 @@ func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 	})
 }
 
-// advanceStep moves a Participant to the next Pipeline Step, guarded like
-// DB.AdvanceStep: ErrIllegalTransition unless they are at the step directly
-// before it, so a step is entered at most once.
-func advanceStep(ctx context.Context, tx *sql.Tx, id string, to Step) error {
+// advanceStep moves a Participant to the next Pipeline Step, guarded:
+// ErrIllegalTransition unless they are at the step directly before it, so
+// a step is entered at most once.
+func advanceStep(tx *sql.Tx, id string, to Step) error {
 	from, ok := previousStep[to]
 	if !ok {
 		return fmt.Errorf("%w: nothing leads to %s", ErrIllegalTransition, to)
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE participants SET pipeline_step = ? WHERE id = ? AND pipeline_step = ?`, to, id, from)
+	res, err := tx.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ? AND pipeline_step = ?`, to, id, from)
 	if err != nil {
 		return err
 	}
@@ -208,18 +180,15 @@ func advanceStep(ctx context.Context, tx *sql.Tx, id string, to Step) error {
 }
 
 // StartInterview stores the profile and question set and opens the
-// Interview, all in one transaction, guarded like DB.StartInterview: it
-// fails with ErrIllegalTransition, writing nothing, unless the Participant
-// is still being prepared (so a second, concurrent preparation cannot swap
-// the questions of a running Interview).
+// Interview, all in one transaction, guarded: it fails with
+// ErrIllegalTransition, writing nothing, unless the Participant is still
+// being prepared (so a second, concurrent preparation cannot swap the
+// questions of a running Interview).
 func (s *ParticipantStore) StartInterview(id string, profile *GitHubProfile, questions []Question) error {
-	if err := s.db.checkFault("start_interview"); err != nil {
-		return err
-	}
 	profileJSON, _ := json.Marshal(profile)     // plain data: cannot fail
 	questionsJSON, _ := json.Marshal(questions) // plain data: cannot fail
 	return s.db.inTx(func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(s.db.execCtx(), `UPDATE participants SET pipeline_step = ?, profile_json = ?, questions = ?
+		res, err := tx.Exec(`UPDATE participants SET pipeline_step = ?, profile_json = ?, questions = ?
 			WHERE id = ? AND pipeline_step = ?`, StepInterviewing, string(profileJSON), string(questionsJSON), id, StepFetchingGitHub)
 		if err != nil {
 			return err
@@ -234,8 +203,8 @@ func (s *ParticipantStore) StartInterview(id string, profile *GitHubProfile, que
 // execFound runs a statement expected to touch the Participant id and
 // reports ErrParticipantNotFound when it touches no row instead,
 // distinguishing an unknown Participant from a failure.
-func execFound(ctx context.Context, tx *sql.Tx, id, query string, args ...any) error {
-	res, err := tx.ExecContext(ctx, query, args...)
+func execFound(tx *sql.Tx, id, query string, args ...any) error {
+	res, err := tx.Exec(query, args...)
 	if err != nil {
 		return err
 	}
@@ -254,12 +223,16 @@ func notFoundOr(err error, id string) error {
 }
 
 // decodeMatchResult decodes a Match assessment's score, reason and three
-// flag/icebreaker lists. If any list is undecodable, the whole assessment is
-// invalid, so a legacy or corrupt row is rejected outright rather than
-// half-served — the rule the LLM cache uses, since a bad cache entry simply
-// means the pair gets re-scored. A Participant's own current Match is read
-// more leniently (decodeList, in relationships.go): once a Match is made,
-// one corrupted flag list shouldn't make the Match itself unreadable.
+// flag/icebreaker lists. It is the one codec for Match assessments: the
+// Participant table (scanParticipant) and the LLM cache (GetLLMCache) both
+// read through it, so undecodable data follows a single rule everywhere —
+// strict: any undecodable list invalidates the whole assessment. On the
+// Participant table that reports the row (a row that fails to scan is an
+// error, spec #53); in the LLM cache it counts as a miss, so the Pair is
+// simply re-scored. The trade-off, chosen deliberately: a Participant with
+// one corrupt list is unreadable until the row is fixed, where a lenient
+// rule would keep them readable with that list emptied — the price of never
+// half-serving an assessment.
 func decodeMatchResult(score int, reason, red, green, ice string) (*matchResult, error) {
 	r := &matchResult{Score: score, Reason: reason}
 	for _, f := range []struct {

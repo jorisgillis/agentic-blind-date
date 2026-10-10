@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -147,6 +149,17 @@ func (g *fakeGitHub) followLookups() int {
 	return len(g.lookups)
 }
 
+// timeoutGitHub is a GitHubAPI whose profile fetch fails with a
+// deadline-exceeded error, like the production client when its bounded timeout
+// fires (spec #46's fault, injected without touching production code).
+type timeoutGitHub struct {
+	fakeGitHub
+}
+
+func (*timeoutGitHub) FetchProfile(handle string) (*GitHubProfile, error) {
+	return nil, fmt.Errorf("Get \"https://api.github.com/users/%s\": %w", handle, context.DeadlineExceeded)
+}
+
 // testSrv serves the mux in-process: no port is bound and nothing leaves the process.
 type testSrv struct {
 	URL string
@@ -161,6 +174,14 @@ func (s *testSrv) streamChecks(path string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.checks[path]
+}
+
+// OnStream records that the stream at path has looked at the current state,
+// so tests can wait for a stream to catch up.
+func (s *testSrv) OnStream(path string) {
+	s.mu.Lock()
+	s.checks[path]++
+	s.mu.Unlock()
 }
 
 func (s *testSrv) Client() *http.Client {
@@ -181,6 +202,7 @@ func (t handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // testDeps bundles the fakes behind a test server so tests can script and inspect them.
 type testDeps struct {
 	db          *DB
+	events      *EventStore
 	llm         *fakeLLM
 	github      *fakeGitHub
 	onboarding  *Onboarding
@@ -211,19 +233,18 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	matcher := NewMatcher(db, gh, llm)
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, matcher, relations)
+	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
 	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking)
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
-	srv := &testSrv{URL: "http://test", h: buildMux(h), checks: map[string]int{}}
-	h.streamChecked = func(path string) {
-		srv.mu.Lock()
-		srv.checks[path]++
-		srv.mu.Unlock()
-	}
-	return srv, &testDeps{db: db, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
+	srv := &testSrv{URL: "http://test", checks: map[string]int{}}
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, srv)
+	srv.h = buildMux(h)
+	return srv, &testDeps{db: db, events: NewEventStore(db), llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
 }
 
-// forceStep puts a Participant at any Pipeline Step, bypassing the guarded transitions (test setup only).
+// forceStep puts a Participant at any Pipeline Step, bypassing the guarded
+// transitions (test setup only): the store's PipelineStep change only moves
+// one step forward, so forcing an arbitrary step is not expressible through
+// ParticipantStore.Change.
 func forceStep(db *DB, id string, step Step) {
 	db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
 	db.changed()
@@ -238,28 +259,52 @@ func forceQuestions(db *DB, id string, questions []Question) {
 	db.changed()
 }
 
-// setProfile, setPersona and updateAnswers are test-setup conveniences that
-// write through the Participant store, now that DB's own per-column setters
+// forceInterview stages a Participant mid-Interview — a question set, the
+// answers so far and the Pipeline Step, in one write — bypassing the store
+// (test setup only, like forceStep and forceQuestions): no production code
+// sets Questions outside StartInterview's guarded, combined write, and the
+// store's PipelineStep change only moves one step forward, so a forced
+// mid-Interview state is not expressible through ParticipantStore.Change.
+func forceInterview(db *DB, id string, questions []Question, answers map[string]string, step Step) {
+	questionsJSON, _ := json.Marshal(questions)
+	answersJSON, _ := json.Marshal(answers)
+	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
+		string(questionsJSON), string(answersJSON), step, id)
+}
+
+// changeParticipant applies one Participant change through the Participant
+// store, failing the test when it does not go through: the one wrapper the
+// test-setup conveniences below share, now that DB's own per-column setters
 // are gone (#53).
-func setProfile(t *testing.T, db *DB, id string, profile *GitHubProfile) {
+func changeParticipant(t *testing.T, db *DB, change ParticipantChange) {
 	t.Helper()
-	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Profile: profile}); err != nil {
+	if err := NewParticipantStore(db).Change(change); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// setProfile, setPersona and updateAnswers stage one Participant field each.
+func setProfile(t *testing.T, db *DB, id string, profile *GitHubProfile) {
+	t.Helper()
+	changeParticipant(t, db, ParticipantChange{ID: id, Profile: profile})
 }
 
 func setPersona(t *testing.T, db *DB, id, name, tagline string) {
 	t.Helper()
-	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Persona: &Persona{Name: name, Tagline: tagline}}); err != nil {
-		t.Fatal(err)
-	}
+	changeParticipant(t, db, ParticipantChange{ID: id, Persona: &Persona{Name: name, Tagline: tagline}})
 }
 
 func updateAnswers(t *testing.T, db *DB, id string, answers map[string]string) {
 	t.Helper()
-	if err := NewParticipantStore(db).Change(ParticipantChange{ID: id, Answers: answers}); err != nil {
-		t.Fatal(err)
-	}
+	changeParticipant(t, db, ParticipantChange{ID: id, Answers: answers})
+}
+
+// withoutProfile corrupts a Participant's profile to JSON 'null', leaving
+// them without one. Corruption setup: the store cannot express this — a nil
+// Profile in a ParticipantChange means "leave the column alone", and a
+// non-nil profile marshals to an object, never 'null'.
+func withoutProfile(db *DB, id string) {
+	db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = ?`, id)
 }
 
 // eventually polls cond until it holds or the deadline passes.

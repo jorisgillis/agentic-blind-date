@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"log"
-	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -28,12 +26,12 @@ type Participant struct {
 	Interests      Interests
 	PipelineStep   Step
 	MatchedWith    string
-	CompatScore    int
-	CompatReason   string
-	RedFlags       string
-	GreenFlags     string
-	Icebreakers    string
-	CreatedAt      time.Time
+	// Assessment is the Participant's own side of their current Match, decoded
+	// from the five compat_* columns; nil when the Participant is unmatched.
+	// The columns are written by the Participant store's Change and read by
+	// the same codec as the LLM cache (decodeMatchResult).
+	Assessment *matchResult
+	CreatedAt  time.Time
 }
 
 // DisplayHandle is how the Participant is identified on screen: "@handle" for
@@ -54,65 +52,6 @@ func (p *Participant) IsMatched() bool {
 type DB struct {
 	db      *sql.DB
 	changes *changeFeed
-
-	// failWrite, set only by tests (faults_test.go), lets a test simulate a
-	// failure without SQL triggers: it is asked to approve each database
-	// operation about to happen, tagged with what it is ("interests",
-	// "persona", "pair", "delete", "persona_lookup", ...); a non-nil result
-	// fails that operation instead of performing it. Guarded by
-	// failWriteMu: onboarding runs writes on background goroutines,
-	// concurrently with the test that installs or restores this hook.
-	failWriteMu sync.Mutex
-	failWrite   func(tag string) error
-
-	// ctxMu guards ctx/cancel: writes go through execCtx's context, which
-	// tests can cancel (via breakOnFault, faults_test.go) to make one
-	// specific write fail as a genuine database error, not just a value the
-	// fault hook made up — without a SQL trigger.
-	ctxMu  sync.Mutex
-	ctx    context.Context
-	cancel context.CancelFunc
-}
-
-// execCtx returns the context the next write should use. If it was
-// cancelled (cancelCurrentWrite), that write is handed the cancelled
-// context to fail with, and a fresh, live one is put in its place so later
-// writes are unaffected.
-func (db *DB) execCtx() context.Context {
-	db.ctxMu.Lock()
-	defer db.ctxMu.Unlock()
-	ctx := db.ctx
-	if ctx.Err() != nil {
-		db.ctx, db.cancel = context.WithCancel(context.Background())
-	}
-	return ctx
-}
-
-// cancelCurrentWrite cancels whatever write next asks execCtx for its
-// context — a real, immediate failure for it.
-func (db *DB) cancelCurrentWrite() {
-	db.ctxMu.Lock()
-	defer db.ctxMu.Unlock()
-	db.cancel()
-}
-
-// setFailWrite installs (or, given nil, clears) the test-only failWrite hook.
-func (db *DB) setFailWrite(f func(tag string) error) {
-	db.failWriteMu.Lock()
-	defer db.failWriteMu.Unlock()
-	db.failWrite = f
-}
-
-// checkFault asks the test-only failWrite hook whether to fail a write
-// tagged tag. Outside tests, failWrite is nil and every write proceeds.
-func (db *DB) checkFault(tag string) error {
-	db.failWriteMu.Lock()
-	f := db.failWrite
-	db.failWriteMu.Unlock()
-	if f != nil {
-		return f(tag)
-	}
-	return nil
 }
 
 // NewDB creates and initializes a new database connection.
@@ -194,8 +133,7 @@ func NewDB(path string) (*DB, error) {
 		sqlDB.Exec(`UPDATE participants SET has_github = 0 WHERE github_handle LIKE 'no-github-%'`)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	return &DB{db: sqlDB, changes: newChangeFeed(), ctx: ctx, cancel: cancel}, nil
+	return &DB{db: sqlDB, changes: newChangeFeed()}, nil
 }
 
 func (db *DB) Close() error {
@@ -206,40 +144,18 @@ func (db *DB) SetMaxOpenConns(n int) {
 	db.db.SetMaxOpenConns(n)
 }
 
-// Reset starts the event over: no Participants, no activity, and back to
-// before the Reveal — one transaction, so a failure leaves everything as it was.
-func (db *DB) Reset() error {
-	return db.inTx(func(tx *sql.Tx) error {
-		if err := db.checkFault("reset_participants"); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(db.execCtx(), `DELETE FROM participants`); err != nil {
-			return err
-		}
-		if err := db.checkFault("reset_activity"); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(db.execCtx(), `DELETE FROM activity_log`); err != nil {
-			return err
-		}
-		if err := db.checkFault("reset_event_state"); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(db.execCtx(), `INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, BeforeReveal)
-		return err
-	})
-}
-
 func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) {
 	p := &Participant{}
 	var profileJSON, questionsJSON, answersJSON, interestsJSON string
+	var compatScore int
+	var compatReason, redFlags, greenFlags, icebreakers string
 	err := row.Scan(
 		&p.ID, &p.GitHubHandle, &p.HasGitHub, &p.Name,
 		&p.PersonaName, &p.PersonaColor, &p.PersonaSymbol, &p.PersonaTagline,
 		&profileJSON, &questionsJSON, &answersJSON, &interestsJSON,
 		&p.PipelineStep,
-		&p.MatchedWith, &p.CompatScore, &p.CompatReason,
-		&p.RedFlags, &p.GreenFlags, &p.Icebreakers, &p.CreatedAt,
+		&p.MatchedWith, &compatScore, &compatReason,
+		&redFlags, &greenFlags, &icebreakers, &p.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -266,6 +182,17 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 		}
 	}
 
+	// The Match assessment is decoded by the same codec — and under the same
+	// rule for undecodable data — as the LLM cache, so a corrupt row is
+	// reported here rather than half-served. It is kept only while matched.
+	assessment, err := decodeMatchResult(compatScore, compatReason, redFlags, greenFlags, icebreakers)
+	if err != nil {
+		return nil, err
+	}
+	if p.MatchedWith != "" {
+		p.Assessment = assessment
+	}
+
 	return p, nil
 }
 
@@ -278,17 +205,10 @@ const selectParticipant = `
 	FROM participants`
 
 func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
-	if err := db.checkFault("create"); err != nil {
-		return err
-	}
 	return db.inTx(func(tx *sql.Tx) error {
 		// Persona colour and symbol come from the Persona module, given current use.
-		rows, err := tx.QueryContext(db.execCtx(), `SELECT persona_color, persona_symbol, COUNT(*) FROM participants GROUP BY persona_color, persona_symbol`)
+		rows, err := tx.Query(`SELECT persona_color, persona_symbol, COUNT(*) FROM participants GROUP BY persona_color, persona_symbol`)
 		if err != nil {
-			return err
-		}
-		if err := db.checkFault("persona_lookup"); err != nil {
-			rows.Close()
 			return err
 		}
 		uses := make(map[string]int)
@@ -382,14 +302,11 @@ func (db *DB) LogActivity(message string) {
 }
 
 func (db *DB) GetRecentActivity(limit int) ([]string, error) {
-	rows, err := db.db.QueryContext(db.execCtx(), `SELECT message FROM activity_log ORDER BY created_at DESC LIMIT ?`, limit)
+	rows, err := db.db.Query(`SELECT message FROM activity_log ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	if err := db.checkFault("activity_read"); err != nil {
-		return nil, err
-	}
 
 	var msgs []string
 	for rows.Next() {

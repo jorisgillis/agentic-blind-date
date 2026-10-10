@@ -22,14 +22,14 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Go HTTP Server (main.go)                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │  DB (SQLite) │  │ GitHub Client│  │ Mistral Client│  │  Handlers  │ │
-│  │   (db.go)    │  │   (github.go)│  │  (mistral.go) │  │ (handlers.go)│ │
+│  │  DB (SQLite) │  │ GitHub Client│  │  LLM Client  │  │  Handlers  │ │
+│  │   (db.go)    │  │   (github.go)│  │   (llm.go)   │  │ (handlers.go)│ │
 │  └──────────────┘  └──────────────┘  └──────────────┘  └────────────┘ │
 │                              │                  │                   │
 │                              ▼                  ▼                   ▼
 │                    ┌─────────────────┐  ┌──────────┐  ┌──────────┐
-│                    │  Agent Pipeline  │  │   D3.js  │  │  HTMX    │
-│                    │    (agents.go)   │  │(screen)  │  │(templates)│
+│                    │  Onboarding &   │  │   D3.js  │  │  HTMX    │
+│                    │  Matchmaking    │  │(screen)  │  │(templates)│
 │                    └─────────────────┘  └──────────┘  └──────────┘
 └─────────────────────────────────────────────────────────────────────┘
                               │
@@ -47,10 +47,11 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 | Component | File | Purpose |
 |-----------|------|---------|
 | **Server & Routing** | `main.go` | HTTP server setup, route registration, .env auto-loading |
-| **Database Layer** | `db.go` | SQLite schema, Participant type, all CRUD queries |
+| **Database Layer** | `db.go` | SQLite schema, Participant type, change feed, activity log, LLM cache; the Participant store (`participantstore.go`) owns Participant SQL |
 | **GitHub Client** | `github.go` | Fetches user profiles, repos, languages from GitHub API |
-| **Mistral Client** | `mistral.go` | Handles chat completions with Mistral AI API |
-| **AI Agents** | `agents.go` | Pipeline: Setup (persona, questions), Matching (3-phase algorithm) |
+| **LLM Client** | `llm.go` | OpenAI-compatible chat completions adapter (`OpenAIClient`) for Mistral, Scaleway and Ollama |
+| **Onboarding** | `onboarding.go` | Per-Participant preparation and Interview: GitHub fetch, questions, Persona, ready |
+| **Matchmaking** | `matchmaking.go` | Continuous Matching and the admin Rematch; the Matcher (`matcher.go`) runs the 3-phase algorithm |
 | **Fixed Questions** | `questions.go` | 5 predefined opinionated questions |
 | **HTTP Handlers** | `handlers.go` | All route handlers, HTMX fragments, JSON endpoints |
 | **Templates** | `templates/*.html` | Server-side rendered HTML with HTMX, Tailwind, D3.js |
@@ -77,15 +78,18 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 
 ## AI Pipeline
 
-### RunSetup (Per Participant, Async)
+### Onboarding (Per Participant, Async)
 ```
 GitHub Fetch Profile
-    → Profile Agent (Mistral) → Generate Persona + Tagline
-    → Interviewer Agent (Mistral) → Generate 3 Custom Questions
+    → Interview (Mistral) → Generate 3 Custom Questions
     → Store & Mark as "interviewing"
+    → Personas (Mistral) → Generate Persona + Tagline
+    → Mark as "ready" & hand to Continuous Matching
 ```
 
-### RunMatching (Triggered by Admin)
+### Matchmaking (Continuous Matching + Admin Rematch)
+The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`matchmaking.go`) runs one matching operation at a time.
+
 **Phase 1 - Candidate Selection:**
 - Score all pairs: +3 per shared language, +1 per matching answer
 - Each participant keeps **top 5 candidates**
@@ -130,7 +134,6 @@ GitHub Fetch Profile
 | GET | `/user/wait-status/{id}` | HTMX fragment (polled 3s) |
 | GET | `/user/match/{id}` | Match results |
 | GET | `/bigscreen` | Projector view with D3 graph |
-| GET | `/bigscreen/state` | HTMX fragment (polled 3s) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel |
 | POST | `/admin/reveal` | Start matching |
@@ -220,8 +223,9 @@ agentic_blind_date/
 ├── main.go              # Entry point, server, routing, .env loading
 ├── db.go                # SQLite: schema, Participant struct, queries
 ├── github.go            # GitHub REST API client
-├── mistral.go           # Mistral chat completions client
-├── agents.go            # AI pipeline: RunSetup, RunMatching
+├── llm.go               # OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
+├── onboarding.go        # Per-Participant pipeline: GitHub fetch, Interview, Persona
+├── matchmaking.go       # Continuous Matching + admin Rematch
 ├── questions.go         # 5 fixed questions + constants
 ├── handlers.go          # All HTTP handlers
 ├── AGENTS.md            # Project instructions for coding agents

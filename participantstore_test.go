@@ -94,7 +94,7 @@ func TestParticipantStore_ChangeSetsTypedInterestsAndMatch(t *testing.T) {
 	interests := &Interests{Languages: []string{"Go"}, Tools: []string{"cli"}, Domains: []string{"Backend"}}
 	match := &matchResult{Score: 77, Reason: "Both love Go", RedFlags: []string{"tabs"}, GreenFlags: []string{"Go"}, Icebreakers: []string{"Why Go?"}}
 
-	if err := store.Change(ParticipantChange{ID: "p", Interests: interests, Match: match}); err != nil {
+	if err := store.Change(ParticipantChange{ID: "p", Interests: interests, Match: match, MatchedWith: strPtr("q")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,12 +102,14 @@ func TestParticipantStore_ChangeSetsTypedInterestsAndMatch(t *testing.T) {
 	if len(got.Interests.Languages) != 1 || got.Interests.Languages[0] != "Go" {
 		t.Errorf("interests round trip: got %+v", got.Interests)
 	}
-	if got.CompatScore != 77 || got.CompatReason != "Both love Go" {
-		t.Errorf("match round trip: got score %d reason %q", got.CompatScore, got.CompatReason)
+	if got.MatchedWith != "q" || got.Assessment == nil {
+		t.Fatalf("match round trip: matched with %q, assessment %+v", got.MatchedWith, got.Assessment)
 	}
-	red, err := decodeMatchResult(got.CompatScore, got.CompatReason, got.RedFlags, got.GreenFlags, got.Icebreakers)
-	if err != nil || len(red.RedFlags) != 1 || red.RedFlags[0] != "tabs" {
-		t.Errorf("match flags round trip: got %+v (err %v)", red, err)
+	if got.Assessment.Score != 77 || got.Assessment.Reason != "Both love Go" ||
+		len(got.Assessment.RedFlags) != 1 || got.Assessment.RedFlags[0] != "tabs" ||
+		len(got.Assessment.GreenFlags) != 1 || got.Assessment.GreenFlags[0] != "Go" ||
+		len(got.Assessment.Icebreakers) != 1 || got.Assessment.Icebreakers[0] != "Why Go?" {
+		t.Errorf("match assessment round trip: got %+v", got.Assessment)
 	}
 }
 

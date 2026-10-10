@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 )
@@ -13,6 +12,11 @@ import (
 // serializes them against each other — without it, a Remove interleaved
 // between another goroutine's read and write could unpair or delete a
 // Participant the other goroutine still thinks is a valid partner.
+//
+// The pairing data — the matched_with column — has a single writer: this
+// module. The Key Invariant rests on mu serializing each read-then-write
+// above, so a matched_with write from anywhere else would silently bypass
+// it: every writer of the pairing data goes through Relationships.
 type Relationships struct {
 	mu    sync.Mutex
 	store *ParticipantStore
@@ -54,7 +58,9 @@ func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 }
 
 // PartnerOf returns a Participant's partner and the assessment of their Match,
-// or nils when they are unmatched. Lists that cannot be decoded come back empty.
+// or nils when they are unmatched. The assessment is the typed value scanned
+// with the Participant; an undecodable one fails the read (the single decode
+// rule), it is not silently emptied.
 func (r *Relationships) PartnerOf(id string) (*Participant, *matchResult, error) {
 	p, err := r.store.Get(id)
 	if err != nil {
@@ -67,21 +73,7 @@ func (r *Relationships) PartnerOf(id string) (*Participant, *matchResult, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("partner of %s: %w", id, err)
 	}
-	return partner, &matchResult{
-		Score:       p.CompatScore,
-		Reason:      p.CompatReason,
-		RedFlags:    decodeList(p.RedFlags),
-		GreenFlags:  decodeList(p.GreenFlags),
-		Icebreakers: decodeList(p.Icebreakers),
-	}, nil
-}
-
-func decodeList(raw string) []string {
-	var list []string
-	if err := json.Unmarshal([]byte(raw), &list); err != nil || list == nil {
-		return []string{}
-	}
-	return list
+	return partner, p.Assessment, nil
 }
 
 // UnpairAll breaks every Match at once, returning everyone to the Pool.

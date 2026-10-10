@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-func onboardingFor(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*Onboarding, *DB) {
+func onboardingFor(t *testing.T, llm *fakeLLM, gh GitHubAPI) (*Onboarding, *DB) {
 	t.Helper()
 	db := newTestDB(t)
 	interview := NewInterview(db, llm)
 	matcher := NewMatcher(db, gh, llm)
-	matchmaking := NewMatchmaking(db, matcher, NewRelationships(db))
+	matchmaking := NewMatchmaking(db, matcher, NewRelationships(db), defaultMaxChain)
 	return NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking), db
 }
 
@@ -112,6 +112,26 @@ func TestOnboarding_SubmittingTheLastAnswerTwiceCreatesOnePersona(t *testing.T) 
 	}
 }
 
+// TestOnboarding_ASecondFinishStopsAtTheGuard covers finish's guard
+// synchronously: the Participant already left the Interview, so the guard
+// rejects the move into Persona creation while the test is still running,
+// instead of inside a fire-and-forget goroutine racing the coverage profile.
+func TestOnboarding_ASecondFinishStopsAtTheGuard(t *testing.T) {
+	llm := newFakeLLM()
+	o, db := onboardingFor(t, llm, newFakeGitHub())
+	db.CreateParticipant("p", "p", "P", true)
+	forceStep(db, "p", StepCreatingPersona)
+
+	o.finish(reload(t, db, "p")) // stops at the guard: no Persona is created
+
+	if n := llm.callsMatching("personality generator"); n != 0 {
+		t.Errorf("personas created: want 0, got %d", n)
+	}
+	if step := reload(t, db, "p").PipelineStep; step != StepCreatingPersona {
+		t.Errorf("step: want %s, got %s", StepCreatingPersona, step)
+	}
+}
+
 func TestOnboarding_RegisteringAgainResumesAPreparationThatNeverFinished(t *testing.T) {
 	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "octo"})
 	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`)
@@ -187,7 +207,7 @@ func TestOnboarding_AParticipantBecomesReadyEvenIfPersonaOrInterestsCannotBeSave
 func TestOnboarding_AParticipantWithoutAProfileStillGetsAPersona(t *testing.T) {
 	o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
 	awaitingPersona(t, db, "p")
-	db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = 'p'`)
+	withoutProfile(db, "p")
 
 	o.Resume()
 
@@ -269,4 +289,61 @@ func TestOnboarding_ResumeWithABrokenDatabaseDoesNothing(t *testing.T) {
 	breakDB(db)
 
 	o.Resume() // must not panic
+}
+
+// TestOnboarding_AGitHubProfileThatCannotBeFetchedFallsBackToTheHandle covers
+// the FetchProfile-error path of prepare synchronously: the fake GitHub has no
+// profile for "ghost", so the error branch runs while the test waits for it,
+// instead of inside a fire-and-forget goroutine racing the coverage profile.
+func TestOnboarding_AGitHubProfileThatCannotBeFetchedFallsBackToTheHandle(t *testing.T) {
+	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "octo", Languages: []string{"Go"}})
+	o, db := onboardingFor(t, newFakeLLM(), gh)
+	db.CreateParticipant("octo", "octo", "Octo", true)
+	db.CreateParticipant("ghost", "ghost", "Ghost", true)
+
+	fetched := o.githubProfile(reload(t, db, "octo"))
+	if len(fetched.Languages) != 1 || fetched.Languages[0] != "Go" {
+		t.Errorf("fetched profile: got %+v", fetched)
+	}
+
+	fallback := o.githubProfile(reload(t, db, "ghost"))
+	if fallback.Login != "ghost" || fallback.Name != "ghost" || len(fallback.Languages) != 0 {
+		t.Errorf("fallback profile: want the bare handle profile, got %+v", fallback)
+	}
+}
+
+// TestOnboarding_AGitHubFetchThatTimesOutFallsBackToTheMinimalProfile covers
+// #46's acceptance criterion: when the GitHub profile fetch times out,
+// onboarding continues with the minimal profile built from the handle, and the
+// Interview still starts.
+func TestOnboarding_AGitHubFetchThatTimesOutFallsBackToTheMinimalProfile(t *testing.T) {
+	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?"]}`)
+	o, db := onboardingFor(t, llm, &timeoutGitHub{})
+
+	id, err := o.Register("Octo", "octo", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eventually(t, "interview started", func() bool { return reload(t, db, id).PipelineStep == StepInterviewing })
+	p := reload(t, db, id)
+	if p.Profile == nil || p.Profile.Login != "octo" || p.Profile.Name != "octo" || len(p.Profile.Languages) != 0 {
+		t.Errorf("want the minimal profile built from the handle, got %+v", p.Profile)
+	}
+}
+
+// TestOnboarding_PreparingAParticipantThatVanishedIsSkipped covers prepare's
+// Participant-not-found error path synchronously, for the same reason: the
+// goroutine prepare runs in must not race the coverage profile.
+func TestOnboarding_PreparingAParticipantThatVanishedIsSkipped(t *testing.T) {
+	o, db := onboardingFor(t, newFakeLLM(), newFakeGitHub())
+
+	o.prepare("ghost") // must not panic and must not write anything
+
+	if _, err := db.GetParticipant("ghost"); err == nil {
+		t.Error("a vanished Participant must not be recreated")
+	}
+	if lines, err := db.GetRecentActivity(50); err != nil || len(lines) != 0 {
+		t.Errorf("a vanished Participant must not log activity: %v (%v)", lines, err)
+	}
 }

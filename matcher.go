@@ -263,6 +263,17 @@ func (m *Matcher) PairScore(a, b *Participant) int {
 		}
 	}
 
+	// Score the GitHub follow relationship: +5 if mutual, +3 if one-way
+	if a.HasGitHub && b.HasGitHub {
+		aFollowsB, bFollowsA := m.github.CheckMutualFollow(a.GitHubHandle, b.GitHubHandle)
+		switch {
+		case aFollowsB && bFollowsA:
+			score += 5
+		case aFollowsB || bFollowsA:
+			score += 3
+		}
+	}
+
 	return score
 }
 
@@ -327,7 +338,7 @@ func (m *Matcher) MatchNewcomer(newcomer *Participant, others []*Participant) *M
 	if len(unmatched) > 0 {
 		return m.bestFor(newcomer, unmatched, func(Match) bool { return true })
 	}
-	return m.bestFor(newcomer, matched, func(c Match) bool { return c.Result.Score > c.B.CompatScore })
+	return m.bestFor(newcomer, matched, func(c Match) bool { return c.Result.Score > c.B.Assessment.Score })
 }
 
 // bestFor assesses the newcomer against their top candidates in pool and

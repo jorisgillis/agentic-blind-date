@@ -46,13 +46,16 @@ func SelectLLM(lookup func(string) string) (LLM, error)
 // Participant store: the only component other modules use to read or write Participants
 func NewParticipantStore(db *DB) *ParticipantStore
 
+// Event-state store: the only component other modules use to read or change the Event State
+func NewEventStore(db *DB) *EventStore
+
 // Domain modules: upstream services are accepted through the LLM and GitHubAPI seams;
 // each builds its own Participant store from db rather than taking one as a parameter
 func NewInterview(db *DB, llm LLM) *Interview
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
 func NewRelationships(db *DB) *Relationships
 func NewPersonas(llm LLM) *Personas
-func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking
+func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships, maxChain int) *Matchmaking
 func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding
 
 // HTTP handlers
@@ -82,7 +85,7 @@ func main() {
     matcher := NewMatcher(db, github, llm)
     interview := NewInterview(db, llm)
     relations := NewRelationships(db)
-    matchmaking := NewMatchmaking(db, matcher, relations)
+    matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
     onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
     h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
 
@@ -97,7 +100,11 @@ func main() {
 
 #### The Participant store
 
-`ParticipantStore` (`participantstore.go`) is the only component other modules use to read or write Participants: a small, typed interface (`Get`, `All`, `AllByStep`, `GetByHandle`, `Create`, `Change`, `StartInterview`) instead of one method per column. `DB` still holds the underlying SQL and scanning for those reads (`GetParticipant`, `GetAllParticipants`, ...) and for `Create`, but no other module calls them directly any more — every domain module that changes a Participant — `Relationships`, `Onboarding`, `Interview`, `Matchmaking` — builds its own store from the `*DB` it already receives, the same way each builds nothing else: `NewParticipantStore(db)` is called once per constructor, not threaded through as its own parameter. `Handler` does the same for reads. `DB` keeps the schema, the LLM cache and non-Participant concerns (activity, Event State, the change feed); it no longer has per-column Participant setters (`SetProfile`, `SetPersona`, `AdvanceStep`, ... — removed, #53). This was an expand–migrate–contract refactor (#49–#53, see `docs/adr/` commit history): the store was added beside the old methods, every caller migrated across, and the old methods were deleted last.
+`ParticipantStore` (`participantstore.go`) is the only component other modules use to read or write Participants: a small, typed interface (`Get`, `All`, `AllByStep`, `GetByHandle`, `Create`, `Change`, `StartInterview`) instead of one method per column. `DB` still holds the underlying SQL and scanning for those reads (`GetParticipant`, `GetAllParticipants`, ...) and for `Create`, but no other module calls them directly any more — every domain module that changes a Participant — `Relationships`, `Onboarding`, `Interview`, `Matchmaking` — builds its own store from the `*DB` it already receives, the same way each builds nothing else: `NewParticipantStore(db)` is called once per constructor, not threaded through as its own parameter. `Handler` does the same for reads. `DB` keeps the schema, the LLM cache and the remaining non-Participant concerns (activity, the change feed); it no longer has per-column Participant setters (`SetProfile`, `SetPersona`, `AdvanceStep`, ... — removed, #53). This was an expand–migrate–contract refactor (#49–#53, see `docs/adr/` commit history): the store was added beside the old methods, every caller migrated across, and the old methods were deleted last.
+
+#### The event-state store
+
+`EventStore` (`eventstate.go`) owns the `event_state` table: `State` (anything unreadable counts as before the Reveal), `Reveal` (announcing the change on the change feed, so the streams refresh) and `Reset`. Spec #51 moved Participant writes onto the Participant store and named the Event State as one of the remaining pieces, suggesting the Participant store as its home; what was built instead — and what this ADR now ratifies, closing the #53 divergence — is a dedicated store (#106): the Event State is not a Participant, so it gets its own typed operations rather than methods on the Participant store. `Reset` is the one operation that spans tables — Participants, activity and the Event State — and stays a single transaction on the store, so a failure leaves everything as it was. The final store/database boundary is therefore: the Participant store owns Participant SQL, the event-state store owns event_state SQL, and `DB` keeps the schema, the change feed, the activity log and the LLM cache — it no longer carries any raw SQL for the Event State (`EventState`, `Reveal`, `setEventState` and `Reset` — removed, #106). Like the Participant store, the event-state store is built from the `*DB` a module already receives (`NewEventStore(db)`, called once per constructor, not threaded through as its own parameter); `Handler` does the same for reads.
 
 ## Consequences
 

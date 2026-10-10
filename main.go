@@ -61,12 +61,12 @@ func main() {
 	matcher := NewMatcher(db, github, llm)
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, matcher, relations)
+	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
 	onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, nil)
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)
@@ -95,7 +95,6 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/explore/{myId}/{otherId}", h.Explore)
 
 	mux.HandleFunc("GET /bigscreen", h.Screen)
-	mux.HandleFunc("GET /bigscreen/state", h.ScreenState)
 	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
 	mux.HandleFunc("GET /bigscreen/stream", h.ScreenStream)
 

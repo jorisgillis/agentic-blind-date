@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestPairKey(t *testing.T) {
+func TestPairKey_returnsStableKey(t *testing.T) {
 	a := &Participant{ID: "aaa"}
 	b := &Participant{ID: "bbb"}
 
@@ -23,7 +23,7 @@ func TestPairKey(t *testing.T) {
 }
 
 func TestPairScore_languages(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go", "Python"})
 	b := testParticipant("b", "The b", []string{"Go", "Rust"})
 
@@ -40,7 +40,7 @@ func TestPairScore_languages(t *testing.T) {
 }
 
 func TestPairScore_answers(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", nil, participantOpts{answers: map[string]string{"0": "Tabs", "1": "Go"}})
 	b := testParticipant("b", "The b", nil, participantOpts{answers: map[string]string{"0": "Tabs", "1": "Python"}})
 
@@ -51,7 +51,7 @@ func TestPairScore_answers(t *testing.T) {
 }
 
 func TestPairScore_combined(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
 	b := testParticipant("b", "The b", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
 
@@ -62,7 +62,7 @@ func TestPairScore_combined(t *testing.T) {
 }
 
 func TestPairScore_noOverlap(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})
 	b := testParticipant("b", "The b", []string{"Rust"}, participantOpts{answers: map[string]string{"0": "Spaces"}})
 
@@ -71,11 +71,62 @@ func TestPairScore_noOverlap(t *testing.T) {
 	}
 }
 
-// Note: Follow relationship scoring requires GitHub API access and is deferred for a follow-up
-// func TestPairScore_followRelationships
+func TestPairScore_followRelationships(t *testing.T) {
+	for name, tc := range map[string]struct {
+		follows [][2]string
+		want    int
+	}{
+		"mutual":  {follows: [][2]string{{"a", "b"}, {"b", "a"}}, want: 5},
+		"one-way": {follows: [][2]string{{"a", "b"}}, want: 3},
+		"reverse": {follows: [][2]string{{"b", "a"}}, want: 3},
+		"none":    {want: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gh := newFakeGitHub()
+			for _, f := range tc.follows {
+				gh.withFollow(f[0], f[1])
+			}
+			matcher := &Matcher{github: gh}
+			// Distinct languages keep the base score at 0, isolating the follow delta.
+			a := testParticipant("a", "The a", []string{"Go"})
+			b := testParticipant("b", "The b", []string{"Rust"})
+
+			if score := matcher.PairScore(a, b); score != tc.want {
+				t.Errorf("expected %d, got %d", tc.want, score)
+			}
+		})
+	}
+}
+
+func TestPairScore_followScoringCombinesWithOtherFactors(t *testing.T) {
+	gh := newFakeGitHub().withFollow("a", "b").withFollow("b", "a")
+	matcher := &Matcher{github: gh}
+	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{topics: []string{"web"}, answers: map[string]string{"0": "Tabs"}})
+	b := testParticipant("b", "The b", []string{"Go"}, participantOpts{topics: []string{"web"}, answers: map[string]string{"0": "Tabs"}})
+
+	// 3 (shared language) + 2 (shared topic) + 1 (shared answer) + 5 (mutual follow)
+	if score := matcher.PairScore(a, b); score != 11 {
+		t.Errorf("expected 11 (3 language + 2 topic + 1 answer + 5 mutual follow), got %d", score)
+	}
+}
+
+func TestPairScore_noFollowLookupWithoutGitHub(t *testing.T) {
+	gh := newFakeGitHub()
+	matcher := &Matcher{github: gh}
+	a := testParticipant("a", "The a", []string{"Go"})
+	b := testParticipant("b", "The b", []string{"Go"})
+	b.HasGitHub = false
+
+	if score := matcher.PairScore(a, b); score != 3 {
+		t.Errorf("expected 3 (shared language only), got %d", score)
+	}
+	if n := gh.followLookups(); n != 0 {
+		t.Errorf("follow lookups without a GitHub User: want 0, got %d", n)
+	}
+}
 
 func TestPairScore_topics(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{topics: []string{"web", "api"}})
 	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{topics: []string{"web", "data"}})
 
@@ -94,7 +145,7 @@ func TestPairScore_topics(t *testing.T) {
 }
 
 func TestPairScore_projectTypes(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{projectType: "Web"})
 	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{projectType: "Web"})
 
@@ -112,7 +163,7 @@ func TestPairScore_projectTypes(t *testing.T) {
 }
 
 func TestPairScore_devEnvironments(t *testing.T) {
-	matcher := &Matcher{}
+	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{devEnv: []string{"IDE", "VIM"}})
 	b := testParticipant("b", "The b", []string{"Python"}, participantOpts{devEnv: []string{"IDE", "Cloud"}})
 
@@ -130,33 +181,7 @@ func TestPairScore_devEnvironments(t *testing.T) {
 	}
 }
 
-func TestExtractJSON_bareJSON(t *testing.T) {
-	input := `{"name": "foo"}`
-	got := extractJSON(input)
-	if got != input {
-		t.Errorf("expected %q, got %q", input, got)
-	}
-}
-
-func TestExtractJSON_markdownWrapped(t *testing.T) {
-	input := "```json\n{\"name\": \"foo\"}\n```"
-	got := extractJSON(input)
-	want := `{"name": "foo"}`
-	if got != want {
-		t.Errorf("expected %q, got %q", want, got)
-	}
-}
-
-func TestExtractJSON_trailingGarbage(t *testing.T) {
-	input := `Here you go: {"name": "foo"} done!`
-	got := extractJSON(input)
-	want := `{"name": "foo"}`
-	if got != want {
-		t.Errorf("expected %q, got %q", want, got)
-	}
-}
-
-func TestFmtInterests(t *testing.T) {
+func TestFmtInterests_formatsCategories(t *testing.T) {
 	if result := fmtInterests(Interests{}); result != "" {
 		t.Errorf("expected empty string for zero value, got %s", result)
 	}
@@ -176,7 +201,7 @@ func TestFmtInterests(t *testing.T) {
 	}
 }
 
-func TestExtractJSON(t *testing.T) {
+func TestExtractJSON_extractsFromVariousFormats(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -228,7 +253,7 @@ func TestMatchNewcomer_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *
 	db := newTestDB(t)
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70}))
 	gh := newFakeGitHub()
-	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), NewRelationships(db))
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), NewRelationships(db), defaultMaxChain)
 	for _, id := range []string{"A", "B", "N"} {
 		db.CreateParticipant(id, id, id, true)
 		setProfile(t, db, id, &GitHubProfile{Login: id})
@@ -241,8 +266,8 @@ func TestMatchNewcomer_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *
 		t.Fatal(err)
 	}
 
-	if n, a := reload(t, db, "N"), reload(t, db, "A"); n.MatchedWith != "A" || a.MatchedWith != "N" || a.CompatScore != 70 {
-		t.Errorf("want N and A matched at 70, got N→%q A→%q (%d)", n.MatchedWith, a.MatchedWith, a.CompatScore)
+	if n, a := reload(t, db, "N"), reload(t, db, "A"); n.MatchedWith != "A" || a.MatchedWith != "N" || a.Assessment == nil || a.Assessment.Score != 70 {
+		t.Errorf("want N and A matched at 70, got N→%q A→%q (%+v)", n.MatchedWith, a.MatchedWith, a.Assessment)
 	}
 	if b := reload(t, db, "B"); b.MatchedWith != "" || b.PipelineStep != "ready" {
 		t.Errorf("displaced B should be ready and unmatched, got step %s matched with %q", b.PipelineStep, b.MatchedWith)
@@ -254,7 +279,7 @@ func TestMatchNewcomer_ADisplacedPartnerIsRematchedRightAway(t *testing.T) {
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70, {"B", "C"}: 60}))
 	gh := newFakeGitHub()
 	rel := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel, defaultMaxChain)
 	for _, id := range []string{"A", "B", "C", "D", "N"} {
 		seed(t, db, id, id, "ready")
 	}
@@ -280,7 +305,7 @@ func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain
 	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70, {"B", "C"}: 60, {"D", "A"}: 80}))
 	gh := newFakeGitHub()
 	rel := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel, defaultMaxChain)
 	for _, id := range []string{"A", "B", "C", "D", "N"} {
 		seed(t, db, id, id, "ready")
 	}
@@ -306,9 +331,9 @@ func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain
 // isn't guaranteed to end on its own. The fake LLM here returns a different
 // score on every call (call count mod 10, offset well above every seeded
 // Match score), so the "assessments are cached and scores only rise" argument
-// for why chains end on their own does not apply; maxChain is shrunk on this
-// Matchmaking instance so the bound is reached within a small, deterministic
-// pool instead of needing hundreds of Participants.
+// for why chains end on their own does not apply; the Matchmaking is built
+// with a bound of 3 so it is reached within a small, deterministic pool
+// instead of needing hundreds of Participants.
 func TestMatchNewcomer_APathologicalChainStopsAtTheBound(t *testing.T) {
 	db := newTestDB(t)
 	var calls int64
@@ -318,8 +343,7 @@ func TestMatchNewcomer_APathologicalChainStopsAtTheBound(t *testing.T) {
 	})
 	gh := newFakeGitHub()
 	rel := NewRelationships(db)
-	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
-	matchmaking.maxChain = 3
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel, 3)
 	for _, id := range []string{"A", "B", "C", "D", "E", "F", "N"} {
 		seed(t, db, id, id, "ready")
 	}
@@ -342,7 +366,7 @@ func matchmakingWithPool(t *testing.T) (*Matchmaking, *DB, *fakeLLM) {
 	for _, id := range []string{"A", "B", "N"} {
 		seed(t, db, id, id, "ready")
 	}
-	return NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), NewRelationships(db)), db, llm
+	return NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), NewRelationships(db), defaultMaxChain), db, llm
 }
 
 func TestMatchmaking_ReportsFailures(t *testing.T) {

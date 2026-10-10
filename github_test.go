@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewGitHubClient(t *testing.T) {
@@ -16,6 +17,23 @@ func TestNewGitHubClient(t *testing.T) {
 	client = NewGitHubClient("test-token")
 	if client.token != "test-token" {
 		t.Errorf("expected token 'test-token', got %s", client.token)
+	}
+}
+
+// TestNewGitHubClient_InstallsTheBoundedTimeout covers #104: the production
+// constructor arms its own http.Client with githubTimeout, so every GitHub
+// call is bounded without any test-side client override.
+func TestNewGitHubClient_InstallsTheBoundedTimeout(t *testing.T) {
+	client := NewGitHubClient("secret")
+
+	if client.httpClient == nil {
+		t.Fatal("the constructor must install an http.Client")
+	}
+	if client.httpClient.Timeout != githubTimeout {
+		t.Errorf("installed timeout: want %v, got %v", githubTimeout, client.httpClient.Timeout)
+	}
+	if githubTimeout != 10*time.Second {
+		t.Errorf("githubTimeout: want 10s, got %v", githubTimeout)
 	}
 }
 

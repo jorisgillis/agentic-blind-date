@@ -10,12 +10,15 @@ import (
 
 const chatPath = "/chat/completions"
 
-// openAIFor builds an OpenAIClient against the fake upstream with a zero
-// retry delay, so retry tests run instantly.
+// instantClock is a Clock whose sleeps return at once, so retry tests run instantly.
+type instantClock struct{}
+
+func (instantClock) Sleep(time.Duration) {}
+
+// openAIFor builds an OpenAIClient against the fake upstream with an
+// instant clock, so retry tests run instantly.
 func openAIFor(u *upstream, apiKey, model string, jsonMode bool) *OpenAIClient {
-	c := NewOpenAIClient("https://llm.test", apiKey, model, jsonMode, u.client())
-	c.retryDelay = func(int) time.Duration { return 0 }
-	return c
+	return NewOpenAIClient("https://llm.test", apiKey, model, jsonMode, u.client(), instantClock{})
 }
 
 func TestOpenAIClient_SendsBothPromptsWithAnExplicitTemperatureAndReturnsTheReply(t *testing.T) {
@@ -118,33 +121,66 @@ func TestOpenAIClient_RetriesTransientFailures(t *testing.T) {
 	}
 }
 
-func TestOpenAIClient_RetriesEvery5xxAndGivesUpAfterThreeAttempts(t *testing.T) {
-	for _, status := range []int{500, 502, 503, 504} {
-		u := newUpstream().on(chatPath, status, "boom")
+// TestOpenAIClient_RetryPolicyByStatus consolidates the retry rules into one
+// table: transient statuses (429 and 5xx) are retried up to three attempts
+// before giving up, while permanent 4xx failures return after a single attempt.
+func TestOpenAIClient_RetryPolicyByStatus(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status    int
+		wantTries int
+	}{
+		"429 is retried":   {429, 3},
+		"500 is retried":   {500, 3},
+		"502 is retried":   {502, 3},
+		"503 is retried":   {503, 3},
+		"504 is retried":   {504, 3},
+		"400 is permanent": {400, 1},
+		"401 is permanent": {401, 1},
+		"403 is permanent": {403, 1},
+		"404 is permanent": {404, 1},
+		"422 is permanent": {422, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			u := newUpstream().on(chatPath, tc.status, `{"error": {"message": "nope"}}`)
 
-		_, err := openAIFor(u, "key", "m", true).Chat("s", "u")
+			_, err := openAIFor(u, "key", "m", true).Chat("s", "u")
 
-		if err == nil {
-			t.Fatalf("%d: want an error", status)
-		}
-		if len(u.requests) != 3 {
-			t.Errorf("%d: attempts: want 3, got %d", status, len(u.requests))
-		}
+			if err == nil {
+				t.Fatalf("%d: want an error", tc.status)
+			}
+			if len(u.requests) != tc.wantTries {
+				t.Errorf("%d: attempts: want %d, got %d", tc.status, tc.wantTries, len(u.requests))
+			}
+		})
 	}
 }
 
-func TestOpenAIClient_NeverRetriesPermanentFailures(t *testing.T) {
-	for _, status := range []int{400, 401, 403, 404, 422} {
-		u := newUpstream().on(chatPath, status, `{"error": {"message": "nope"}}`)
+// TestOpenAIClient_A429HintsAtASpendingCap covers #35 (via #103): a 429 error
+// must hint that a workspace or organisation spending cap can masquerade as an
+// ordinary rate limit.
+func TestOpenAIClient_A429HintsAtASpendingCap(t *testing.T) {
+	u := newUpstream().on(chatPath, 429, `{"error": {"message": "slow down"}}`)
 
-		_, err := openAIFor(u, "key", "m", true).Chat("s", "u")
+	_, err := openAIFor(u, "key", "m", true).Chat("s", "u")
 
-		if err == nil {
-			t.Fatalf("%d: want an error", status)
-		}
-		if len(u.requests) != 1 {
-			t.Errorf("%d: should not be retried, got %d attempts", status, len(u.requests))
-		}
+	if err == nil || !strings.Contains(err.Error(), "429") {
+		t.Fatalf("want the 429 status in the error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "spending cap") {
+		t.Errorf("a 429 should hint at a workspace or organisation spending cap, got %v", err)
+	}
+}
+
+// TestOpenAIClient_AMalformedBaseURLReturnsAClearError covers #103: a
+// configured base URL that cannot be parsed must return a clear error from
+// doChat instead of nil-panicking on the request later.
+func TestOpenAIClient_AMalformedBaseURLReturnsAClearError(t *testing.T) {
+	c := NewOpenAIClient("http://\x7f.example", "key", "m", true, &http.Client{}, instantClock{})
+
+	_, err := c.Chat("s", "u")
+
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
+		t.Errorf("want a clear invalid-base-URL error, got %v", err)
 	}
 }
 
@@ -173,8 +209,7 @@ func TestOpenAIClient_MalformedRepliesAreErrorsAndNotRetried(t *testing.T) {
 }
 
 func TestOpenAIClient_WithoutAnHTTPClient(t *testing.T) {
-	c := NewOpenAIClient("", "key", "m", true, nil)
-	c.retryDelay = func(int) time.Duration { return 0 }
+	c := NewOpenAIClient("", "key", "m", true, nil, instantClock{})
 
 	if _, err := c.Chat("s", "u"); err == nil {
 		t.Error("want error without an HTTP client")
@@ -187,8 +222,7 @@ func TestOpenAIClient_NetworkFailures(t *testing.T) {
 		"body breaks off": truncatedTransport{},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := NewOpenAIClient("https://llm.test", "key", "m", true, &http.Client{Transport: transport})
-			c.retryDelay = func(int) time.Duration { return 0 }
+			c := NewOpenAIClient("https://llm.test", "key", "m", true, &http.Client{Transport: transport}, instantClock{})
 			if _, err := c.Chat("s", "u"); err == nil {
 				t.Error("want an error")
 			}
@@ -199,8 +233,7 @@ func TestOpenAIClient_NetworkFailures(t *testing.T) {
 func TestOpenAIClient_ATimeoutIsRetriedLikeAnyOtherTransientFailure(t *testing.T) {
 	u := newUpstream().on(chatPath, 200, `{"choices": [{"message": {"content": "hi"}}]}`)
 	calls := 0
-	c := NewOpenAIClient("https://llm.test", "key", "m", true, &http.Client{Timeout: 20 * time.Millisecond})
-	c.retryDelay = func(int) time.Duration { return 0 }
+	c := NewOpenAIClient("https://llm.test", "key", "m", true, &http.Client{Timeout: 20 * time.Millisecond}, instantClock{})
 	c.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calls++
 		if calls < 2 {
@@ -226,10 +259,18 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestOpenAIClient_BacksOffExponentially(t *testing.T) {
-	c := NewOpenAIClient("", "key", "m", true, nil)
+	c := NewOpenAIClient("", "key", "m", true, nil, instantClock{})
 
 	if c.retryDelay(1) != 2*time.Second || c.retryDelay(2) != 4*time.Second {
 		t.Errorf("want 2s then 4s, got %v then %v", c.retryDelay(1), c.retryDelay(2))
+	}
+}
+
+func TestRealClock_SleepsForTheGivenDuration(t *testing.T) {
+	start := time.Now()
+	realClock{}.Sleep(time.Millisecond)
+	if elapsed := time.Since(start); elapsed < time.Millisecond {
+		t.Errorf("realClock.Sleep returned after %v, want at least 1ms", elapsed)
 	}
 }
 

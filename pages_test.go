@@ -82,7 +82,7 @@ func TestLanding_UnknownCookieIsClearedAndTheFormShown(t *testing.T) {
 
 func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "i", "I", "interviewing")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
@@ -105,7 +105,7 @@ func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 
 func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "f", "F", "fetching_github")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
@@ -133,8 +133,9 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 
 func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "The Gopher", "ready")
+	setProfile(t, deps.db, "r", &GitHubProfile{Login: "r", Languages: []string{"Go"}, AccountAgeDays: 730})
 	seed(t, deps.db, "m", "M", "ready")
 	seed(t, deps.db, "m2", "M2", "ready")
 	pair(t, deps.db, "m", "m2")
@@ -142,6 +143,9 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	body := readBody(t, get(t, srv, "/user/wait/r"))
 	if !strings.Contains(body, "Tabs or spaces?") || !strings.Contains(body, "The Gopher") {
 		t.Errorf("wait page should show the persona and answers")
+	}
+	if !strings.Contains(body, "2 yrs") {
+		t.Errorf("wait page should show the GitHub account age")
 	}
 	if loc := get(t, srv, "/user/wait/m").Header.Get("Location"); loc != "/user/match/m" {
 		t.Errorf("matched: want match page, got %q", loc)
@@ -151,9 +155,9 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	}
 }
 
-func TestWaitStatus(t *testing.T) {
+func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
 	seed(t, deps.db, "m2", "M2", "ready")
@@ -172,7 +176,7 @@ func TestWaitStatus(t *testing.T) {
 
 func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal() // after the Reveal, matched Participants see their Match
+	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	seed(t, deps.db, "c", "The Snake", "ready")
@@ -267,6 +271,28 @@ func TestExplore_ShowsPersonasOnlyNotHandlesOrNames(t *testing.T) {
 	}
 }
 
+// TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal covers
+// #47's acceptance criterion: after the Reveal, two ready Participants can
+// Explore each other, in either direction.
+func TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
+	srv, deps := newTestServer(t, llm, nil)
+	deps.events.Reveal()
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+
+	for _, path := range []string{"/user/explore/a/b", "/user/explore/b/a"} {
+		resp := get(t, srv, path)
+		if resp.StatusCode != 200 {
+			t.Errorf("%s: want 200, got %d", path, resp.StatusCode)
+			continue
+		}
+		if body := readBody(t, resp); !strings.Contains(body, "80%") {
+			t.Errorf("%s: explore page: want the score, got %q", path, body)
+		}
+	}
+}
+
 func TestBigScreen_GraphHasMatchedAndPotentialEdges(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")
@@ -301,9 +327,6 @@ func TestBigScreen_GraphHasMatchedAndPotentialEdges(t *testing.T) {
 	}
 	if resp := get(t, srv, "/bigscreen"); resp.StatusCode != 200 {
 		t.Errorf("big screen: want 200, got %d", resp.StatusCode)
-	}
-	if body := readBody(t, get(t, srv, "/bigscreen/state")); !strings.Contains(body, "A") {
-		t.Errorf("screen state should list the participants")
 	}
 }
 
@@ -363,7 +386,7 @@ func stream(t *testing.T, srv *testSrv, path string, timeout time.Duration) stri
 
 func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal()
+	deps.events.Reveal()
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	pair(t, deps.db, "a", "b")
@@ -389,7 +412,7 @@ func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t
 
 func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.Reveal()
+	deps.events.Reveal()
 	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
 	setProfile(t, deps.db, "ada", &GitHubProfile{})
 	setPersona(t, deps.db, "ada", "The Analyst", "Computes")

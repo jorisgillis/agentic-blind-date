@@ -17,6 +17,17 @@ type LLM interface {
 	Chat(system, user string) (string, error)
 }
 
+// Clock paces the wait between retries: production sleeps for real, tests
+// inject a clock that returns at once so retry tests run instantly.
+type Clock interface {
+	Sleep(d time.Duration)
+}
+
+// realClock is the production Clock.
+type realClock struct{}
+
+func (realClock) Sleep(d time.Duration) { time.Sleep(d) }
+
 // OpenAIClient is an OpenAI-compatible chat completions adapter. Mistral,
 // Scaleway Generative APIs and Ollama all expose the same request and
 // response shape at POST {base}/chat/completions, so one adapter, configured
@@ -27,21 +38,26 @@ type OpenAIClient struct {
 	model      string
 	jsonMode   bool
 	httpClient *http.Client
-	retryDelay func(attempt int) time.Duration // wait before retry attempt 1, 2, ...
+	clock      Clock
 }
 
 // NewOpenAIClient creates an OpenAIClient. apiKey may be empty (no
 // Authorization header is sent, as Ollama needs none). httpClient's Timeout
-// bounds every call.
-func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *http.Client) *OpenAIClient {
+// bounds every call. clock paces the back-off between retries.
+func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *http.Client, clock Clock) *OpenAIClient {
 	return &OpenAIClient{
 		baseURL:    baseURL,
 		apiKey:     apiKey,
 		model:      model,
 		jsonMode:   jsonMode,
 		httpClient: httpClient,
-		retryDelay: func(attempt int) time.Duration { return time.Duration(1<<uint(attempt)) * time.Second },
+		clock:      clock,
 	}
+}
+
+// retryDelay is the exponential back-off before retry attempt 1, 2, ...
+func (c *OpenAIClient) retryDelay(attempt int) time.Duration {
+	return time.Duration(1<<uint(attempt)) * time.Second
 }
 
 type chatReq struct {
@@ -108,7 +124,10 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 	}
 	body, _ := json.Marshal(req)
 
-	httpReq, _ := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body)) // built from a configured base URL
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body)) // built from a configured base URL
+	if err != nil {
+		return "", &chatError{msg: fmt.Sprintf("LLM: invalid base URL %q: %v", c.baseURL, err)}
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
@@ -130,8 +149,13 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 		if resp.StatusCode == http.StatusNotFound {
 			log.Printf("LLM model %q not found (try pulling it first): %s", c.model, text)
 		}
+		msg := fmt.Sprintf("LLM HTTP %d: %s", resp.StatusCode, text)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			// #35: a 429 often means a workspace or organisation spending cap, not a rate limit.
+			msg += " — this may be a workspace or organisation spending cap rather than an ordinary rate limit"
+		}
 		return "", &chatError{
-			msg:       fmt.Sprintf("LLM HTTP %d: %s", resp.StatusCode, text),
+			msg:       msg,
 			retryable: retryableStatus(resp.StatusCode),
 		}
 	}
@@ -206,7 +230,7 @@ func (c *OpenAIClient) Chat(system, user string) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
-			time.Sleep(c.retryDelay(attempt))
+			c.clock.Sleep(c.retryDelay(attempt))
 		}
 		result, err := c.doChat(system, user)
 		if err == nil {

@@ -49,7 +49,8 @@ func TestRelationshipsPair_RecordsTheMatchOnBothSides(t *testing.T) {
 	}
 	for _, id := range []string{"A", "B"} {
 		p := reload(t, db, id)
-		if p.MatchedWith == "" || p.CompatScore != 80 || p.CompatReason != "why not" || p.RedFlags != `["tabs, sadly"]` {
+		if p.MatchedWith == "" || p.Assessment == nil || p.Assessment.Score != 80 || p.Assessment.Reason != "why not" ||
+			len(p.Assessment.RedFlags) != 1 || p.Assessment.RedFlags[0] != "tabs, sadly" {
 			t.Errorf("%s: %+v", id, p)
 		}
 	}
@@ -70,11 +71,11 @@ func TestRelationshipsPair_TakingOverAMatchReturnsTheDisplacedPartnerToThePool(t
 	if len(displaced) != 1 || displaced[0] != "B" {
 		t.Errorf("displaced: want [B], got %v", displaced)
 	}
-	if b := reload(t, db, "B"); b.MatchedWith != "" || b.PipelineStep != "ready" || b.CompatScore != 0 || b.RedFlags != "[]" {
+	if b := reload(t, db, "B"); b.MatchedWith != "" || b.PipelineStep != "ready" || b.Assessment != nil {
 		t.Errorf("B should be back in the Pool with no assessment, got %+v", b)
 	}
-	if a := reload(t, db, "A"); a.MatchedWith != "N" || a.CompatScore != 70 {
-		t.Errorf("A should be matched with N at 70, got %q %d", a.MatchedWith, a.CompatScore)
+	if a := reload(t, db, "A"); a.MatchedWith != "N" || a.Assessment == nil || a.Assessment.Score != 70 {
+		t.Errorf("A should be matched with N at 70, got %q %+v", a.MatchedWith, a.Assessment)
 	}
 	assertInvariant(t, db)
 }
@@ -106,8 +107,8 @@ func TestRelationshipsPair_AFailedPairLeavesNothingHalfWritten(t *testing.T) {
 	if err == nil {
 		t.Fatal("pairing with an unknown Participant should fail")
 	}
-	if a := reload(t, db, "A"); a.MatchedWith != "B" || a.CompatScore != 40 {
-		t.Errorf("A's original Match should be untouched, got %q %d", a.MatchedWith, a.CompatScore)
+	if a := reload(t, db, "A"); a.MatchedWith != "B" || a.Assessment == nil || a.Assessment.Score != 40 {
+		t.Errorf("A's original Match should be untouched, got %q %+v", a.MatchedWith, a.Assessment)
 	}
 	assertInvariant(t, db)
 }
@@ -143,7 +144,7 @@ func TestRelationshipsUnpairAll_ReturnsEveryoneToThePool(t *testing.T) {
 	}
 
 	for _, id := range []string{"A", "B", "C", "D", "E"} {
-		if p := reload(t, db, id); p.MatchedWith != "" || p.PipelineStep != "ready" || p.CompatScore != 0 || p.RedFlags != "[]" {
+		if p := reload(t, db, id); p.MatchedWith != "" || p.PipelineStep != "ready" || p.Assessment != nil {
 			t.Errorf("%s should be unmatched and ready with no assessment, got %+v", id, p)
 		}
 	}
@@ -207,17 +208,24 @@ func TestRelationshipsPartnerOf_ReturnsThePartnerAndTheAssessment(t *testing.T) 
 	}
 }
 
-func TestRelationshipsPartnerOf_AnUndecodableAssessmentIsEmptyNotBroken(t *testing.T) {
+// TestRelationshipsPartnerOf_AnUndecodableAssessmentIsReportedNotEmptied
+// covers the single decode rule on the Participant-table path: a corrupt
+// assessment fails the row's scan, so the read is an error rather than a
+// half-served assessment with emptied lists.
+func TestRelationshipsPartnerOf_AnUndecodableAssessmentIsReportedNotEmptied(t *testing.T) {
 	db := newTestDB(t)
 	ps := readyParticipants(t, db, "A", "B")
 	rel := NewRelationships(db)
 	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+	// Corruption setup: undecodable assessment columns, which the store can
+	// never write (it always marshals well-formed JSON), to cover the strict
+	// decode rule on the Participant-table path.
 	db.db.Exec(`UPDATE participants SET red_flags = 'not json', icebreakers = '' WHERE id = 'A'`)
 
 	_, result, err := rel.PartnerOf("A")
 
-	if err != nil || result.RedFlags == nil || len(result.RedFlags) != 0 || result.Icebreakers == nil {
-		t.Errorf("want empty lists, got %+v (err %v)", result, err)
+	if err == nil || result != nil {
+		t.Errorf("want the corrupt row reported, got %+v (err %v)", result, err)
 	}
 }
 
@@ -243,6 +251,10 @@ func TestNewDB_MigratesTheOldMatchedPipelineStep(t *testing.T) {
 	}
 	old.CreateParticipant("A", "a", "A", true)
 	old.CreateParticipant("B", "b", "B", true)
+	// Migration-test setup: recreate a pre-migration row at the legacy
+	// 'matched' Pipeline Step, which the store's guarded transitions cannot
+	// write (Relationship State is not a Pipeline Step) — NewDB's migration
+	// must turn it into 'ready', keeping the partner.
 	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'B' WHERE id = 'A'`)
 	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'A' WHERE id = 'B'`)
 	old.Close()
@@ -333,6 +345,10 @@ func TestRelationships_UnknownParticipantsAndABrokenDatabase(t *testing.T) {
 	if _, _, err := rel.PartnerOf("ghost"); err == nil {
 		t.Error("the partner of an unknown Participant should be an error")
 	}
+	// Deliberately invalid state: a partner that does not exist. No store
+	// operation produces it — pairing only ever names an existing Participant
+	// and matched_with's single writer is the Relationships module — so the
+	// impossible state is written directly.
 	db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'A'`)
 	if _, _, err := rel.PartnerOf("A"); err == nil {
 		t.Error("a partner that no longer exists should be an error")

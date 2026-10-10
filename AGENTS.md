@@ -36,7 +36,7 @@ For a comprehensive overview of the project architecture, components, workflow, 
 - **[AGENT_OVERVIEW.md](./AGENT_OVERVIEW.md)** - Complete project review including:
   - Architecture diagrams
   - Key components and their relationships
-  - AI pipeline workflow (RunSetup, RunMatching)
+  - AI pipeline workflow (Onboarding, Matchmaking)
   - Technical stack details
   - Route mappings
   - Data model and participant states
