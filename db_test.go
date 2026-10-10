@@ -56,6 +56,7 @@ func TestCreateParticipant_duplicate(t *testing.T) {
 
 func TestCreateParticipant_ReportsAFailureLookingUpPersonaUsage(t *testing.T) {
 	db := newTestDB(t)
+	db.CreateParticipant("other", "other", "Other", true)
 	failWrites(t, db, "persona_lookup")
 
 	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
@@ -64,8 +65,8 @@ func TestCreateParticipant_ReportsAFailureLookingUpPersonaUsage(t *testing.T) {
 }
 
 // TestCreateParticipant_ReportsAGenuineIterationFailure covers #53: a row
-// that fails to scan (or, as here, an iteration cut short by a cancelled
-// context) is reported through rows.Err(), not silently skipped.
+// that fails to scan (or, as here, an iteration cut short by a read failing
+// inside the database) is reported through rows.Err(), not silently skipped.
 func TestCreateParticipant_ReportsAGenuineIterationFailure(t *testing.T) {
 	db := newTestDB(t)
 	db.CreateParticipant("other", "other", "Other", true)
@@ -166,6 +167,7 @@ func TestActivityLog(t *testing.T) {
 
 func TestGetRecentActivity_ReportsAFailure(t *testing.T) {
 	db := newTestDB(t)
+	db.LogActivity("hello")
 	failWrites(t, db, "activity_read")
 
 	if _, err := db.GetRecentActivity(5); err == nil {
@@ -174,8 +176,8 @@ func TestGetRecentActivity_ReportsAFailure(t *testing.T) {
 }
 
 // TestGetRecentActivity_ReportsAGenuineIterationFailure covers #53: a row
-// that fails to scan (or, as here, an iteration cut short by a cancelled
-// context) is reported through rows.Err(), not silently skipped.
+// that fails to scan (or, as here, an iteration cut short by a read failing
+// inside the database) is reported through rows.Err(), not silently skipped.
 func TestGetRecentActivity_ReportsAGenuineIterationFailure(t *testing.T) {
 	db := newTestDB(t)
 	db.LogActivity("hello")
