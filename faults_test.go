@@ -4,39 +4,36 @@ import (
 	"testing"
 )
 
-// failWrites makes Participant writes fail until the returned function is
-// called (or the test ends): every write, or, when tags are given, only
-// writes tagged with one of those. Tags name what a write (or, for
-// "persona_lookup" and "activity_read", a read) is, not which SQL column it
-// touches: "create", "persona_lookup", "delete", "interests", "persona",
-// "profile", "answers", "pipeline_step", "start_interview", "pair", "unpair",
-// "activity_read", "reset_participants", "reset_activity" and
-// "reset_event_state" (see ParticipantChange.tag and DB.checkFault's call
-// sites). This is a test-only hook on DB (see DB.failWrite), not a SQL
-// trigger, so production code needs no fault-injection hooks.
+// Fault injection for the error paths (ADR-0008) lives entirely in this
+// file: failWrites and breakOnFault install SQLite triggers — or, for the
+// two read tags, a temporary view — that make the targeted write or read
+// fail inside the database itself, so production code needs no hooks.
+//
+// Tags name what a write (or, for "persona_lookup" and "activity_read", a
+// read) is, not which SQL column it touches: "create", "persona_lookup",
+// "delete", "interests", "persona", "profile", "answers", "pipeline_step",
+// "start_interview", "pair", "unpair", "activity_read", "reset_participants",
+// "reset_activity" and "reset_event_state". Each tag maps to exactly the
+// write it names, so a test can fail one write and leave the others alone.
+
+// failWrites makes writes fail until the returned function is called (or
+// the test ends): every write, or, when tags are given, only the writes
+// tagged with one of those. Each failure is raised by a SQL trigger, so it
+// surfaces from the database as "injected write failure".
 func failWrites(t *testing.T, db *DB, tags ...string) (restore func()) {
 	t.Helper()
-	db.setFailWrite(func(tag string) error {
-		if len(tags) == 0 {
-			return fakeError("injected write failure")
-		}
-		for _, want := range tags {
-			if tag == want {
-				return fakeError("injected write failure")
-			}
-		}
-		return nil
-	})
-	restored := false
-	restore = func() {
-		if restored {
-			return
-		}
-		restored = true
-		db.setFailWrite(nil)
-	}
-	t.Cleanup(restore)
-	return restore
+	return installFault(t, db, "injected write failure", tags)
+}
+
+// breakOnFault makes the write tagged tag fail as a genuine database error
+// — a SQL trigger, so the write really reaches the database and fails there,
+// not with an error the test made up — for the branch that handles a write
+// which passed every guard but then failed in the database itself. The read
+// tags fail the same way: a temporary view shadows the table and fails while
+// its rows are being read.
+func breakOnFault(t *testing.T, db *DB, tag string) {
+	t.Helper()
+	installFault(t, db, "database fault", []string{tag})
 }
 
 // breakDB makes every database call fail, reads included.
@@ -44,20 +41,100 @@ func breakDB(db *DB) {
 	db.db.Close()
 }
 
-// breakOnFault cancels the write tagged tag the moment it is about to
-// happen, so that write fails as a genuine database error, not just the
-// fault hook's own check — for the branch that handles a write which passed
-// every guard but then failed in the database itself. Not a SQL trigger:
-// DB.execCtx's context is cancelled for that one write, then replaced.
-func breakOnFault(t *testing.T, db *DB, tag string) {
+// installFault installs the SQL that fails the writes named by tags — every
+// write when tags is empty — raising the given message, and returns a
+// function that removes it again.
+func installFault(t *testing.T, db *DB, message string, tags []string) (restore func()) {
 	t.Helper()
-	db.setFailWrite(func(got string) error {
-		if got == tag {
-			db.cancelCurrentWrite()
+	var faults [][2]string // each fault: the SQL that installs it, the SQL that undoes it
+	if len(tags) == 0 {
+		faults = allWriteFaults(message)
+	} else {
+		byTag := writeFaults(message)
+		for _, tag := range tags {
+			fault, ok := byTag[tag]
+			if !ok {
+				t.Fatalf("unknown fault tag %q", tag)
+			}
+			faults = append(faults, fault)
 		}
-		return nil
-	})
-	t.Cleanup(func() { db.setFailWrite(nil) })
+	}
+	for _, fault := range faults {
+		if _, err := db.db.Exec(fault[0]); err != nil {
+			t.Fatalf("installing fault: %v", err)
+		}
+	}
+	restored := false
+	restore = func() {
+		if restored {
+			return
+		}
+		restored = true
+		for _, fault := range faults {
+			db.db.Exec(fault[1])
+		}
+	}
+	t.Cleanup(restore)
+	return restore
+}
+
+// writeFaults maps each tag to the SQL that fails exactly that write (or
+// read). A write fails through a trigger whose WHEN clause targets it alone;
+// a read fails through a temporary view shadowing the table, whose json()
+// call rejects the stored text while the rows are read, so the failure
+// surfaces mid-iteration through rows.Err().
+func writeFaults(message string) map[string][2]string {
+	trigger := func(tag, event, table, when string) [2]string {
+		stmt := `CREATE TRIGGER fault_` + tag + ` BEFORE ` + event + ` ON ` + table
+		if when != "" {
+			stmt += ` WHEN ` + when
+		}
+		stmt += ` BEGIN SELECT RAISE(ABORT, '` + message + `'); END`
+		return [2]string{stmt, `DROP TRIGGER IF EXISTS fault_` + tag}
+	}
+	return map[string][2]string{
+		"create":             trigger("create", "INSERT", "participants", ""),
+		"delete":             trigger("delete", "DELETE", "participants", ""),
+		"interests":          trigger("interests", "UPDATE", "participants", "NEW.interests <> OLD.interests"),
+		"persona":            trigger("persona", "UPDATE", "participants", "NEW.persona_name <> OLD.persona_name OR NEW.persona_tagline <> OLD.persona_tagline"),
+		"profile":            trigger("profile", "UPDATE", "participants", "NEW.profile_json <> OLD.profile_json"),
+		"answers":            trigger("answers", "UPDATE", "participants", "NEW.answers_json <> OLD.answers_json"),
+		"pipeline_step":      trigger("pipeline_step", "UPDATE", "participants", "NEW.pipeline_step <> OLD.pipeline_step"),
+		"start_interview":    trigger("start_interview", "UPDATE", "participants", "NEW.questions <> OLD.questions OR NEW.profile_json <> OLD.profile_json"),
+		"pair":               trigger("pair", "UPDATE OF matched_with", "participants", "NEW.matched_with <> ''"),
+		"unpair":             trigger("unpair", "UPDATE OF matched_with", "participants", "NEW.matched_with = ''"),
+		"reset_participants": trigger("reset_participants", "DELETE", "participants", ""),
+		"reset_activity":     trigger("reset_activity", "DELETE", "activity_log", ""),
+		"reset_event_state":  trigger("reset_event_state", "INSERT", "event_state", ""),
+		"persona_lookup": {
+			`CREATE TEMP VIEW participants AS SELECT json(persona_color) AS persona_color, persona_symbol FROM main.participants`,
+			`DROP VIEW IF EXISTS temp.participants`,
+		},
+		"activity_read": {
+			`CREATE TEMP VIEW activity_log AS SELECT json(message) AS message, created_at FROM main.activity_log`,
+			`DROP VIEW IF EXISTS temp.activity_log`,
+		},
+	}
+}
+
+// allWriteFaults fails every write path in the database.
+func allWriteFaults(message string) [][2]string {
+	trigger := func(name, event, table string) [2]string {
+		return [2]string{
+			`CREATE TRIGGER ` + name + ` BEFORE ` + event + ` ON ` + table + ` BEGIN SELECT RAISE(ABORT, '` + message + `'); END`,
+			`DROP TRIGGER IF EXISTS ` + name,
+		}
+	}
+	return [][2]string{
+		trigger("fault_insert_participants", "INSERT", "participants"),
+		trigger("fault_update_participants", "UPDATE", "participants"),
+		trigger("fault_delete_participants", "DELETE", "participants"),
+		trigger("fault_insert_activity", "INSERT", "activity_log"),
+		trigger("fault_delete_activity", "DELETE", "activity_log"),
+		trigger("fault_insert_event_state", "INSERT", "event_state"),
+		trigger("fault_insert_cache", "INSERT", "llm_cache"),
+		trigger("fault_delete_cache", "DELETE", "llm_cache"),
+	}
 }
 
 func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
