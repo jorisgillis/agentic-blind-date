@@ -6,20 +6,8 @@ import (
 	"testing"
 )
 
-func testDB(t *testing.T) *DB {
-	t.Helper()
-	db, err := NewDB(":memory:")
-	if err != nil {
-		t.Fatalf("NewDB: %v", err)
-	}
-	// In-memory SQLite creates a new database per connection; pin to one connection.
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
 func TestCreateAndGetParticipant(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	if err := db.CreateParticipant("id-1", "octocat", "Octo Cat", true); err != nil {
 		t.Fatalf("CreateParticipant: %v", err)
@@ -45,7 +33,7 @@ func TestCreateAndGetParticipant(t *testing.T) {
 }
 
 func TestGetParticipantByHandle(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-2", "torvalds", "Linus", true)
 
 	p, err := db.GetParticipantByHandle("torvalds")
@@ -58,7 +46,7 @@ func TestGetParticipantByHandle(t *testing.T) {
 }
 
 func TestCreateParticipant_duplicate(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-1", "octocat", "", true)
 	err := db.CreateParticipant("id-2", "octocat", "", true)
 	if err == nil {
@@ -66,14 +54,39 @@ func TestCreateParticipant_duplicate(t *testing.T) {
 	}
 }
 
-func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
-	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "", true)
+func TestCreateParticipant_ReportsAFailureLookingUpPersonaUsage(t *testing.T) {
+	db := newTestDB(t)
+	failWrites(t, db, "persona_lookup")
 
-	db.SetProfile("id-1", &GitHubProfile{Login: "octocat"})
-	db.SetQuestions("id-1", []Question{{ID: "q1", Text: "Question 1"}, {ID: "q2", Text: "Question 2"}})
-	db.SetPersona("id-1", "The Octo", "Ships things")
-	db.SetProfile("id-1", &GitHubProfile{Login: "octocat", Bio: "later"})
+	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+// TestCreateParticipant_ReportsAGenuineIterationFailure covers #53: a row
+// that fails to scan (or, as here, an iteration cut short by a cancelled
+// context) is reported through rows.Err(), not silently skipped.
+func TestCreateParticipant_ReportsAGenuineIterationFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("other", "other", "Other", true)
+	breakOnFault(t, db, "persona_lookup")
+
+	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("id-1", "octocat", "", true)
+	store := NewParticipantStore(db)
+
+	setProfile(t, db, "id-1", &GitHubProfile{Login: "octocat"})
+	forceQuestions(db, "id-1", []Question{{ID: "q1", Text: "Question 1"}, {ID: "q2", Text: "Question 2"}})
+	setPersona(t, db, "id-1", "The Octo", "Ships things")
+	if err := store.Change(ParticipantChange{ID: "id-1", Profile: &GitHubProfile{Login: "octocat", Bio: "later"}}); err != nil {
+		t.Fatal(err)
+	}
 
 	p, _ := db.GetParticipant("id-1")
 	if p.PersonaName != "The Octo" || p.PersonaTagline != "Ships things" {
@@ -88,13 +101,10 @@ func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 }
 
 func TestUpdateAnswers(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-1", "octocat", "", true)
 
-	answers := map[string]string{"0": "Tabs", "1": "Go"}
-	if err := db.UpdateAnswers("id-1", answers); err != nil {
-		t.Fatalf("UpdateAnswers: %v", err)
-	}
+	updateAnswers(t, db, "id-1", map[string]string{"0": "Tabs", "1": "Go"})
 
 	p, _ := db.GetParticipant("id-1")
 	if p.Answers == nil {
@@ -106,7 +116,7 @@ func TestUpdateAnswers(t *testing.T) {
 }
 
 func TestGetAllByStep(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.CreateParticipant("id-1", "alice", "", true)
 	db.CreateParticipant("id-2", "bob", "", true)
 	forceStep(db, "id-1", "ready")
@@ -126,7 +136,7 @@ func TestGetAllByStep(t *testing.T) {
 }
 
 func TestActivityLog(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	db.LogActivity("event one")
 	db.LogActivity("event two")
@@ -154,8 +164,30 @@ func TestActivityLog(t *testing.T) {
 	}
 }
 
+func TestGetRecentActivity_ReportsAFailure(t *testing.T) {
+	db := newTestDB(t)
+	failWrites(t, db, "activity_read")
+
+	if _, err := db.GetRecentActivity(5); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+// TestGetRecentActivity_ReportsAGenuineIterationFailure covers #53: a row
+// that fails to scan (or, as here, an iteration cut short by a cancelled
+// context) is reported through rows.Err(), not silently skipped.
+func TestGetRecentActivity_ReportsAGenuineIterationFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.LogActivity("hello")
+	breakOnFault(t, db, "activity_read")
+
+	if _, err := db.GetRecentActivity(5); err == nil {
+		t.Error("want a failure")
+	}
+}
+
 func TestCounts(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	if n := db.ParticipantCount(); n != 0 {
 		t.Errorf("initial count: want 0, got %d", n)
@@ -177,7 +209,7 @@ func TestCounts(t *testing.T) {
 }
 
 func TestLLMCache(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	if entry, exists := db.GetLLMCache("a:b"); exists || entry != nil {
 		t.Error("expected cache miss for non-existent key")
@@ -202,31 +234,11 @@ func TestLLMCache(t *testing.T) {
 }
 
 func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 85, 'x', 'red1,red2', 'g', 'i')`)
 
 	if _, exists := db.GetLLMCache("a:b"); exists {
 		t.Error("an undecodable legacy row should be re-scored, not served")
-	}
-}
-
-func TestUpdateInterests(t *testing.T) {
-	db := testDB(t)
-	db.CreateParticipant("id-1", "user1", "User 1", true)
-
-	interests := map[string]interface{}{
-		"languages": []string{"Go", "Python"},
-		"tools":     []string{"Docker"},
-	}
-
-	db.UpdateInterests("id-1", interests)
-
-	p, _ := db.GetParticipant("id-1")
-	if p.Interests == nil {
-		t.Fatal("expected Interests to be set")
-	}
-	if len(p.Interests) != 2 {
-		t.Errorf("expected 2 interest categories, got %d", len(p.Interests))
 	}
 }
 
@@ -288,7 +300,7 @@ func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
 }
 
 func TestInTx_ReportsAFailedCommit(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 
 	err := db.inTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`ROLLBACK`) // the transaction ends early, so the commit fails
@@ -314,7 +326,7 @@ func TestNewDB_ReportsADatabaseThatCannotBeOpened(t *testing.T) {
 func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
 	for _, column := range []string{"profile_json", "questions", "answers_json", "interests"} {
 		t.Run(column, func(t *testing.T) {
-			db := testDB(t)
+			db := newTestDB(t)
 			db.CreateParticipant("p", "p", "P", true)
 			db.db.Exec(`UPDATE participants SET ` + column + ` = '{broken' WHERE id = 'p'`)
 
@@ -329,7 +341,7 @@ func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
 }
 
 func TestDB_ReadsAndWritesAgainstABrokenDatabase(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.SetLLMCache("a:b", &matchResult{Score: 1})
 	db.db.Close()
 
@@ -347,7 +359,7 @@ func TestDB_ReadsAndWritesAgainstABrokenDatabase(t *testing.T) {
 }
 
 func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 5, 'x', 'null', '[]', '[]')`)
 
 	r, ok := db.GetLLMCache("a:b")
@@ -357,18 +369,63 @@ func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
 	}
 }
 
-func TestReset_ReportsWhenActivityCannotBeCleared(t *testing.T) {
-	db := testDB(t)
+// TestReset_IsOneTransaction covers #51: a Reset that fails partway through
+// (here, clearing activity) must not leave Participants deleted, activity
+// cleared or the Event State changed — the three writes commit together or
+// not at all.
+func TestReset_IsOneTransaction(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("p", "p", "P", true)
 	db.LogActivity("hello")
-	db.db.Exec(`CREATE TRIGGER keep_activity BEFORE DELETE ON activity_log BEGIN SELECT RAISE(ABORT, 'injected'); END`)
+	db.Reveal()
+	failWrites(t, db, "reset_activity")
 
 	if err := db.Reset(); err == nil {
-		t.Error("want the failure reported")
+		t.Fatal("want the failure reported")
+	}
+
+	if db.ParticipantCount() != 1 {
+		t.Errorf("Participants should be untouched, got %d", db.ParticipantCount())
+	}
+	if msgs, _ := db.GetRecentActivity(10); len(msgs) != 1 {
+		t.Errorf("activity should be untouched, got %v", msgs)
+	}
+	if db.EventState() != Revealed {
+		t.Errorf("Event State should be untouched, got %s", db.EventState())
+	}
+}
+
+func TestReset_ReportsAGenuineParticipantsDeleteFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateParticipant("p", "p", "P", true)
+	breakOnFault(t, db, "reset_participants")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestReset_ReportsAGenuineActivityDeleteFailure(t *testing.T) {
+	db := newTestDB(t)
+	db.LogActivity("hello")
+	breakOnFault(t, db, "reset_activity")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
+	}
+}
+
+func TestReset_ChecksTheEventStateWriteToo(t *testing.T) {
+	db := newTestDB(t)
+	failWrites(t, db, "reset_event_state")
+
+	if err := db.Reset(); err == nil {
+		t.Error("want a failure")
 	}
 }
 
 func TestCreateParticipant_ReportsADamagedSchema(t *testing.T) {
-	db := testDB(t)
+	db := newTestDB(t)
 	db.db.Exec(`ALTER TABLE participants DROP COLUMN persona_symbol`)
 
 	if err := db.CreateParticipant("p", "p", "P", true); err == nil {

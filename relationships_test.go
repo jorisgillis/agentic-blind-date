@@ -149,6 +149,26 @@ func TestRelationshipsUnpairAll_ReturnsEveryoneToThePool(t *testing.T) {
 	}
 }
 
+func TestRelationshipsUnpairAll_OverABrokenDatabaseIsAFailure(t *testing.T) {
+	db := newTestDB(t)
+	rel := NewRelationships(db)
+	breakDB(db)
+
+	if err := rel.UnpairAll(); err == nil {
+		t.Error("want a failure reading who is matched")
+	}
+}
+
+func TestRelationshipsUnpairAll_WithNobodyMatchedIsANoOp(t *testing.T) {
+	db := newTestDB(t)
+	readyParticipants(t, db, "A", "B")
+	rel := NewRelationships(db)
+
+	if err := rel.UnpairAll(); err != nil {
+		t.Errorf("nobody matched should just succeed, got %v", err)
+	}
+}
+
 func TestRematch_RunningAlongsideANewcomersMatchingKeepsTheKeyInvariant(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", `{"score": 70, "reason": "fine"}`)
 	_, deps := newTestServer(t, llm, nil)
@@ -268,21 +288,21 @@ func TestRelationships_FailedChangesLeaveEverythingAsItWas(t *testing.T) {
 		fault  string
 		change func(rel *Relationships, db *DB) error
 	}{
-		"pair: breaking the old Match fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+		"pair: breaking the old Match fails": {"unpair", func(rel *Relationships, db *DB) error {
 			_, err := rel.Pair(Match{A: reload(t, db, "N"), B: reload(t, db, "A"), Result: assessment(70)})
 			return err
 		}},
-		"pair: recording the new Match fails": {failPairing, func(rel *Relationships, db *DB) error {
+		"pair: recording the new Match fails": {"pair", func(rel *Relationships, db *DB) error {
 			_, err := rel.Pair(Match{A: reload(t, db, "N"), B: reload(t, db, "A"), Result: assessment(70)})
 			return err
 		}},
-		"remove: freeing the partner fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+		"remove: freeing the partner fails": {"unpair", func(rel *Relationships, db *DB) error {
 			return rel.Remove("A")
 		}},
-		"remove: deleting fails": {"DELETE", func(rel *Relationships, db *DB) error {
+		"remove: deleting fails": {"delete", func(rel *Relationships, db *DB) error {
 			return rel.Remove("A")
 		}},
-		"unpair all fails": {failUnpairing, func(rel *Relationships, db *DB) error {
+		"unpair all fails": {"unpair", func(rel *Relationships, db *DB) error {
 			return rel.UnpairAll()
 		}},
 	} {
@@ -292,7 +312,7 @@ func TestRelationships_FailedChangesLeaveEverythingAsItWas(t *testing.T) {
 			rel := NewRelationships(db)
 			rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
 			before := snapshot(t, db)
-			failOn(t, db, tc.fault)
+			failWrites(t, db, tc.fault)
 
 			if err := tc.change(rel, db); err == nil {
 				t.Fatal("want the failure reported")

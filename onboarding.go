@@ -12,7 +12,8 @@ import (
 // creates the Persona, computes Interests, makes them ready and hands them to
 // Continuous Matching. Preparation and finishing run in the background.
 type Onboarding struct {
-	db          *DB
+	db          *DB // activity only; every Participant read or write goes through store
+	store       *ParticipantStore
 	github      GitHubAPI
 	interview   *Interview
 	personas    *Personas
@@ -21,7 +22,10 @@ type Onboarding struct {
 
 // NewOnboarding creates the Onboarding module.
 func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding {
-	return &Onboarding{db: db, github: github, interview: interview, personas: personas, matchmaking: matchmaking}
+	return &Onboarding{
+		db: db, store: NewParticipantStore(db),
+		github: github, interview: interview, personas: personas, matchmaking: matchmaking,
+	}
 }
 
 // Register signs a Participant up and starts preparing their Interview in the
@@ -29,7 +33,7 @@ func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Per
 // Participant. Non-GitHub Users get a generated handle, which is only a key.
 func (o *Onboarding) Register(name, handle string, hasGitHub bool) (string, error) {
 	if hasGitHub {
-		if existing, err := o.db.GetParticipantByHandle(handle); err == nil {
+		if existing, err := o.store.GetByHandle(handle); err == nil {
 			o.resume(existing)
 			return existing.ID, nil
 		}
@@ -38,7 +42,7 @@ func (o *Onboarding) Register(name, handle string, hasGitHub bool) (string, erro
 	if !hasGitHub {
 		handle = "no-github-" + id[:8]
 	}
-	if err := o.db.CreateParticipant(id, handle, name, hasGitHub); err != nil {
+	if err := o.store.Create(id, handle, name, hasGitHub); err != nil {
 		return "", err
 	}
 	go o.prepare(id)
@@ -58,7 +62,7 @@ func (o *Onboarding) Answer(p *Participant, raw string) (done bool, err error) {
 
 // prepare fetches the GitHub profile (GitHub users only) and starts the Interview.
 func (o *Onboarding) prepare(participantID string) {
-	p, err := o.db.GetParticipant(participantID)
+	p, err := o.store.Get(participantID)
 	if err != nil {
 		log.Printf("Onboarding: participant %s not found: %v", participantID, err)
 		return
@@ -90,7 +94,7 @@ func (o *Onboarding) prepare(participantID string) {
 // Resume restarts onboarding work that was interrupted, for example by a
 // restart: Participants still being prepared, or whose Persona was being created.
 func (o *Onboarding) Resume() {
-	all, err := o.db.GetAllParticipants()
+	all, err := o.store.All()
 	if err != nil {
 		log.Printf("Onboarding: resume: %v", err)
 		return
@@ -112,7 +116,7 @@ func (o *Onboarding) resume(p *Participant) {
 // finish moves the Participant on from a completed Interview.
 func (o *Onboarding) finish(p *Participant) {
 	// Only one finish per Participant: a second submit of the last answer stops here.
-	if err := o.db.AdvanceStep(p.ID, StepCreatingPersona); err != nil {
+	if err := o.store.Change(ParticipantChange{ID: p.ID, PipelineStep: stepPtr(StepCreatingPersona)}); err != nil {
 		log.Printf("Onboarding: %v", err)
 		return
 	}
@@ -128,13 +132,13 @@ func (o *Onboarding) becomeReady(p *Participant) {
 		p.Profile = &GitHubProfile{}
 	}
 	persona := o.personas.Create(p)
-	if err := o.db.SetPersona(p.ID, persona.Name, persona.Tagline); err != nil {
+	if err := o.store.Change(ParticipantChange{ID: p.ID, Persona: &persona}); err != nil {
 		log.Printf("Onboarding: saving persona of %s: %v", p.ID, err)
 	}
-	if err := o.db.UpdateInterests(p.ID, interestsOf(p.Profile)); err != nil {
+	if err := o.store.Change(ParticipantChange{ID: p.ID, Interests: interestsOf(p.Profile)}); err != nil {
 		log.Printf("Onboarding: saving interests of %s: %v", p.ID, err)
 	}
-	if err := o.db.AdvanceStep(p.ID, StepReady); err != nil {
+	if err := o.store.Change(ParticipantChange{ID: p.ID, PipelineStep: stepPtr(StepReady)}); err != nil {
 		log.Printf("Onboarding: %v", err)
 		return
 	}
@@ -147,7 +151,7 @@ func (o *Onboarding) becomeReady(p *Participant) {
 
 // interestsOf computes a Participant's Interests, preferring GitHub data and
 // filling the gaps from ExtraAnswers, so Non-GitHub Users get Interests too.
-func interestsOf(profile *GitHubProfile) map[string]interface{} {
+func interestsOf(profile *GitHubProfile) *Interests {
 	languages, tools, domains := []string{}, []string{}, []string{}
 	languages = append(languages, profile.Languages...)
 	tools = append(tools, profile.TopTopics...)
@@ -162,5 +166,5 @@ func interestsOf(profile *GitHubProfile) map[string]interface{} {
 			domains = []string{ea.ProjectType}
 		}
 	}
-	return map[string]interface{}{"languages": languages, "tools": tools, "domains": domains}
+	return &Interests{Languages: languages, Tools: tools, Domains: domains}
 }

@@ -13,13 +13,13 @@ import (
 // which question comes next, validating and recording answers, and noticing
 // when the Interview is complete. Handlers only route and render.
 type Interview struct {
-	db  *DB
-	llm LLM
+	store *ParticipantStore
+	llm   LLM
 }
 
 // NewInterview creates the Interview module. The LLM generates Custom Questions.
 func NewInterview(db *DB, llm LLM) *Interview {
-	return &Interview{db: db, llm: llm}
+	return &Interview{store: NewParticipantStore(db), llm: llm}
 }
 
 // QuestionData contains the data needed to render a single interview question.
@@ -47,7 +47,7 @@ func (e *InvalidAnswerError) Error() string { return e.msg }
 //   - Non-GitHub User: Extra Questions + Fixed Questions without "go-to language",
 //     which the Extra Questions already cover
 func (iv *Interview) Start(p *Participant, profile *GitHubProfile) error {
-	return iv.db.StartInterview(p.ID, profile, iv.questionSet(profile, p.HasGitHub))
+	return iv.store.StartInterview(p.ID, profile, iv.questionSet(profile, p.HasGitHub))
 }
 
 func (iv *Interview) questionSet(profile *GitHubProfile, githubUser bool) []Question {
@@ -137,7 +137,7 @@ func (iv *Interview) Submit(p *Participant, raw string) (done bool, err error) {
 		answers[k] = v
 	}
 	answers[next.Question.ID] = answer
-	if err := iv.db.UpdateAnswers(p.ID, answers); err != nil {
+	if err := iv.store.Change(ParticipantChange{ID: p.ID, Answers: answers}); err != nil {
 		return false, err
 	}
 	p.Answers = answers
@@ -163,7 +163,7 @@ func (iv *Interview) complete(p *Participant) error {
 	}
 	profile.ExtraAnswers = extra
 	p.Profile = profile
-	return iv.db.SetProfile(p.ID, profile)
+	return iv.store.Change(ParticipantChange{ID: p.ID, Profile: profile})
 }
 
 // extraAnswersFrom maps answers to the Extra Questions onto ExtraAnswers.
