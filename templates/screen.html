@@ -54,20 +54,7 @@
   </footer>
 
 <script>
-const colorMap = {
-  'bg-red-400':    '#f87171',
-  'bg-blue-400':   '#60a5fa',
-  'bg-amber-400':  '#fbbf24',
-  'bg-green-400':  '#4ade80',
-  'bg-purple-400': '#c084fc',
-  'bg-pink-400':   '#f472b6',
-  'bg-teal-400':   '#2dd4bf',
-  'bg-orange-400': '#fb923c',
-  'bg-indigo-400': '#818cf8',
-  'bg-rose-400':   '#fb7185',
-  'bg-cyan-400':   '#22d3ee',
-  'bg-lime-400':   '#a3e635',
-};
+const colorMap = {{.Palette}};
 
 // QR code pointing to /user
 new QRCode(document.getElementById('qr'), {
@@ -119,11 +106,9 @@ function drag() {
 }
 
 let currentNodes = [];
-let currentPhase = 'onboarding';
 
 function updateGraph(data) {
-  const phase = data.phase;
-  currentPhase = phase;
+  const revealed = data.revealed;
 
   const byId = Object.fromEntries(currentNodes.map(n => [n.id, n]));
   const hasNew = data.nodes.some(n => !byId[n.id]);
@@ -186,15 +171,14 @@ function updateGraph(data) {
   const nodeAll = nodeEnter.merge(nodeSel);
   nodeAll.select('circle')
     .attr('fill', d => colorMap[d.color] || '#6b7280')
-    .attr('opacity', d => ['ready', 'matched'].includes(d.step) ? 1 : 0.5)
+    .attr('opacity', d => d.ready ? 1 : 0.5)
     .style('filter', d => {
-      if (phase === 'revealed' && d.step === 'matched') return 'drop-shadow(0 0 10px #ec4899)';
-      if (phase === 'matching') return 'drop-shadow(0 0 8px #fde047)';
+      if (revealed && d.matched) return 'drop-shadow(0 0 10px #ec4899)';
       return null;
     });
   nodeAll.select('.sym').text(d => d.symbol || '🎭');
   nodeAll.select('.lbl').text(d =>
-    phase === 'revealed' ? '@' + d.handle : (d.persona_name || '')
+    revealed ? d.handle : (d.persona_name || '')
   );
 
   if (hasNew) simulation.alpha(0.4).restart();
@@ -205,16 +189,7 @@ function updateGraph(data) {
 
   // Status labels
   const phaseEl = document.getElementById('phase-label');
-  if (phase === 'matching') {
-    phaseEl.textContent = '⚡ Matchmaking in progress...';
-    phaseEl.classList.add('animate-pulse', 'text-yellow-300', 'font-bold');
-    phaseEl.classList.remove('text-gray-400');
-  } else {
-    const labels = { onboarding: 'Waiting for participants', revealed: 'Matches revealed! 🎉' };
-    phaseEl.textContent = labels[phase] || phase;
-    phaseEl.classList.remove('animate-pulse', 'text-yellow-300', 'font-bold');
-    phaseEl.classList.add('text-gray-400');
-  }
+  phaseEl.textContent = data.phase_label;
   document.getElementById('count-label').textContent =
     data.nodes.length + ' participant' + (data.nodes.length !== 1 ? 's' : '');
 
@@ -228,10 +203,7 @@ const es = new EventSource('/bigscreen/stream');
 es.addEventListener('message', e => {
   try { updateGraph(JSON.parse(e.data)); } catch(err) { console.warn('graph parse error:', err); }
 });
-es.onerror = () => {
-  // fall back to polling if SSE fails
-  setTimeout(() => fetch('/bigscreen/graph-data').then(r => r.json()).then(updateGraph).catch(() => {}), 5000);
-};
+// EventSource reconnects on its own if the connection drops.
 
 window.addEventListener('resize', () => {
   simulation.force('center', d3.forceCenter(w() / 2, h() / 2));

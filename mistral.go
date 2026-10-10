@@ -6,14 +6,22 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
+
+// LLM sends a system and user prompt to a language model and returns its reply.
+// MistralClient is the production adapter; tests use an in-memory fake.
+type LLM interface {
+	Chat(system, user string) (string, error)
+}
 
 // MistralClient provides access to the Mistral AI API for LLM operations.
 type MistralClient struct {
 	apiKey     string
 	model      string
 	httpClient *http.Client
+	retryDelay func(attempt int) time.Duration // wait before retry attempt 1, 2, ...
 }
 
 // NewMistralClient creates a new MistralClient with the given API key, model, and HTTP client.
@@ -22,6 +30,7 @@ func NewMistralClient(apiKey, model string, httpClient *http.Client) *MistralCli
 		apiKey:     apiKey,
 		model:      model,
 		httpClient: httpClient,
+		retryDelay: func(attempt int) time.Duration { return time.Duration(1<<uint(attempt)) * time.Second },
 	}
 }
 
@@ -64,10 +73,7 @@ func (m *MistralClient) doChat(system, user string) (string, error) {
 
 	body, _ := json.Marshal(req)
 
-	httpReq, err := http.NewRequest("POST", "https://api.mistral.ai/v1/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
+	httpReq, _ := http.NewRequest("POST", "https://api.mistral.ai/v1/chat/completions", bytes.NewReader(body)) // constant URL
 	httpReq.Header.Set("Authorization", "Bearer "+m.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -106,7 +112,7 @@ func (m *MistralClient) Chat(system, user string) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
-			time.Sleep(time.Duration(1<<uint(attempt)) * time.Second)
+			time.Sleep(m.retryDelay(attempt))
 		}
 		result, err := m.doChat(system, user)
 		if err == nil {
@@ -115,4 +121,15 @@ func (m *MistralClient) Chat(system, user string) (string, error) {
 		lastErr = err
 	}
 	return "", lastErr
+}
+
+// extractJSON returns the outermost {...} of an LLM reply, which may wrap the
+// JSON in prose or markdown fences.
+func extractJSON(s string) string {
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start == -1 || end == -1 || end <= start {
+		return s
+	}
+	return s[start : end+1]
 }

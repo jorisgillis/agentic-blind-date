@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -48,13 +49,25 @@ func TestGitHubProfileSummary(t *testing.T) {
 	}
 }
 
-func TestCheckMutualFollow(t *testing.T) {
-	// Create a client with empty token (will fail on actual HTTP calls)
-	client := NewGitHubClient("")
+func TestParticipantSummary_AsksWhetherTheParticipantHasGitHub(t *testing.T) {
+	extra := &ExtraAnswers{Languages: []string{"Python"}, ProjectType: "Data Science/Engineering"}
+	ada := &Participant{HasGitHub: false, Profile: &GitHubProfile{Login: "stale-login", ExtraAnswers: extra}}
+	octo := &Participant{HasGitHub: true, Profile: &GitHubProfile{Login: "", Languages: []string{"Go"}, ExtraAnswers: extra}}
 
-	// Test with empty handles - returns (false, false)
-	aFollowsB, bFollowsA := client.CheckMutualFollow("", "")
-	if aFollowsB || bFollowsA {
-		t.Error("expected both to be false for empty handles")
+	if s := ada.Summary(); strings.Contains(s, "GitHub") || !strings.Contains(s, "Languages: Python") {
+		t.Errorf("Non-GitHub User: no GitHub section, just their answers:\n%s", s)
+	}
+	if s := octo.Summary(); !strings.Contains(s, "Languages used: Go") || !strings.Contains(s, "Project type: Data Science/Engineering") {
+		t.Errorf("GitHub user: GitHub data (even without a login) plus answers:\n%s", s)
+	}
+}
+
+func TestSummary_DescribesReposAndHandlesAMissingProfile(t *testing.T) {
+	p := &GitHubProfile{Login: "octo", TopRepos: []RepoInfo{{Name: "gopher", Description: "Go things", Language: "Go", Stars: 3}}}
+	if s := p.Summary(); !strings.Contains(s, "Repo: gopher — Go things (Go) ⭐3") {
+		t.Errorf("repo line: got\n%s", s)
+	}
+	if s := (&Participant{}).Summary(); s != "" {
+		t.Errorf("no profile, no summary: got %q", s)
 	}
 }

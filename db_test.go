@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"os"
 	"testing"
 )
 
@@ -19,7 +21,7 @@ func testDB(t *testing.T) *DB {
 func TestCreateAndGetParticipant(t *testing.T) {
 	db := testDB(t)
 
-	if err := db.CreateParticipant("id-1", "octocat", "Octo Cat"); err != nil {
+	if err := db.CreateParticipant("id-1", "octocat", "Octo Cat", true); err != nil {
 		t.Fatalf("CreateParticipant: %v", err)
 	}
 
@@ -44,7 +46,7 @@ func TestCreateAndGetParticipant(t *testing.T) {
 
 func TestGetParticipantByHandle(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-2", "torvalds", "Linus")
+	db.CreateParticipant("id-2", "torvalds", "Linus", true)
 
 	p, err := db.GetParticipantByHandle("torvalds")
 	if err != nil {
@@ -57,59 +59,37 @@ func TestGetParticipantByHandle(t *testing.T) {
 
 func TestCreateParticipant_duplicate(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "")
-	err := db.CreateParticipant("id-2", "octocat", "")
+	db.CreateParticipant("id-1", "octocat", "", true)
+	err := db.CreateParticipant("id-2", "octocat", "", true)
 	if err == nil {
 		t.Error("expected error for duplicate github_handle, got nil")
 	}
 }
 
-func TestUpdatePipelineStep(t *testing.T) {
+func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "")
+	db.CreateParticipant("id-1", "octocat", "", true)
 
-	if err := db.UpdatePipelineStep("id-1", "interviewing"); err != nil {
-		t.Fatalf("UpdatePipelineStep: %v", err)
-	}
+	db.SetProfile("id-1", &GitHubProfile{Login: "octocat"})
+	db.SetQuestions("id-1", []Question{{ID: "q1", Text: "Question 1"}, {ID: "q2", Text: "Question 2"}})
+	db.SetPersona("id-1", "The Octo", "Ships things")
+	db.SetProfile("id-1", &GitHubProfile{Login: "octocat", Bio: "later"})
 
 	p, _ := db.GetParticipant("id-1")
-	if p.PipelineStep != "interviewing" {
-		t.Errorf("want interviewing, got %s", p.PipelineStep)
+	if p.PersonaName != "The Octo" || p.PersonaTagline != "Ships things" {
+		t.Errorf("persona: got %q / %q", p.PersonaName, p.PersonaTagline)
 	}
-}
-
-func TestUpdateProfile(t *testing.T) {
-	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "")
-
-	profile := &GitHubProfile{Login: "octocat"}
-	questions := []Question{
-		{ID: "q1", Text: "Question 1"},
-		{ID: "q2", Text: "Question 2"},
-	}
-	err := db.UpdateProfile("id-1", profile, "The Octo", "Ships things", questions)
-	if err != nil {
-		t.Fatalf("UpdateProfile: %v", err)
-	}
-
-	p, _ := db.GetParticipant("id-1")
-	if p.PersonaName != "The Octo" {
-		t.Errorf("PersonaName: want 'The Octo', got %s", p.PersonaName)
-	}
-	if p.PersonaTagline != "Ships things" {
-		t.Errorf("PersonaTagline: want 'Ships things', got %s", p.PersonaTagline)
-	}
-	if p.Profile == nil || p.Profile.Login != "octocat" {
-		t.Errorf("Profile unexpected: %+v", p.Profile)
+	if p.Profile == nil || p.Profile.Bio != "later" {
+		t.Errorf("profile: got %+v", p.Profile)
 	}
 	if len(p.Questions) != 2 || p.Questions[0].ID != "q1" {
-		t.Errorf("Questions unexpected: %+v", p.Questions)
+		t.Errorf("questions should survive the later profile write: %+v", p.Questions)
 	}
 }
 
 func TestUpdateAnswers(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "octocat", "")
+	db.CreateParticipant("id-1", "octocat", "", true)
 
 	answers := map[string]string{"0": "Tabs", "1": "Go"}
 	if err := db.UpdateAnswers("id-1", answers); err != nil {
@@ -125,36 +105,11 @@ func TestUpdateAnswers(t *testing.T) {
 	}
 }
 
-func TestSetMatched(t *testing.T) {
-	db := testDB(t)
-	db.CreateParticipant("id-1", "alice", "")
-	db.CreateParticipant("id-2", "bob", "")
-
-	err := db.SetMatched("id-1", "id-2", 87, "Great combo!", `["flag1"]`, `["flag2"]`, `["starter"]`)
-	if err != nil {
-		t.Fatalf("SetMatched: %v", err)
-	}
-
-	p, _ := db.GetParticipant("id-1")
-	if p.MatchedWith != "id-2" {
-		t.Errorf("MatchedWith: want id-2, got %s", p.MatchedWith)
-	}
-	if p.CompatScore != 87 {
-		t.Errorf("CompatScore: want 87, got %d", p.CompatScore)
-	}
-	if p.CompatReason != "Great combo!" {
-		t.Errorf("CompatReason: want 'Great combo!', got %s", p.CompatReason)
-	}
-	if p.PipelineStep != "matched" {
-		t.Errorf("PipelineStep: want matched, got %s", p.PipelineStep)
-	}
-}
-
 func TestGetAllByStep(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "alice", "")
-	db.CreateParticipant("id-2", "bob", "")
-	db.UpdatePipelineStep("id-1", "ready")
+	db.CreateParticipant("id-1", "alice", "", true)
+	db.CreateParticipant("id-2", "bob", "", true)
+	forceStep(db, "id-1", "ready")
 
 	ready, err := db.GetAllByStep("ready")
 	if err != nil {
@@ -167,24 +122,6 @@ func TestGetAllByStep(t *testing.T) {
 	fetching, _ := db.GetAllByStep("fetching_github")
 	if len(fetching) != 1 || fetching[0].ID != "id-2" {
 		t.Errorf("expected [id-2], got %v", fetching)
-	}
-}
-
-func TestPhase(t *testing.T) {
-	db := testDB(t)
-
-	phase, err := db.GetPhase()
-	if err != nil {
-		t.Fatalf("GetPhase: %v", err)
-	}
-	if phase != "onboarding" {
-		t.Errorf("initial phase: want onboarding, got %s", phase)
-	}
-
-	db.SetPhase("matching")
-	phase, _ = db.GetPhase()
-	if phase != "matching" {
-		t.Errorf("after SetPhase: want matching, got %s", phase)
 	}
 }
 
@@ -224,143 +161,58 @@ func TestCounts(t *testing.T) {
 		t.Errorf("initial count: want 0, got %d", n)
 	}
 
-	db.CreateParticipant("id-1", "alice", "")
-	db.CreateParticipant("id-2", "bob", "")
-	db.UpdatePipelineStep("id-1", "ready")
-	db.UpdatePipelineStep("id-2", "matched")
+	db.CreateParticipant("id-1", "alice", "", true)
+	db.CreateParticipant("id-2", "bob", "", true)
+	db.CreateParticipant("id-3", "carol", "", true)
+	forceStep(db, "id-1", "ready")
+	forceStep(db, "id-2", "ready")
+	NewRelationships(db).Pair(Match{A: &Participant{ID: "id-1"}, B: &Participant{ID: "id-2"}, Result: &matchResult{}})
 
-	if n := db.ParticipantCount(); n != 2 {
-		t.Errorf("ParticipantCount: want 2, got %d", n)
+	if n := db.ParticipantCount(); n != 3 {
+		t.Errorf("ParticipantCount: want 3, got %d", n)
 	}
 	if n := db.ReadyCount(); n != 2 {
-		t.Errorf("ReadyCount: want 2 (ready+matched), got %d", n)
+		t.Errorf("ReadyCount: want 2 (matched Participants are ready too), got %d", n)
 	}
 }
 
 func TestLLMCache(t *testing.T) {
 	db := testDB(t)
 
-	// Test cache miss
-	entry, exists := db.GetLLMCache("a:b")
-	if exists {
+	if entry, exists := db.GetLLMCache("a:b"); exists || entry != nil {
 		t.Error("expected cache miss for non-existent key")
 	}
-	if entry != nil {
-		t.Error("expected nil entry for cache miss")
-	}
 
-	// Test cache set and get
-	db.SetLLMCache("a:b", 85, "Great match!", "red1,red2", "green1,green2", "ice1,ice2")
-	entry, exists = db.GetLLMCache("a:b")
+	db.SetLLMCache("a:b", &matchResult{Score: 85, Reason: "Great match!", RedFlags: []string{"tabs, obviously"}})
+	entry, exists := db.GetLLMCache("a:b")
 	if !exists {
-		t.Error("expected cache hit for existing key")
+		t.Fatal("expected cache hit for existing key")
 	}
-	if entry == nil {
-		t.Fatal("expected non-nil entry")
+	if entry.Score != 85 || entry.Reason != "Great match!" || len(entry.RedFlags) != 1 || entry.RedFlags[0] != "tabs, obviously" {
+		t.Errorf("round trip: got %+v", entry)
 	}
-	if entry.Score != 85 {
-		t.Errorf("Score: want 85, got %d", entry.Score)
-	}
-	if entry.Reason != "Great match!" {
-		t.Errorf("Reason: want 'Great match!', got %q", entry.Reason)
-	}
-	if entry.RedFlags != "red1,red2" {
-		t.Errorf("RedFlags: want 'red1,red2', got %q", entry.RedFlags)
-	}
-	if entry.GreenFlags != "green1,green2" {
-		t.Errorf("GreenFlags: want 'green1,green2', got %q", entry.GreenFlags)
-	}
-	if entry.Icebreakers != "ice1,ice2" {
-		t.Errorf("Icebreakers: want 'ice1,ice2', got %q", entry.Icebreakers)
+	if entry.GreenFlags == nil || entry.Icebreakers == nil {
+		t.Errorf("missing lists should come back empty, got %+v", entry)
 	}
 
-	// Test cache clear
 	db.ClearLLMCache()
-	entry, exists = db.GetLLMCache("a:b")
-	if exists {
+	if _, exists := db.GetLLMCache("a:b"); exists {
 		t.Error("expected cache miss after clear")
 	}
 }
 
-func TestUnmatchAll(t *testing.T) {
+func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
 	db := testDB(t)
+	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 85, 'x', 'red1,red2', 'g', 'i')`)
 
-	// Create participants
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.CreateParticipant("id-2", "user2", "User 2")
-	db.CreateParticipant("id-3", "user3", "User 3")
-
-	// Match them
-	db.SetMatched("id-1", "id-2", 0, "", "", "", "")
-	db.SetMatched("id-3", "", 0, "", "", "", "")
-
-	// Unmatch all
-	db.UnmatchAll()
-
-	// Verify all are unmatched
-	p1, _ := db.GetParticipant("id-1")
-	p2, _ := db.GetParticipant("id-2")
-	p3, _ := db.GetParticipant("id-3")
-
-	if p1.MatchedWith != "" {
-		t.Errorf("expected p1 to be unmatched, got %s", p1.MatchedWith)
-	}
-	if p2.MatchedWith != "" {
-		t.Errorf("expected p2 to be unmatched, got %s", p2.MatchedWith)
-	}
-	if p3.MatchedWith != "" {
-		t.Errorf("expected p3 to be unmatched, got %s", p3.MatchedWith)
-	}
-}
-
-func TestDeleteParticipant(t *testing.T) {
-	db := testDB(t)
-
-	// Create participant
-	db.CreateParticipant("id-to-delete", "user", "User")
-
-	// Verify it exists
-	_, err := db.GetParticipant("id-to-delete")
-	if err != nil {
-		t.Fatalf("expected participant to exist: %v", err)
-	}
-
-	// Delete it
-	db.DeleteParticipant("id-to-delete")
-
-	// Verify it's gone
-	_, err = db.GetParticipant("id-to-delete")
-	if err == nil {
-		t.Error("expected participant to be deleted")
-	}
-}
-
-func TestUpdateExtraAnswers(t *testing.T) {
-	db := testDB(t)
-	db.CreateParticipant("id-1", "user1", "User 1")
-
-	extraAnswers := &ExtraAnswers{
-		Languages:       []string{"Go", "Python"},
-		ProjectType:    "Backend Services",
-		DevEnvironment: []string{"VIM"},
-		WeirdestBug:    "Segfault in production",
-		Keyboard:       "Mechanical",
-	}
-
-	db.UpdateExtraAnswers("id-1", extraAnswers)
-
-	p, _ := db.GetParticipant("id-1")
-	if p.Extra == nil {
-		t.Fatal("expected Extra to be set")
-	}
-	if len(p.Extra.Languages) != 2 {
-		t.Errorf("expected 2 languages, got %d", len(p.Extra.Languages))
+	if _, exists := db.GetLLMCache("a:b"); exists {
+		t.Error("an undecodable legacy row should be re-scored, not served")
 	}
 }
 
 func TestUpdateInterests(t *testing.T) {
 	db := testDB(t)
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 
 	interests := map[string]interface{}{
 		"languages": []string{"Go", "Python"},
@@ -378,66 +230,158 @@ func TestUpdateInterests(t *testing.T) {
 	}
 }
 
-func TestGetReadyUnmatched(t *testing.T) {
-	db := testDB(t)
-
-	// Create participants with different states
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.UpdatePipelineStep("id-1", "ready")
-
-	db.CreateParticipant("id-2", "user2", "User 2")
-	db.UpdatePipelineStep("id-2", "ready")
-	db.SetMatched("id-2", "id-3", 0, "", "", "", "")
-
-	db.CreateParticipant("id-3", "user3", "User 3")
-	db.UpdatePipelineStep("id-3", "interviewing")
-
-	db.CreateParticipant("id-4", "user4", "User 4")
-	db.UpdatePipelineStep("id-4", "ready")
-
-	readyUnmatched, err := db.GetReadyUnmatched()
+func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
+	path := t.TempDir() + "/old.db"
+	old, err := NewDB(path)
 	if err != nil {
-		t.Fatalf("GetReadyUnmatched: %v", err)
+		t.Fatal(err)
 	}
+	old.db.Exec(`ALTER TABLE participants ADD COLUMN extra_answers TEXT NOT NULL DEFAULT '{}'`)
+	old.Close()
 
-	// Should only return id-1 and id-4
-	if len(readyUnmatched) != 2 {
-		t.Errorf("expected 2 ready unmatched participants, got %d", len(readyUnmatched))
+	db, err := NewDB(path)
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
 	}
-
-	ids := make(map[string]bool)
-	for _, p := range readyUnmatched {
-		ids[p.ID] = true
+	defer db.Close()
+	if err := db.CreateParticipant("id-1", "octocat", "Octo", true); err != nil {
+		t.Fatalf("CreateParticipant after migration: %v", err)
 	}
-	if !ids["id-1"] || !ids["id-4"] {
-		t.Error("expected id-1 and id-4 in results")
+	if _, err := db.GetParticipant("id-1"); err != nil {
+		t.Fatalf("GetParticipant after migration: %v", err)
+	}
+	var n int
+	db.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name = 'extra_answers'`).Scan(&n)
+	if n != 0 {
+		t.Error("the extra_answers column should be dropped")
 	}
 }
 
-func TestUnmatchParticipant(t *testing.T) {
+func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
+	path := t.TempDir() + "/old.db"
+	old, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.CreateParticipant("gh", "octocat", "Octo", true)
+	old.CreateParticipant("ng", "no-github-1234abcd", "Ada", true)
+	if _, err := old.db.Exec(`ALTER TABLE participants DROP COLUMN has_github`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+
+	db, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reload(t, db, "gh").HasGitHub || reload(t, db, "ng").HasGitHub {
+		t.Error("backfill: the generated-handle Participant has no GitHub account, the other does")
+	}
+	db.db.Exec(`UPDATE participants SET has_github = 1 WHERE id = 'ng'`)
+	db.Close()
+
+	reopened, _ := NewDB(path)
+	defer reopened.Close()
+	if !reload(t, reopened, "ng").HasGitHub {
+		t.Error("the backfill must only run once, when the column is introduced")
+	}
+}
+
+func TestInTx_ReportsAFailedCommit(t *testing.T) {
 	db := testDB(t)
 
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.CreateParticipant("id-2", "user2", "User 2")
-	db.SetMatched("id-1", "id-2", 0, "", "", "", "")
+	err := db.inTx(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`ROLLBACK`) // the transaction ends early, so the commit fails
+		return err
+	})
 
-	// Verify they are matched
-	p1, _ := db.GetParticipant("id-1")
-	if p1.MatchedWith != "id-2" {
-		t.Fatalf("expected id-1 to be matched with id-2, got %s", p1.MatchedWith)
+	if err == nil {
+		t.Error("want the failed commit reported")
 	}
+}
 
-	// Unmatch id-1
-	db.UnmatchParticipant("id-1")
-
-	// Verify both are unmatched
-	p1, _ = db.GetParticipant("id-1")
-	p2, _ := db.GetParticipant("id-2")
-
-	if p1.MatchedWith != "" {
-		t.Errorf("expected id-1 to be unmatched, got %s", p1.MatchedWith)
+func TestNewDB_ReportsADatabaseThatCannotBeOpened(t *testing.T) {
+	if _, err := NewDB(t.TempDir() + "/missing-dir/x.db"); err == nil {
+		t.Error("a database in a missing directory should not open")
 	}
-	if p2.MatchedWith != "" {
-		t.Errorf("expected id-2 to be unmatched, got %s", p2.MatchedWith)
+	garbage := t.TempDir() + "/garbage.db"
+	os.WriteFile(garbage, []byte("this is not a SQLite database, just a long enough line of text to fill a header"), 0644)
+	if _, err := NewDB(garbage); err == nil {
+		t.Error("a file that is not a database should not open")
+	}
+}
+
+func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
+	for _, column := range []string{"profile_json", "questions", "answers_json", "interests"} {
+		t.Run(column, func(t *testing.T) {
+			db := testDB(t)
+			db.CreateParticipant("p", "p", "P", true)
+			db.db.Exec(`UPDATE participants SET ` + column + ` = '{broken' WHERE id = 'p'`)
+
+			if _, err := db.GetParticipant("p"); err == nil {
+				t.Error("a corrupt row should be an error")
+			}
+			if _, err := db.GetAllParticipants(); err == nil {
+				t.Error("listing should report the corrupt row")
+			}
+		})
+	}
+}
+
+func TestDB_ReadsAndWritesAgainstABrokenDatabase(t *testing.T) {
+	db := testDB(t)
+	db.SetLLMCache("a:b", &matchResult{Score: 1})
+	db.db.Close()
+
+	if _, ok := db.GetLLMCache("a:b"); ok {
+		t.Error("nothing can be read from a broken database")
+	}
+	db.SetLLMCache("a:b", &matchResult{Score: 2}) // logged, not fatal
+	db.ClearLLMCache()                            // logged, not fatal
+	if _, err := db.GetAllParticipants(); err == nil {
+		t.Error("listing should fail")
+	}
+	if _, err := db.GetRecentActivity(5); err == nil {
+		t.Error("reading activity should fail")
+	}
+}
+
+func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
+	db := testDB(t)
+	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 5, 'x', 'null', '[]', '[]')`)
+
+	r, ok := db.GetLLMCache("a:b")
+
+	if !ok || r.RedFlags == nil || len(r.RedFlags) != 0 {
+		t.Errorf("want an empty list, got %+v", r)
+	}
+}
+
+func TestReset_ReportsWhenActivityCannotBeCleared(t *testing.T) {
+	db := testDB(t)
+	db.LogActivity("hello")
+	db.db.Exec(`CREATE TRIGGER keep_activity BEFORE DELETE ON activity_log BEGIN SELECT RAISE(ABORT, 'injected'); END`)
+
+	if err := db.Reset(); err == nil {
+		t.Error("want the failure reported")
+	}
+}
+
+func TestCreateParticipant_ReportsADamagedSchema(t *testing.T) {
+	db := testDB(t)
+	db.db.Exec(`ALTER TABLE participants DROP COLUMN persona_symbol`)
+
+	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
+		t.Error("want an error when Persona looks cannot be read")
+	}
+}
+
+func TestNewDB_ReportsADatabaseThatIsReadOnly(t *testing.T) {
+	path := t.TempDir() + "/readonly.db"
+	os.WriteFile(path, nil, 0644)
+
+	// mode=ro opens the (empty) file read-only, so creating the schema fails.
+	if _, err := NewDB("file:" + path + "?mode=ro&"); err == nil {
+		t.Error("a read-only database cannot get its schema")
 	}
 }

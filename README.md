@@ -241,3 +241,7 @@ mistral := &MistralClient{
 ```
 
 Swap to `mistral-large-latest` for more creative personas and match reasoning, at higher cost and latency.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

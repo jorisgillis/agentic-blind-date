@@ -7,7 +7,7 @@ Accepted
 
 As the Agentic Blind Date application grows, we need a clear strategy for managing dependencies between components. The application currently has several components that depend on each other:
 
-- `Handler` depends on `DB`, `AgentPipeline`
+- `Handler` depends on `DB`, `AgentPipeline` (since replaced by `Onboarding` and `Matchmaking`)
 - `AgentPipeline` depends on `DB`, `GitHubClient`, `MistralClient`, `Matcher`
 - `Matcher` depends on `GitHubClient`, `MistralClient`
 - `DB` wraps `*sql.DB`
@@ -39,12 +39,16 @@ func NewDB(path string) (*DB, error)
 func NewGitHubClient(token string) *GitHubClient
 func NewMistralClient(apiKey, model string, httpClient *http.Client) *MistralClient
 
-// Business logic
-func NewMatcher(github *GitHubClient, mistral *MistralClient) *Matcher
-func NewAgentPipeline(db *DB, github *GitHubClient, mistral *MistralClient, matcher *Matcher) *AgentPipeline
+// Domain modules: upstream services are accepted through the LLM and GitHubAPI seams
+func NewInterview(db *DB, llm LLM) *Interview
+func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
+func NewRelationships(db *DB) *Relationships
+func NewPersonas(llm LLM) *Personas
+func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships) *Matchmaking
+func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding
 
 // HTTP handlers
-func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient, agents *AgentPipeline) *Handler
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler
 ```
 
 #### Composition Root
@@ -68,14 +72,21 @@ func main() {
     )
 
     // Initialize application components
-    matcher := NewMatcher(github, mistral)
-    agents := NewAgentPipeline(db, github, mistral, matcher)
-    h := NewHandler(db, github, mistral, agents)
+    matcher := NewMatcher(db, github, mistral)
+    interview := NewInterview(db, mistral)
+    relations := NewRelationships(db)
+    matchmaking := NewMatchmaking(db, matcher, relations)
+    onboarding := NewOnboarding(db, github, interview, NewPersonas(mistral), matchmaking)
+    h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
 
     // Start server
     log.Fatal(http.ListenAndServe(addr, buildMux(h)))
 }
 ```
+
+#### Seams for upstream services
+
+`LLM` (one method: `Chat(system, user)`) and `GitHubAPI` (`FetchProfile`, `CheckMutualFollow`) are the only interfaces. Each has two adapters: the production client (`MistralClient`, `GitHubClient`) and an in-memory fake used by tests, so the test suite never reaches the real APIs.
 
 ## Consequences
 

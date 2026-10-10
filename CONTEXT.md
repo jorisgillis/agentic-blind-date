@@ -19,15 +19,19 @@ A fun, anonymous identity generated for a participant. Consists of:
 
 The persona allows participants to be identifiable in the room without revealing their real identity.
 
+The **Persona module** is the only place a Persona is made. When the LLM fails it falls back to an anonymous Persona named after the Participant's main language ("The Go Developer"), never after their handle or name.
+
 ### Pipeline
 The automated process that each participant goes through:
-1. **Fetching GitHub**: Retrieve and parse GitHub profile data
+1. **Fetching GitHub**: Retrieve and parse GitHub profile data and prepare the question set. The Interview only starts (`interviewing`) once the question set is stored
 2. **Interviewing**: Participant answers questions (fixed + custom)
 3. **Generating Persona**: LLM creates the fun persona based on profile and answers
 4. **Ready**: Participant is ready for matching
 
+The **Onboarding module** runs the pipeline: registration, preparing the Interview, and, once every question is answered, creating the Persona, computing Interests, making the Participant ready and handing them to Continuous Matching.
+
 ### Pipeline Step
-The current stage of a participant in the pipeline. Valid values:
+The current stage of a participant in the pipeline. Steps only move forward, one at a time (only an event Reset starts over), so each step is entered at most once. Valid values:
 - `fetching_github`
 - `interviewing`
 - `creating_persona`
@@ -66,9 +70,11 @@ The LLM returns a JSON response with score, reason, flags, and icebreakers.
 
 ### Continuous Matching
 The process of automatically matching participants as they become ready. Unlike batch matching, continuous matching:
-- Runs as each participant reaches `ready` state
-- Can break existing matches if a better candidate arrives
+- Runs as each participant reaches `ready` state, i.e. once they have completed every pipeline step (Interview answered, Persona created), in any event phase including onboarding
+- Can break existing matches if a better candidate arrives; the partner left behind is matched again straight away, but never with the pair that just displaced them
 - Maintains a dynamic pool of ready participants
+
+The **Matchmaking module** runs matching operations one at a time: the admin's Rematch and Continuous Matching for a newcomer. The Matcher decides who fits; the Relationship module records it.
 
 ### Matching Algorithm
 The 3-phase algorithm for pairing participants:
@@ -86,6 +92,28 @@ The network visualization shown on the big screen, consisting of:
   - Matched edges: Actual matches (solid lines)
   - Potential edges: Top-3 heuristic connections (dashed lines)
 
+### Theme
+A named look for the application: colours, typography, shape, motion and sound. Each Participant chooses a Theme for their own phone, and the choice stays with that device. The admin chooses the Theme of the Big Screen. Persona colours are the same in every Theme, because they identify Participants in the room.
+
+### Explore
+A Participant looking at their compatibility with another Participant who is not their Match. Any two different **ready** Participants may explore each other at any time. The page shows personas only, so before the Reveal it never reveals who either of them is.
+
+### Event Format
+How the event runs, chosen by the admin before the event starts:
+- **Classic flow**: each Participant goes through the Interview on their own phone, and Continuous Matching pairs them as they become ready.
+- **Game Show**: the Big Screen is the stage and phones are controllers. A Host runs the show in Rounds, and everyone is paired at once in the matchmaking segment.
+
+Both formats share registration, Personas, matching, Themes and the Reveal.
+
+### Host
+The admin running a Game Show from the host console: starting the show, opening and closing Rounds, starting the matchmaking segment, and the Reveal.
+
+### Show Segment
+A stage of a Game Show, in order: the **Lobby** (Participants answer their personalised questions on their own), the Rounds, the matchmaking segment (everyone ready is paired at once), the Reveal (pair by pair), and the **Afterparty** (arrivals after the Reveal are matched by Continuous Matching).
+
+### Round
+In a Game Show, one Fixed Question answered by every Participant at the same moment on their phone, with a countdown, while the Big Screen shows the room's answers live.
+
 ### Big Screen
 The public display for the event, showing:
 - All participants as a graph
@@ -98,6 +126,8 @@ The question-and-answer process where participants provide information about the
 - **Fixed Questions**: Standard questions all participants answer
 - **Custom Questions**: LLM-generated questions tailored to GitHub profile (GitHub users only)
 - **Extra Questions**: Manual questions for non-GitHub users
+
+The **Interview module** owns a Participant's progress through the Interview: the next unanswered question, validating and recording answers (including multi-select), and signalling completion.
 
 ### Fixed Questions
 Standard questions that all participants answer:
@@ -130,13 +160,13 @@ Data fetched from a participant's GitHub account, including:
 
 ### Non-GitHub User
 A participant who registers without a GitHub account. These users go through a modified onboarding flow:
-- **Handle**: Automatically generated as `"no-github-{uuid-prefix}"` to ensure uniqueness
-- **Pipeline**: Starts at `interviewing` (skips `fetching_github`)
+- **Handle**: Automatically generated as `"no-github-{uuid-prefix}"` to ensure uniqueness. It is only a unique key: whether a Participant has a GitHub account is recorded at registration, never inferred from the handle
+- **Pipeline**: Skips the GitHub fetch; moves to `interviewing` as soon as their question set is stored
 - **Questions**: Answers ExtraQuestions instead of FixedQuestions + CustomQuestions
-- **Profile Data**: ExtraAnswers are used to capture their technical profile (languages, project types, etc.)
+- **Profile Data**: When the Interview completes, the answers to the Extra Questions are turned into **ExtraAnswers** (languages, project type, dev environment, weirdest bug, keyboard) on their profile. This also happens for GitHub users who got the Extra Questions as a fallback
 
 ### Interests
-Computed attributes that categorize a participant's technical profile:
+Computed attributes that categorize a participant's technical profile. GitHub data is preferred; ExtraAnswers fill the gaps:
 - **Languages**: Programming languages used
 - **Tools**: Tools and technologies (from GitHub topics or manual input)
 - **Domains**: Areas of work (e.g., Web Development, Backend Services)
@@ -148,8 +178,10 @@ Social connection between participants on GitHub:
 - **No Follow**: No follow relationship
 
 ### Event State
-Global state of the application:
-- Currently always `matching` (simplified from previous onboarding/matching/revealed)
+Global state of the event, changed only by the admin:
+- **Before the Reveal** (`onboarding`): Participants register and Continuous Matching runs, but Matches stay hidden. Matched Participants wait on the wait page, and the Big Screen shows persona names only.
+- **Revealed** (`revealed`): the admin presses **Reveal** once everybody is seated. Every Match page opens and the Big Screen shows handles. Newcomers after the Reveal see their Match as soon as they are matched.
+- Rematching does not change the Event State; Reset returns it to before the Reveal.
 
 ### Relationship State
 The matching status of a participant:
@@ -193,6 +225,8 @@ Responsible for event management. Includes:
 ## Key Invariant
 
 A participant can only be matched with one other participant at a time. When a new match is formed, any existing match for either participant is broken.
+
+The **Relationship module** owns Relationship State and enforces the Key Invariant: every change to who is matched with whom (pairing, taking over a Match, unpairing) goes through it as one transaction. A partner left behind by a take-over is returned to the Pool.
 
 ## Glossary
 

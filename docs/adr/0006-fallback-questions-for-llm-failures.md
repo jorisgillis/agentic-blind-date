@@ -25,7 +25,7 @@ These fallbacks ensure that:
 We will maintain and document the current fallback strategy:
 
 ### Custom Question Generation Fallback
-When `generateCustomQuestions` fails for a GitHub user:
+When Custom Question generation fails for a GitHub user (inside the Interview module's `Start`, see `interview.go`):
 1. Log the error with context
 2. Return `ExtraQuestions` from questions.go
 3. Continue with the interview flow using these fallback questions

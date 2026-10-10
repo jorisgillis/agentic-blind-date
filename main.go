@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
-func loadDotEnv() {
-	data, err := os.ReadFile(".env")
+// loadDotEnv sets environment variables from a KEY=value file, without
+// overriding variables that are already set. A missing file is ignored.
+func loadDotEnv(path string) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}
@@ -34,7 +36,7 @@ func loadDotEnv() {
 }
 
 func main() {
-	loadDotEnv()
+	loadDotEnv(".env")
 
 	if os.Getenv("MISTRAL_API_KEY") == "" {
 		log.Println("WARNING: MISTRAL_API_KEY not set — LLM calls will fail")
@@ -60,10 +62,15 @@ func main() {
 		&http.Client{Timeout: 30 * time.Second},
 	)
 
-	matcher := NewMatcher(github, mistral)
-	agents := NewAgentPipeline(db, github, mistral, matcher)
+	matcher := NewMatcher(db, github, mistral)
+	interview := NewInterview(db, mistral)
+	relations := NewRelationships(db)
+	matchmaking := NewMatchmaking(db, matcher, relations)
+	onboarding := NewOnboarding(db, github, interview, NewPersonas(mistral), matchmaking)
 
-	h := NewHandler(db, github, mistral, agents)
+	onboarding.Resume() // pick up onboarding interrupted by a restart
+
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)

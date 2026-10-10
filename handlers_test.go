@@ -10,30 +10,18 @@ import (
 	"testing"
 )
 
-func testServer(t *testing.T) (*httptest.Server, *DB) {
+func testServer(t *testing.T) (*testSrv, *DB) {
 	t.Helper()
-	db, err := NewDB(":memory:")
-	if err != nil {
-		t.Fatalf("NewDB: %v", err)
-	}
-	// Pin to one connection so all goroutines share the same in-memory database.
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-	github := NewGitHubClient("")
-	mistral := NewMistralClient("", "", &http.Client{})
-	matcher := NewMatcher(github, mistral)
-	agents := NewAgentPipeline(db, github, mistral, matcher)
-	h := NewHandler(db, github, mistral, agents)
-	srv := httptest.NewServer(buildMux(h))
-	t.Cleanup(srv.Close)
-	return srv, db
+	srv, deps := newTestServer(t, nil, nil)
+	return srv, deps.db
 }
 
-func get(t *testing.T, srv *httptest.Server, path string) *http.Response {
+func get(t *testing.T, srv *testSrv, path string) *http.Response {
 	t.Helper()
-	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	client := srv.Client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
-	}}
+	}
 	resp, err := client.Get(srv.URL + path)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
@@ -42,11 +30,12 @@ func get(t *testing.T, srv *httptest.Server, path string) *http.Response {
 	return resp
 }
 
-func post(t *testing.T, srv *httptest.Server, path string, form url.Values) *http.Response {
+func post(t *testing.T, srv *testSrv, path string, form url.Values) *http.Response {
 	t.Helper()
-	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	client := srv.Client()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
-	}}
+	}
 	resp, err := client.PostForm(srv.URL+path, form)
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
@@ -201,11 +190,13 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	// Create a handler with empty database
 	db, _ := NewDB(":memory:")
 	defer db.Close()
-	github := NewGitHubClient("")
-	mistral := NewMistralClient("", "", &http.Client{})
-	matcher := NewMatcher(github, mistral)
-	agents := NewAgentPipeline(db, github, mistral, matcher)
-	h := NewHandler(db, github, mistral, agents)
+	gh := newFakeGitHub()
+	llm := newFakeLLM()
+	iv := NewInterview(db, llm)
+	m := NewMatcher(db, gh, llm)
+	rel := NewRelationships(db)
+	mm := NewMatchmaking(db, m, rel)
+	h := NewHandler(db, NewOnboarding(db, gh, iv, NewPersonas(llm), mm), iv, m, rel, mm)
 
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()
@@ -302,66 +293,12 @@ func TestComputeBadges(t *testing.T) {
 	}
 }
 
-func TestBuildQuestionData(t *testing.T) {
-	// Setup
-	db, _ := NewDB(":memory:")
-	defer db.Close()
-	github := NewGitHubClient("")
-	mistral := NewMistralClient("", "", &http.Client{})
-	matcher := NewMatcher(github, mistral)
-	agents := NewAgentPipeline(db, github, mistral, matcher)
-	h := NewHandler(db, github, mistral, agents)
-
-	// Test with no answers and questions
-	p := &Participant{ID: "test-1", Questions: FixedQuestions}
-	data := h.buildQuestionData(p)
-	if data == nil {
-		t.Fatal("expected non-nil QuestionData")
-	}
-	if data.ParticipantID != "test-1" {
-		t.Errorf("expected ParticipantID test-1, got %s", data.ParticipantID)
-	}
-	if data.Index != 0 {
-		t.Errorf("expected Index 0, got %d", data.Index)
-	}
-	if data.Total != len(FixedQuestions) {
-		t.Errorf("expected Total %d, got %d", len(FixedQuestions), data.Total)
-	}
-	if data.Question.ID != "fixed_0" {
-		t.Errorf("expected first question fixed_0, got %s", data.Question.ID)
-	}
-
-	// Test with some answers
-	p.Answers = map[string]string{"fixed_0": "Tabs"}
-	data = h.buildQuestionData(p)
-	if data.Index != 1 {
-		t.Errorf("expected Index 1, got %d", data.Index)
-	}
-	if data.Question.ID != "fixed_1" {
-		t.Errorf("expected second question fixed_1, got %s", data.Question.ID)
-	}
-
-	// Test with all answers
-	p.Answers = map[string]string{
-		"fixed_0": "Tabs",
-		"fixed_1": "Go",
-		"fixed_2": "Only if tests pass",
-		"fixed_3": "Monolith, always",
-		"fixed_4": "fix stuff",
-		"fixed_5": "Claude",
-	}
-	data = h.buildQuestionData(p)
-	if data != nil {
-		t.Error("expected nil when all questions answered")
-	}
-}
-
 func TestDataParticipants(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create some participants
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.CreateParticipant("id-2", "user2", "User 2")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
+	db.CreateParticipant("id-2", "user2", "User 2", true)
 
 	// Call DataParticipants endpoint
 	resp, err := srv.Client().Get(srv.URL + "/data/participants")
@@ -379,7 +316,7 @@ func TestDataParticipant(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 
 	// Call DataParticipant endpoint by ID
 	resp, err := srv.Client().Get(srv.URL + "/data/participant/id-1")
@@ -438,7 +375,7 @@ func TestSubmitAnswer(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant in interviewing state with questions
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	p, _ := db.GetParticipant("id-1")
 	p.Questions = FixedQuestions
 	p.Answers = map[string]string{}
@@ -563,8 +500,8 @@ func TestSubmitAnswer_WrongPipelineStep(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant NOT in interviewing state
-	db.CreateParticipant("id-1", "user1", "User 1")
-	db.UpdatePipelineStep("id-1", "ready")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
+	forceStep(db, "id-1", "ready")
 
 	// Submit answer
 	resp, err := srv.Client().Post(srv.URL+"/user/answer/id-1", "application/x-www-form-urlencoded",
@@ -588,7 +525,7 @@ func TestSubmitAnswer_NoMoreQuestions(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with only 2 questions and both answered
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	p, _ := db.GetParticipant("id-1")
 	p.Questions = []Question{
 		{ID: "q0", Text: "Q1?"},
@@ -621,7 +558,7 @@ func TestSubmitAnswer_MultiSelectInvalidJSON(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with multi-select questions
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	p, _ := db.GetParticipant("id-1")
 	p.Questions = []Question{
 		{ID: "q1", Text: "Select languages", MaxSelections: 3, Mode: MultiSelect},
@@ -650,7 +587,7 @@ func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with multi-select questions (max 2 selections)
-	db.CreateParticipant("id-1", "user1", "User 1")
+	db.CreateParticipant("id-1", "user1", "User 1", true)
 	p, _ := db.GetParticipant("id-1")
 	p.Questions = []Question{
 		{ID: "q1", Text: "Select languages", MaxSelections: 2, Mode: MultiSelect},
@@ -672,5 +609,16 @@ func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
 
 	if resp.StatusCode != 400 {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestRoot_RedirectsToTheLandingPageAndUnknownPathsAreNotFound(t *testing.T) {
+	srv, _ := testServer(t)
+
+	if loc := get(t, srv, "/").Header.Get("Location"); loc != "/user" {
+		t.Errorf("/: want redirect to /user, got %q", loc)
+	}
+	if resp := get(t, srv, "/nope"); resp.StatusCode != 404 {
+		t.Errorf("/nope: want 404, got %d", resp.StatusCode)
 	}
 }

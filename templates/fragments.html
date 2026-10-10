@@ -3,26 +3,26 @@
 <div
   id="pipeline-area"
   hx-get="/user/pipeline/{{.ID}}"
-  hx-trigger="every 2s"
+  hx-trigger="refresh"
   hx-swap="outerHTML"
   class="space-y-4"
 >
   <div class="space-y-3">
     {{$step := .PipelineStep}}
 
-    <div class="flex items-center gap-3 p-4 rounded-xl {{if eq $step "fetching_github"}}bg-indigo-900/40 border border-indigo-700{{else}}bg-gray-900 border border-gray-800{{end}}">
-      <span class="text-xl">{{if eq $step "fetching_github"}}⏳{{else}}✅{{end}}</span>
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsFetchingGitHub}}bg-indigo-900/40 border border-indigo-700{{else}}bg-gray-900 border border-gray-800{{end}}">
+      <span class="text-xl">{{if $step.IsFetchingGitHub}}⏳{{else}}✅{{end}}</span>
       <div>
         <p class="font-semibold text-sm">Fetching GitHub profile</p>
-        {{if eq $step "fetching_github"}}<p class="text-indigo-400 text-xs">In progress...</p>{{end}}
+        {{if $step.IsFetchingGitHub}}<p class="text-indigo-400 text-xs">Preparing your interview questions...</p>{{end}}
       </div>
     </div>
 
-    <div class="flex items-center gap-3 p-4 rounded-xl {{if eq $step "creating_persona"}}bg-indigo-900/40 border border-indigo-700{{else if eq $step "fetching_github"}}bg-gray-900/50 border border-gray-800 opacity-40{{else}}bg-gray-900 border border-gray-800{{end}}">
-      <span class="text-xl">{{if eq $step "creating_persona"}}⏳{{else if eq $step "fetching_github"}}⬜{{else}}✅{{end}}</span>
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsCreatingPersona}}bg-indigo-900/40 border border-indigo-700{{else if $step.IsFetchingGitHub}}bg-gray-900/50 border border-gray-800 opacity-40{{else}}bg-gray-900 border border-gray-800{{end}}">
+      <span class="text-xl">{{if $step.IsCreatingPersona}}⏳{{else if $step.IsFetchingGitHub}}⬜{{else}}✅{{end}}</span>
       <div>
         <p class="font-semibold text-sm">Crafting your persona</p>
-        {{if eq $step "creating_persona"}}<p class="text-indigo-400 text-xs">Creating your persona...</p>{{end}}
+        {{if $step.IsCreatingPersona}}<p class="text-indigo-400 text-xs">Creating your persona...</p>{{end}}
       </div>
     </div>
 
@@ -144,26 +144,26 @@
 {{end}}
 
 
-{{/* Wait page status — polled every 3s */}}
+{{/* Wait page status — refreshed when the wait stream says so */}}
 {{define "fragment-wait-status.html"}}
 {{$p := .Participant}}
-{{if and (eq .Phase "revealed") (eq $p.PipelineStep "ready")}}
-<div id="wait-status" class="text-center space-y-4 py-4">
-  <p class="text-4xl">😔</p>
-  <p class="text-gray-900 font-bold">You just missed it!</p>
-  <p class="text-gray-700 text-sm">The matching already happened. Check the big screen!</p>
-</div>
-{{else if eq $p.PipelineStep "matched"}}
-<div id="wait-status" class="text-center space-y-4 py-4">
+{{if $p.MatchedWith}}
+<div
+  id="wait-status"
+  hx-get="/user/wait-status/{{$p.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="text-center space-y-4 py-4"
+>
   <p class="text-4xl">❤️</p>
-  <p class="text-gray-900 font-bold">Match found!</p>
-  <p class="text-gray-700 text-sm">{{if $p.MatchedWith}}Check your match!{{else}}Loading match...{{end}}</p>
+  <p class="text-gray-900 font-bold">You've been matched!</p>
+  <p class="text-gray-700 text-sm">Your match is waiting for the Reveal. Keep an eye on the big screen!</p>
 </div>
 {{else}}
 <div
   id="wait-status"
   hx-get="/user/wait-status/{{$p.ID}}"
-  hx-trigger="every 3s"
+  hx-trigger="refresh"
   hx-swap="outerHTML"
   class="text-center space-y-4"
 >
@@ -185,7 +185,6 @@
 
 {{/* Screen state — the main content of the big screen view, polled every 3s */}}
 {{define "fragment-screen-state.html"}}
-{{$phase := .Phase}}
 {{$matchedCount := 0}}
 {{range .Participants}}
 {{if .MatchedWith}}{{$matchedCount = add $matchedCount 1}}{{end}}
@@ -229,7 +228,7 @@
           <div class="flex items-center text-gray-600">❤️</div>
           <div class="w-14 h-14 rounded-xl bg-gray-700 flex items-center justify-center text-2xl">{{.PersonaSymbol}}</div>
         </div>
-        <p class="font-bold text-sm">@{{.GitHubHandle}}</p>
+        <p class="font-bold text-sm">{{.DisplayHandle}}</p>
         <p class="text-gray-500 text-xs mb-2">{{.PersonaName}}</p>
         <div class="bg-gray-800 rounded-full px-3 py-1 text-xs font-bold text-indigo-400 inline-block">
           {{.CompatScore}}% match
@@ -248,13 +247,13 @@
       {{range .Participants}}
       <div class="flex flex-col items-center text-center">
         <div class="w-full aspect-square rounded-2xl {{.PersonaColor}} flex items-center justify-center text-4xl shadow-lg mb-2
-          {{if eq .PipelineStep "ready"}}ring-2 ring-white/40{{else}}opacity-70{{end}}
+          {{if .PipelineStep.IsReady}}ring-2 ring-white/40{{else}}opacity-70{{end}}
           {{if .MatchedWith}}ring-2 ring-indigo-500{{end}}">
           {{.PersonaSymbol}}
         </div>
-        <p class="text-sm font-bold leading-tight">{{if .PersonaName}}{{.PersonaName}}{{else}}@{{.GitHubHandle}}{{end}}</p>
+        <p class="text-sm font-bold leading-tight">{{if .PersonaName}}{{.PersonaName}}{{else}}{{.DisplayHandle}}{{end}}</p>
         <p class="text-xs text-gray-500">
-          {{if eq .PipelineStep "matched"}}❤️ matched{{else if eq .PipelineStep "ready"}}✅ ready{{else if eq .PipelineStep "interviewing"}}💬 interviewing{{else if eq .PipelineStep "creating_persona"}}{{.PersonaSymbol}} profiling{{else}}🔍 fetching{{end}}
+          {{if .MatchedWith}}❤️ matched{{else if .PipelineStep.IsReady}}✅ ready{{else if .PipelineStep.IsInterviewing}}💬 interviewing{{else if .PipelineStep.IsCreatingPersona}}{{.PersonaSymbol}} profiling{{else}}🔍 fetching{{end}}
         </p>
       </div>
       {{end}}

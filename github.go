@@ -11,14 +11,22 @@ import (
 	"time"
 )
 
+// GitHubAPI fetches GitHub profile data and follow relationships.
+// GitHubClient is the production adapter; tests use an in-memory fake.
+type GitHubAPI interface {
+	FetchProfile(handle string) (*GitHubProfile, error)
+	CheckMutualFollow(handleA, handleB string) (bool, bool)
+}
+
 // GitHubClient provides access to the GitHub API for fetching user profiles and repositories.
 type GitHubClient struct {
-	token string
+	token      string
+	httpClient *http.Client
 }
 
 // NewGitHubClient creates a new GitHubClient with the given API token.
 func NewGitHubClient(token string) *GitHubClient {
-	return &GitHubClient{token: token}
+	return &GitHubClient{token: token, httpClient: http.DefaultClient}
 }
 
 // GitHubProfile contains data fetched from a user's GitHub account.
@@ -122,49 +130,74 @@ func (g *GitHubClient) FetchProfile(handle string) (*GitHubProfile, error) {
 	return profile, nil
 }
 
+// Summary describes a Participant for the LLM: their GitHub data if they have
+// a GitHub account, and their ExtraAnswers if they gave any.
+func (p *Participant) Summary() string {
+	if p.Profile == nil {
+		return ""
+	}
+	var parts []string
+	if p.HasGitHub {
+		parts = append(parts, p.Profile.githubLines()...)
+	}
+	parts = append(parts, p.Profile.extraLines()...)
+	return strings.Join(parts, "\n")
+}
+
+// Summary describes a GitHub user's profile for the LLM: GitHub data and any ExtraAnswers.
 func (p *GitHubProfile) Summary() string {
+	return strings.Join(append(p.githubLines(), p.extraLines()...), "\n")
+}
+
+func (p *GitHubProfile) githubLines() []string {
 	var parts []string
 	if p.Login != "" {
 		parts = append(parts, fmt.Sprintf("GitHub: @%s", p.Login))
-		if p.Name != "" {
-			parts = append(parts, "Name: "+p.Name)
+	}
+	if p.Name != "" {
+		parts = append(parts, "Name: "+p.Name)
+	}
+	if p.Bio != "" {
+		parts = append(parts, "Bio: "+p.Bio)
+	}
+	if p.Company != "" {
+		parts = append(parts, "Company: "+p.Company)
+	}
+	if p.Location != "" {
+		parts = append(parts, "Location: "+p.Location)
+	}
+	if p.AccountAgeDays > 0 {
+		parts = append(parts, fmt.Sprintf("Account age: %d days (~%d years)", p.AccountAgeDays, p.AccountAgeDays/365))
+	}
+	parts = append(parts, fmt.Sprintf("Public repos: %d, Followers: %d, Total stars: %d", p.PublicRepos, p.Followers, p.TotalStars))
+	if p.HasProfileReadme {
+		parts = append(parts, "Has profile README: yes")
+	}
+	if len(p.Languages) > 0 {
+		parts = append(parts, "Languages used: "+strings.Join(p.Languages, ", "))
+	}
+	if len(p.TopTopics) > 0 {
+		parts = append(parts, "Top topics: "+strings.Join(p.TopTopics, ", "))
+	}
+	for _, r := range p.TopRepos {
+		line := "Repo: " + r.Name
+		if r.Description != "" {
+			line += " — " + r.Description
 		}
-		if p.Bio != "" {
-			parts = append(parts, "Bio: "+p.Bio)
+		if r.Language != "" {
+			line += " (" + r.Language + ")"
 		}
-		if p.Company != "" {
-			parts = append(parts, "Company: "+p.Company)
+		if r.Stars > 0 {
+			line += fmt.Sprintf(" ⭐%d", r.Stars)
 		}
-		if p.Location != "" {
-			parts = append(parts, "Location: "+p.Location)
-		}
-		if p.AccountAgeDays > 0 {
-			parts = append(parts, fmt.Sprintf("Account age: %d days (~%d years)", p.AccountAgeDays, p.AccountAgeDays/365))
-		}
-		parts = append(parts, fmt.Sprintf("Public repos: %d, Followers: %d, Total stars: %d", p.PublicRepos, p.Followers, p.TotalStars))
-		if p.HasProfileReadme {
-			parts = append(parts, "Has profile README: yes")
-		}
-		if len(p.Languages) > 0 {
-			parts = append(parts, "Languages used: "+strings.Join(p.Languages, ", "))
-		}
-		if len(p.TopTopics) > 0 {
-			parts = append(parts, "Top topics: "+strings.Join(p.TopTopics, ", "))
-		}
-		for _, r := range p.TopRepos {
-			line := "Repo: " + r.Name
-			if r.Description != "" {
-				line += " — " + r.Description
-			}
-			if r.Language != "" {
-				line += " (" + r.Language + ")"
-			}
-			if r.Stars > 0 {
-				line += fmt.Sprintf(" ⭐%d", r.Stars)
-			}
-			parts = append(parts, line)
-		}
-	} else if p.ExtraAnswers != nil {
+		parts = append(parts, line)
+	}
+	return parts
+}
+
+func (p *GitHubProfile) extraLines() []string {
+	var parts []string
+	if p.ExtraAnswers != nil {
 		ea := p.ExtraAnswers
 		if len(ea.Languages) > 0 {
 			parts = append(parts, "Languages: "+strings.Join(ea.Languages, ", "))
@@ -182,7 +215,7 @@ func (p *GitHubProfile) Summary() string {
 			parts = append(parts, "Keyboard: "+ea.Keyboard)
 		}
 	}
-	return strings.Join(parts, "\n")
+	return parts
 }
 
 type ghUser struct {
@@ -206,17 +239,14 @@ type ghRepo struct {
 }
 
 func (g *GitHubClient) get(url string) ([]byte, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
+	req, _ := http.NewRequest("GET", url, nil) // built from a constant base and an escaped handle
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -263,16 +293,13 @@ func (g *GitHubClient) fetchRepos(handle string) ([]ghRepo, error) {
 func (g *GitHubClient) checkFollows(follower, followee string) bool {
 	endpoint := "https://api.github.com/users/" +
 		url.PathEscape(follower) + "/following/" + url.PathEscape(followee)
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		return false
-	}
+	req, _ := http.NewRequest("GET", endpoint, nil) // built from a constant base and escaped handles
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return false
 	}

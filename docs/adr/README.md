@@ -24,6 +24,10 @@ Each ADR follows this structure:
 | [0003](0003-consistent-interview-experience.md) | Consistent Interview Experience for All Participants | Accepted | 2026-05-14 |
 | [0004](0004-big-screen-top-connections.md) | Big Screen Shows Top-3 Connections | Accepted | 2026-05-14 |
 | [0005](0005-dependency-injection.md) | Dependency Injection Strategy | Accepted | 2026-05-15 |
+| [0006](0006-fallback-questions-for-llm-failures.md) | Fallback Questions for LLM Failures | Accepted | 2026-05-16 |
+| [0007](0007-separation-of-matching-logic-into-matcher-module.md) | Separation of Matching Logic into Matcher Module | Accepted | 2026-05-16 |
+| [0008](0008-quality-assurance-approach.md) | Quality Assurance Approach | Accepted | 2026-05-16 |
+| [0009](0009-self-hosted-front-end-assets.md) | Self-Hosted Front-End Assets and In-Browser Tailwind v4 | Accepted | 2026-09-24 |
 
 ## When to Create an ADR
 

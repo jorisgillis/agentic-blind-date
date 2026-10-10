@@ -15,7 +15,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22'
+        go-version-file: go.mod
 
     - name: Install dependencies
       run: go mod download
@@ -25,15 +25,5 @@ jobs:
         go test -coverprofile=coverage.out ./...
         go tool cover -func=coverage.out
 
-    - name: Check coverage threshold
-      run: |
-        # Calculate coverage percentage
-        COVERAGE=$(go tool cover -func=coverage.out | grep "total:" | awk '{print $3}' | tr -d '%')
-        echo "Coverage: ${COVERAGE}%"
-        
-        # For now, just report coverage (not enforcing 100% yet)
-        # TODO: Uncomment the following line when we reach 100%
-        # if [ "${COVERAGE}" -lt 100 ]; then
-        #   echo "Coverage is below 100% (${COVERAGE}%)"
-        #   exit 1
-        # fi
+    - name: Check coverage (ADR-0008)
+      run: sh scripts/check-coverage.sh coverage.out

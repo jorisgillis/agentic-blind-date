@@ -15,7 +15,7 @@
     <div class="text-center mb-8">
       <div class="text-5xl mb-3">🤖</div>
       <h1 class="text-2xl font-black">The agents are on it</h1>
-      <p class="text-gray-400 text-sm mt-1">@{{.GitHubHandle}}</p>
+      <p class="text-gray-400 text-sm mt-1">{{.DisplayHandle}}</p>
     </div>
 
     {{/* The fragment self-contains the polling div (hx-swap="outerHTML") */}}
@@ -33,6 +33,7 @@
     document.addEventListener('htmx:afterSwap', renderMd);
     const _es = new EventSource('/user/pipeline-stream/{{.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
+    _es.addEventListener('refresh', () => htmx.trigger('#pipeline-area', 'refresh'));
     _es.onerror = () => _es.close();
   </script>
 </body>

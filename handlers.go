@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -10,8 +11,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Badge represents a visual badge displayed on participant cards.
@@ -57,7 +56,9 @@ type graphNode struct {
 	Color       string `json:"color"`
 	Symbol      string `json:"symbol"`
 	Step        string `json:"step"`
-	Handle      string `json:"handle"`
+	Ready       bool   `json:"ready"`
+	Matched     bool   `json:"matched"`
+	Handle      string `json:"handle,omitempty"`
 }
 
 type graphEdge struct {
@@ -69,53 +70,33 @@ type graphEdge struct {
 
 // Handler handles HTTP requests for the web application.
 type Handler struct {
-	db     *DB
-	agents *AgentPipeline
-	tmpl   *template.Template
+	db          *DB
+	onboarding  *Onboarding
+	interview   *Interview
+	matcher     *Matcher
+	relations   *Relationships
+	matchmaking *Matchmaking
+	tmpl        *template.Template
+
+	// streamChecked, when set (tests only), is told each time a stream has
+	// looked at the current state, so tests can wait for a stream to catch up.
+	streamChecked func(path string)
 }
 
 // NewHandler creates a new Handler with the given dependencies.
-// It initializes the templates with the provided database, GitHub, Mistral clients, and AgentPipeline.
-func NewHandler(db *DB, github *GitHubClient, mistral *MistralClient, agents *AgentPipeline) *Handler {
+// It initializes the templates and takes the modules the pages use.
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
-		"percent": func(n, total int) int {
-			if total == 0 {
-				return 0
-			}
-			return n * 100 / total
-		},
-		"divInt": func(a, b int) int {
-			if b == 0 {
-				return 0
-			}
-			return a / b
-		},
-		"colorName": func(c string) string {
-			// "bg-teal-400" -> "teal"
-			c = strings.TrimPrefix(c, "bg-")
-			if idx := strings.LastIndex(c, "-"); idx != -1 {
-				return c[:idx]
-			}
-			return c
-		},
-		"textColor": func(bgClass string) string {
-			m := map[string]string{
-				"bg-teal-400":   "text-teal-900",
-				"bg-red-400":    "text-red-900",
-				"bg-purple-400": "text-purple-900",
-				"bg-amber-400":  "text-amber-900",
-				"bg-blue-400":   "text-blue-900",
-			}
-			if c, ok := m[bgClass]; ok {
-				return c
-			}
-			return "text-gray-900"
-		},
+		// Only called with a non-empty question set and constant divisors.
+		"percent":   func(n, total int) int { return n * 100 / total },
+		"divInt":    func(a, b int) int { return a / b },
+		"colorName": paletteName,
+		"textColor": paletteText,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
-	return &Handler{db: db, agents: agents, tmpl: tmpl}
+	return &Handler{db: db, onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking, tmpl: tmpl}
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
@@ -173,39 +154,12 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if noGitHub {
-		id := uuid.New().String()
-		// For non-GitHub users, generate a unique handle to avoid UNIQUE constraint violation
-		handle = "no-github-" + id[:8]
-		if err := h.db.CreateParticipant(id, handle, name); err != nil {
-			log.Printf("CreateParticipant failed for non-GitHub user name=%s: %v", name, err)
-			http.Error(w, "registration failed: "+err.Error(), 500)
-			return
-		}
-
-		// Non-GitHub users will get ExtraQuestions during interview
-		go h.agents.RunSetupWithExtraAnswers(id, handle, "", "", "", "", "", "", "")
-		setParticipantCookie(w, id)
-		http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
-		return
-	}
-
-	if existing, err := h.db.GetParticipantByHandle(handle); err == nil {
-		setParticipantCookie(w, existing.ID)
-		http.Redirect(w, r, "/user/onboard/"+existing.ID, http.StatusSeeOther)
-		return
-	} else if err != nil {
-		log.Printf("GetParticipantByHandle failed for handle=%s: %v", handle, err)
-	}
-
-	id := uuid.New().String()
-	if err := h.db.CreateParticipant(id, handle, name); err != nil {
-		log.Printf("CreateParticipant failed for handle=%s, name=%s: %v", handle, name, err)
+	id, err := h.onboarding.Register(name, handle, !noGitHub)
+	if err != nil {
+		log.Printf("Registration failed for handle=%s, name=%s: %v", handle, name, err)
 		http.Error(w, "registration failed: "+err.Error(), 500)
 		return
 	}
-
-	go h.agents.RunSetup(id, handle)
 	setParticipantCookie(w, id)
 	http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
 }
@@ -217,17 +171,14 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	switch p.PipelineStep {
-	case "ready":
-		http.Redirect(w, r, "/user/wait/"+p.ID, http.StatusSeeOther)
-	case "matched":
-		http.Redirect(w, r, "/user/match/"+p.ID, http.StatusSeeOther)
-	default:
-		h.render(w, "onboard.html", p)
+	if dest := h.destination(p); dest != r.URL.Path {
+		http.Redirect(w, r, dest, http.StatusSeeOther)
+		return
 	}
+	h.render(w, "onboard.html", p)
 }
 
-// GET /user/pipeline/{id}  — HTMX polled every 2s
+// GET /user/pipeline/{id}  — HTMX, refreshed when the pipeline stream says so
 func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 	p, err := h.db.GetParticipant(r.PathValue("id"))
 	if err != nil {
@@ -235,53 +186,15 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch p.PipelineStep {
-	case "ready":
-		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
-	case "matched":
-		w.Header().Set("HX-Redirect", "/user/match/"+p.ID)
-	case "interviewing":
-		qd := h.buildQuestionData(p)
-		if qd == nil {
-			h.db.UpdatePipelineStep(p.ID, "ready")
-			w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
-			return
-		}
+	if dest := h.destination(p); dest != "/user/onboard/"+p.ID {
+		w.Header().Set("HX-Redirect", dest)
+		return
+	}
+	if qd := h.interview.Next(p); qd != nil && p.PipelineStep == StepInterviewing {
 		h.render(w, "fragment-question.html", qd)
-	default:
-		h.render(w, "fragment-pipeline-step.html", p)
+		return
 	}
-}
-
-// QuestionData contains the data needed to render a single interview question.
-type QuestionData struct {
-	ParticipantID string
-	Index         int
-	Total         int
-	Question      Question
-}
-
-func (h *Handler) buildQuestionData(p *Participant) *QuestionData {
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
-	}
-
-	questions := p.Questions
-
-	idx := len(answers)
-	if idx >= len(questions) {
-		return nil
-	}
-
-	q := questions[idx]
-
-	return &QuestionData{
-		ParticipantID: p.ID,
-		Index:         idx,
-		Total:         len(questions),
-		Question:      q,
-	}
+	h.render(w, "fragment-pipeline-step.html", p)
 }
 
 // POST /user/answer/{id}
@@ -292,53 +205,28 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if p.PipelineStep != "interviewing" {
-		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
+	if p.PipelineStep != StepInterviewing {
+		w.Header().Set("HX-Redirect", h.destination(p))
 		return
 	}
 
-	answer := strings.TrimSpace(r.FormValue("answer"))
-
-	questions := p.Questions
-	currentIndex := len(p.Answers)
-	if currentIndex >= len(questions) {
-		http.Error(w, "No more questions to answer", 400)
+	done, err := h.onboarding.Answer(p, r.FormValue("answer"))
+	var invalid *InvalidAnswerError
+	switch {
+	case errors.Is(err, ErrInterviewOver), errors.As(err, &invalid):
+		http.Error(w, err.Error(), 400)
+		return
+	case err != nil:
+		http.Error(w, "saving answer failed", 500)
 		return
 	}
 
-	currentQuestion := questions[currentIndex]
-
-	if currentQuestion.MaxSelections > 1 {
-		var selected []string
-		if err := json.Unmarshal([]byte(answer), &selected); err != nil {
-			http.Error(w, "Invalid answer format for multi-select question", 400)
-			return
-		}
-		if len(selected) > currentQuestion.MaxSelections {
-			http.Error(w, fmt.Sprintf("Too many selections. Maximum %d allowed.", currentQuestion.MaxSelections), 400)
-			return
-		}
-	}
-
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
-	}
-
-	if currentIndex < len(questions) {
-		answers[currentQuestion.ID] = answer
-	}
-
-	h.db.UpdateAnswers(p.ID, answers)
-
-	if len(answers) >= len(questions) {
-		go h.agents.RunFinalSetup(p.ID)
-		w.Header().Set("HX-Redirect", "/user/wait/"+p.ID)
+	if done {
+		w.Header().Set("HX-Redirect", h.destination(p))
 		return
 	}
 
-	p.Answers = answers
-	h.render(w, "fragment-question.html", h.buildQuestionData(p))
+	h.render(w, "fragment-question.html", h.interview.Next(p))
 }
 
 // GET /user/wait/{id}
@@ -348,16 +236,16 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if p.PipelineStep == "matched" {
-		http.Redirect(w, r, "/user/match/"+p.ID, http.StatusSeeOther)
+	if dest := h.destination(p); dest != r.URL.Path {
+		http.Redirect(w, r, dest, http.StatusSeeOther)
 		return
 	}
 
-	profile := *p.Profile
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
+	profile := GitHubProfile{}
+	if p.Profile != nil {
+		profile = *p.Profile
 	}
+	answers := p.Answers // reading a nil map is fine
 	questions := p.Questions
 
 	type QAPair struct {
@@ -379,22 +267,20 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET /user/wait-status/{id}  — HTMX polled every 3s
+// GET /user/wait-status/{id}  — HTMX, refreshed when the wait stream says so
 func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 	p, err := h.db.GetParticipant(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "not found", 404)
 		return
 	}
-	if p.PipelineStep == "matched" {
-		w.Header().Set("HX-Redirect", "/user/match/"+p.ID)
+	if dest := h.destination(p); dest != "/user/wait/"+p.ID {
+		w.Header().Set("HX-Redirect", dest)
 		return
 	}
-	phase, _ := h.db.GetPhase()
 	h.render(w, "fragment-wait-status.html", map[string]any{
 		"Participant": p,
 		"Count":       h.db.ReadyCount(),
-		"Phase":       phase,
 	})
 }
 
@@ -405,25 +291,18 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if p.PipelineStep != "matched" {
-		http.Redirect(w, r, "/user/wait/"+p.ID, http.StatusSeeOther)
+	if dest := h.destination(p); dest != r.URL.Path {
+		http.Redirect(w, r, dest, http.StatusSeeOther)
 		return
 	}
 
-	var match *Participant
-	if p.MatchedWith != "" {
-		var err error
-		match, err = h.db.GetParticipant(p.MatchedWith)
-		if err != nil {
-			log.Printf("Failed to get match participant %s: %v", p.MatchedWith, err)
-			// Continue without match data
-		}
+	match, result, err := h.relations.PartnerOf(p.ID)
+	if err != nil {
+		log.Printf("Match page for %s: %v", p.ID, err)
 	}
-
-	var redFlags, greenFlags, icebreakers []string
-	json.Unmarshal([]byte(p.RedFlags), &redFlags)
-	json.Unmarshal([]byte(p.GreenFlags), &greenFlags)
-	json.Unmarshal([]byte(p.Icebreakers), &icebreakers)
+	if result == nil {
+		result = &matchResult{RedFlags: []string{}, GreenFlags: []string{}, Icebreakers: []string{}}
+	}
 
 	all, _ := h.db.GetAllParticipants()
 	var others []*Participant
@@ -436,9 +315,9 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "match.html", map[string]any{
 		"Me":          p,
 		"Match":       match,
-		"RedFlags":    redFlags,
-		"GreenFlags":  greenFlags,
-		"Icebreakers": icebreakers,
+		"RedFlags":    result.RedFlags,
+		"GreenFlags":  result.GreenFlags,
+		"Icebreakers": result.Icebreakers,
 		"Others":      others,
 	})
 }
@@ -456,7 +335,7 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.agents.generateMatch(me, other)
+	result, err := h.matcher.ScorePair(me, other)
 	if err != nil {
 		http.Error(w, "compatibility analysis failed: "+err.Error(), 500)
 		return
@@ -477,23 +356,30 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 
 // GET /bigscreen
 func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "screen.html", nil)
+	h.render(w, "screen.html", map[string]any{"Palette": paletteHex()})
 }
 
 func (h *Handler) buildGraphPayload() map[string]any {
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	participants, _ := h.db.GetAllParticipants()
 	activity, _ := h.db.GetRecentActivity(3)
 
 	nodes := make([]graphNode, 0, len(participants))
 	for _, p := range participants {
+		// Identities leave the server only after the Reveal.
+		handle := ""
+		if event.IsRevealed() {
+			handle = p.DisplayHandle()
+		}
 		nodes = append(nodes, graphNode{
 			ID:          p.ID,
 			PersonaName: p.PersonaName,
 			Color:       p.PersonaColor,
 			Symbol:      p.PersonaSymbol,
-			Step:        p.PipelineStep,
-			Handle:      p.GitHubHandle,
+			Step:        string(p.PipelineStep),
+			Ready:       p.PipelineStep.IsReady(),
+			Matched:     p.IsMatched(),
+			Handle:      handle,
 		})
 	}
 
@@ -533,7 +419,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			if seen[key] || seen[rev] {
 				continue
 			}
-			s := h.agents.matcher.PairScore(a, b)
+			s := h.matcher.PairScore(a, b)
 			topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, s})
 			topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, s})
 		}
@@ -561,10 +447,12 @@ func (h *Handler) buildGraphPayload() map[string]any {
 	}
 
 	return map[string]any{
-		"phase":    phase,
-		"nodes":    nodes,
-		"edges":    edges,
-		"activity": activity,
+		"phase":       event,
+		"phase_label": event.Label(),
+		"revealed":    event.IsRevealed(),
+		"nodes":       nodes,
+		"edges":       edges,
+		"activity":    activity,
 	}
 }
 
@@ -575,11 +463,11 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 
 // GET /bigscreen/state  — HTMX polled every 3s
 func (h *Handler) ScreenState(w http.ResponseWriter, r *http.Request) {
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	participants, _ := h.db.GetAllParticipants()
 	activity, _ := h.db.GetRecentActivity(8)
 	h.render(w, "fragment-screen-state.html", map[string]any{
-		"Phase":        phase,
+		"Event":        event,
 		"Participants": participants,
 		"Activity":     activity,
 		"Count":        len(participants),
@@ -591,15 +479,11 @@ func (h *Handler) ScreenState(w http.ResponseWriter, r *http.Request) {
 
 // GET /data
 func (h *Handler) DataIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/data" && r.URL.Path != "/data/" {
-		http.NotFound(w, r)
-		return
-	}
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	participants, _ := h.db.GetAllParticipants()
 	activity, _ := h.db.GetRecentActivity(20)
 	h.render(w, "data.html", map[string]any{
-		"Phase":        phase,
+		"Event":        event,
 		"Participants": participants,
 		"Activity":     activity,
 		"Count":        len(participants),
@@ -644,9 +528,9 @@ func (h *Handler) DataActivity(w http.ResponseWriter, r *http.Request) {
 
 // GET /data/state
 func (h *Handler) DataState(w http.ResponseWriter, r *http.Request) {
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	writeJSON(w, map[string]any{
-		"phase": phase,
+		"phase": event,
 		"count": h.db.ParticipantCount(),
 		"ready": h.db.ReadyCount(),
 	})
@@ -663,19 +547,21 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 // GET /admin
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
-	phase, _ := h.db.GetPhase()
+	event := h.db.EventState()
 	h.render(w, "admin.html", map[string]any{
-		"Phase": phase,
+		"Event": event,
 		"Count": h.db.ParticipantCount(),
 		"Ready": h.db.ReadyCount(),
 	})
 }
 
-// POST /admin/reveal - Deprecated with continuous matching, but kept for compatibility
+// POST /admin/reveal: the admin reveals every Match once everybody is seated.
 func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
-	// With continuous matching, this endpoint is no longer needed
-	// But we keep it for backward compatibility - it just redirects back
-	h.db.LogActivity("ℹ️ Admin triggered reveal (continuous matching is active)")
+	if err := h.db.Reveal(); err != nil {
+		http.Error(w, "reveal failed: "+err.Error(), 500)
+		return
+	}
+	h.db.LogActivity("🎉 The matches are revealed!")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -686,24 +572,17 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Clear LLM cache when resetting event
-	if h.agents != nil {
-		h.agents.clearLLMCache()
-	}
-	h.db.SetPhase("onboarding")
+	h.matcher.ClearCache()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 // POST /admin/rematch
 func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
-	if err := h.db.UnmatchAll(); err != nil {
-		http.Error(w, "rematch failed: "+err.Error(), 500)
-		return
-	}
-	h.db.SetPhase("matching")
 	h.db.LogActivity("🔄 Admin triggered full rematch")
 	go func() {
-		if err := h.agents.RunMatching(); err != nil {
+		if err := h.matchmaking.Rematch(); err != nil {
 			log.Printf("Rematch error: %v", err)
+			h.db.LogActivity("⚠️ Rematch failed: " + err.Error())
 		}
 	}()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
@@ -712,7 +591,10 @@ func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 // DELETE /data/participant/{id}
 func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.db.DeleteParticipant(id); err != nil {
+	if err := h.relations.Remove(id); errors.Is(err, ErrParticipantNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -737,92 +619,116 @@ func sseRedirect(w http.ResponseWriter, url string) {
 	w.(http.Flusher).Flush()
 }
 
+// sseEvent sends a named event with no data.
+func sseEvent(w http.ResponseWriter, name string) {
+	fmt.Fprintf(w, "event: %s\ndata: \n\n", name)
+	w.(http.Flusher).Flush()
+}
+
+// heartbeatEvery keeps idle SSE connections open through proxies (tests shorten it).
+var heartbeatEvery = 25 * time.Second
+
+// watch calls check now and again after every change, until check reports it is
+// done or the client goes away. Nothing is polled: changes come from the change feed.
+func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (done bool)) {
+	changes, stop := h.db.Subscribe()
+	defer stop()
+	heartbeat := time.NewTicker(heartbeatEvery)
+	defer heartbeat.Stop()
+	for {
+		if check() {
+			return
+		}
+		if h.streamChecked != nil {
+			h.streamChecked(r.URL.Path)
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-changes:
+		case <-heartbeat.C:
+			fmt.Fprint(w, ": ping\n\n")
+			w.(http.Flusher).Flush()
+		}
+	}
+}
+
 // GET /user/pipeline-stream/{id}
-// Pushes a redirect event when the participant transitions to ready or matched.
-// Complements HTMX polling (which handles the spinner HTML updates).
+// Tells the onboarding page to refresh when the Participant's step changes
+// (the first question appears) and redirects once they belong elsewhere.
 func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.db.GetParticipant(id); err != nil {
+	first, err := h.db.GetParticipant(id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	if !sseHeaders(w) {
 		return
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			p, err := h.db.GetParticipant(id)
-			if err != nil {
-				return
-			}
-			switch p.PipelineStep {
-			case "ready":
-				sseRedirect(w, "/user/wait/"+p.ID)
-				return
-			case "matched":
-				sseRedirect(w, "/user/match/"+p.ID)
-				return
-			}
+	lastStep := first.PipelineStep
+	h.watch(w, r, func() bool {
+		p, err := h.db.GetParticipant(id)
+		if err != nil {
+			return true
 		}
-	}
+		if dest := h.destination(p); dest != "/user/onboard/"+id {
+			sseRedirect(w, dest)
+			return true
+		}
+		if p.PipelineStep != lastStep {
+			lastStep = p.PipelineStep
+			sseEvent(w, "refresh")
+		}
+		return false
+	})
 }
 
 // GET /user/wait-stream/{id}
-// Pushes a redirect event when the participant is matched.
+// Tells the wait page to refresh when what it shows changes (the ready count,
+// being matched) and redirects once the Participant belongs elsewhere.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := h.db.GetParticipant(id); err != nil {
+	first, err := h.db.GetParticipant(id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	if !sseHeaders(w) {
 		return
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			p, err := h.db.GetParticipant(id)
-			if err != nil {
-				return
-			}
-			if p.PipelineStep == "matched" {
-				sseRedirect(w, "/user/match/"+p.ID)
-				return
-			}
-		}
+	type shown struct {
+		ready   int
+		matched bool
 	}
+	last := shown{h.db.ReadyCount(), first.IsMatched()}
+	h.watch(w, r, func() bool {
+		p, err := h.db.GetParticipant(id)
+		if err != nil {
+			return true
+		}
+		if dest := h.destination(p); dest != "/user/wait/"+id {
+			sseRedirect(w, dest)
+			return true
+		}
+		if now := (shown{h.db.ReadyCount(), p.IsMatched()}); now != last {
+			last = now
+			sseEvent(w, "refresh")
+		}
+		return false
+	})
 }
 
 // GET /bigscreen/stream
-// Pushes graph-data JSON for D3, replacing the JS setTimeout poll.
+// Pushes the graph now and after every change.
 func (h *Handler) ScreenStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	flusher := w.(http.Flusher)
-	sendData := func() {
+	h.watch(w, r, func() bool {
 		data, _ := json.Marshal(h.buildGraphPayload())
 		fmt.Fprintf(w, "data: %s\n\n", data)
-		flusher.Flush()
-	}
-	sendData()
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			sendData()
-		}
-	}
+		w.(http.Flusher).Flush()
+		return false
+	})
 }
