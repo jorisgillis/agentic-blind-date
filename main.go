@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 )
 
 // loadDotEnv sets environment variables from a KEY=value file, without
@@ -38,11 +37,13 @@ func loadDotEnv(path string) {
 func main() {
 	loadDotEnv(".env")
 
-	if os.Getenv("MISTRAL_API_KEY") == "" {
-		log.Println("WARNING: MISTRAL_API_KEY not set — LLM calls will fail")
-	}
 	if os.Getenv("GITHUB_TOKEN") == "" {
 		log.Println("WARNING: GITHUB_TOKEN not set — GitHub API limited to 60 req/hr")
+	}
+
+	llm, err := SelectLLM(os.Getenv)
+	if err != nil {
+		log.Fatal("LLM provider: ", err)
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -56,17 +57,12 @@ func main() {
 	defer db.Close()
 
 	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
-	mistral := NewMistralClient(
-		os.Getenv("MISTRAL_API_KEY"),
-		"mistral-medium-latest",
-		&http.Client{Timeout: 30 * time.Second},
-	)
 
-	matcher := NewMatcher(db, github, mistral)
-	interview := NewInterview(db, mistral)
+	matcher := NewMatcher(db, github, llm)
+	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations)
-	onboarding := NewOnboarding(db, github, interview, NewPersonas(mistral), matchmaking)
+	onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 

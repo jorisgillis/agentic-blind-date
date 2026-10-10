@@ -56,7 +56,7 @@ Late joiners who arrive after the reveal see a "You just missed it!" message rat
 ### Prerequisites
 
 - Go 1.21+
-- A [Mistral AI](https://console.mistral.ai/) API key
+- An LLM provider key ([Mistral AI](https://console.mistral.ai/) by default; see "Choosing an LLM provider" below)
 - A GitHub personal access token (optional, but avoids rate limiting)
 
 ### Setup
@@ -87,8 +87,37 @@ The database (`blind_date.db`) is created automatically on first run.
 
 | Variable | Required | Description |
 |---|---|---|
-| `MISTRAL_API_KEY` | Yes | Mistral AI API key |
+| `LLM_PROVIDER` | No | `mistral` (default), `scaleway` or `ollama` |
+| `LLM_API_KEY` | Depends on provider | See "Choosing an LLM provider" below |
+| `LLM_BASE_URL` | No | Overrides the provider's default base URL |
+| `LLM_MODEL` | No | Overrides the provider's default model |
+| `LLM_TIMEOUT` | No | Overrides the provider's default timeout (Go duration, e.g. `45s`) |
+| `LLM_JSON_MODE` | No | `true` (default) or `false` |
+| `MISTRAL_API_KEY` | Legacy | Still honoured as the key when `LLM_PROVIDER` is mistral (or unset) and `LLM_API_KEY` is unset |
 | `GITHUB_TOKEN` | No | GitHub PAT — increases rate limit from 60 to 5000 req/hr |
+
+### Choosing an LLM provider
+
+The organiser picks the provider for the whole deployment with `LLM_PROVIDER`. Each provider works out of the box with sensible defaults; any of `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_TIMEOUT` and `LLM_JSON_MODE` overrides them.
+
+| Provider | Base URL default | Key | Default model | Default timeout |
+|---|---|---|---|---|
+| `mistral` (default) | `https://api.mistral.ai/v1` | required (`LLM_API_KEY` or legacy `MISTRAL_API_KEY`) | `mistral-medium-latest` | 30s |
+| `scaleway` | `https://api.scaleway.ai/v1` | required — the secret key of a Scaleway IAM API key | `mistral-small-3.2-24b-instruct-2506` | 30s |
+| `ollama` | `http://localhost:11434/v1` | not needed | none — set `LLM_MODEL` yourself | 180s |
+
+An unknown `LLM_PROVIDER` or a missing required key or model stops the app at startup with a clear message, before the event.
+
+#### Running against Ollama
+
+Ollama has no universal default model, so pull one first and name it in `LLM_MODEL`:
+
+```bash
+ollama pull llama3.1:8b
+LLM_PROVIDER=ollama LLM_MODEL=llama3.1:8b ./agentic-blind-date
+```
+
+The 180s default timeout covers the first request, which can be slow while the model loads. A model that hasn't been pulled fails with a clear "try pulling it first" log message instead of being retried.
 
 ## Developing
 
@@ -99,7 +128,7 @@ The database (`blind_date.db`) is created automatically on first run.
 - **D3.js** — force-directed graph on the big screen
 - **Tailwind CSS** — via Play CDN, no build step
 - **SQLite3** — via `github.com/mattn/go-sqlite3` (requires CGO / a C compiler)
-- **Mistral AI** — plain HTTP calls to `api.mistral.ai/v1/chat/completions`
+- **Mistral AI** — via an OpenAI-compatible chat completions adapter (`POST {base}/chat/completions`)
 
 ### Project layout
 
@@ -107,7 +136,8 @@ The database (`blind_date.db`) is created automatically on first run.
 main.go          server setup, route registration, .env auto-loading
 db.go            SQLite schema, Participant type, all queries
 github.go        GitHub public API client
-mistral.go       Mistral chat completion client
+llm.go           OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
+llmprovider.go   LLM provider selection from LLM_* settings
 agents.go        agent pipeline (RunSetup, RunMatching, greedy matching)
 handlers.go      HTTP handlers + /data JSON endpoints + /bigscreen/graph-data
 questions.go     fixed Q&A question definitions
@@ -231,16 +261,7 @@ sqlite3 blind_date.db "SELECT github_handle, persona_name, pipeline_step, compat
 
 ### Mistral model
 
-The model is set in `main.go`:
-
-```go
-mistral := &MistralClient{
-    apiKey: os.Getenv("MISTRAL_API_KEY"),
-    model:  "mistral-small-latest",
-}
-```
-
-Swap to `mistral-large-latest` for more creative personas and match reasoning, at higher cost and latency.
+The model is set in `main.go`, currently `mistral-medium-latest`. Swap to `mistral-large-latest` for more creative personas and match reasoning, at higher cost and latency.
 
 ## License
 

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -9,7 +12,7 @@ func makeParticipant(id string, langs []string, answers map[string]string) *Part
 		ID:           id,
 		GitHubHandle: id,
 		PersonaName:  "The " + id,
-		Profile:     &GitHubProfile{Login: id, Languages: langs},
+		Profile:      &GitHubProfile{Login: id, Languages: langs},
 		Answers:      answers,
 	}
 }
@@ -19,7 +22,7 @@ func makeParticipantWithTopics(id string, langs []string, topics []string, answe
 		ID:           id,
 		GitHubHandle: id,
 		PersonaName:  "The " + id,
-		Profile:     &GitHubProfile{Login: id, Languages: langs, TopTopics: topics},
+		Profile:      &GitHubProfile{Login: id, Languages: langs, TopTopics: topics},
 		Answers:      answers,
 	}
 }
@@ -33,7 +36,7 @@ func makeParticipantWithProjectType(id string, langs []string, projectType strin
 		ID:           id,
 		GitHubHandle: id,
 		PersonaName:  "The " + id,
-		Profile:     &profile,
+		Profile:      &profile,
 		Answers:      answers,
 	}
 }
@@ -47,7 +50,7 @@ func makeParticipantWithDevEnv(id string, langs []string, devEnv []string, answe
 		ID:           id,
 		GitHubHandle: id,
 		PersonaName:  "The " + id,
-		Profile:     &profile,
+		Profile:      &profile,
 		Answers:      answers,
 	}
 }
@@ -223,7 +226,7 @@ func TestFmtInterests(t *testing.T) {
 	// Test with multiple categories
 	interests = map[string]interface{}{
 		"languages": []string{"Go", "Python"},
-		"tools":    []string{"Docker"},
+		"tools":     []string{"Docker"},
 	}
 	result = fmtInterests(interests)
 	if result != "languages: Go, Python; tools: Docker" && result != "tools: Docker; languages: Go, Python" {
@@ -248,8 +251,6 @@ func TestFmtInterests(t *testing.T) {
 		t.Errorf("expected empty string for non-slice value, got %s", result)
 	}
 }
-
-
 
 func TestExtractJSON(t *testing.T) {
 	tests := []struct {
@@ -372,6 +373,40 @@ func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain
 		if got := reload(t, db, id).MatchedWith; got != want {
 			t.Errorf("%s matched with %q, want %q", id, got, want)
 		}
+	}
+	assertInvariant(t, db)
+}
+
+// TestMatchNewcomer_APathologicalChainStopsAtTheBound covers #48: the LLM's
+// score for a pair is not perfectly repeatable, so a chain of take-overs
+// isn't guaranteed to end on its own. The fake LLM here returns a different
+// score on every call (call count mod 10, offset well above every seeded
+// Match score), so the "assessments are cached and scores only rise" argument
+// for why chains end on their own does not apply; maxChain is shrunk on this
+// Matchmaking instance so the bound is reached within a small, deterministic
+// pool instead of needing hundreds of Participants.
+func TestMatchNewcomer_APathologicalChainStopsAtTheBound(t *testing.T) {
+	db := newTestDB(t)
+	var calls int64
+	llm := newFakeLLM().onFunc("matchmaker", func(string) (string, error) {
+		n := atomic.AddInt64(&calls, 1)
+		return fmt.Sprintf(`{"score": %d, "reason": "x"}`, 90+n%10), nil
+	})
+	gh := newFakeGitHub()
+	rel := NewRelationships(db)
+	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), rel)
+	matchmaking.maxChain = 3
+	for _, id := range []string{"A", "B", "C", "D", "E", "F", "N"} {
+		seed(t, db, id, id, "ready")
+	}
+	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
+	rel.Pair(Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
+	rel.Pair(Match{A: reload(t, db, "E"), B: reload(t, db, "F"), Result: &matchResult{Score: 20}})
+
+	err := matchmaking.MatchNewcomer(reload(t, db, "N"))
+
+	if err == nil || !strings.Contains(err.Error(), "chain of take-overs longer than 3") {
+		t.Fatalf("want a chain-too-long error, got %v", err)
 	}
 	assertInvariant(t, db)
 }

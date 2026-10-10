@@ -168,9 +168,8 @@ func TestNonGitHubInterview_ProducesExtraAnswersThatDriveInterestsAndPersona(t *
 func TestExplore_RepeatViewsOfAPairAreServedFromTheCache(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", `{"score": 77, "reason": "Both love Go", "red_flags": [], "green_flags": ["Go"], "icebreakers": ["Why?"]}`)
 	srv, deps := newTestServer(t, llm, nil)
-	for _, id := range []string{"me", "other"} {
-		deps.db.CreateParticipant(id, id, id, true)
-	}
+	seed(t, deps.db, "me", "Me", "ready")
+	seed(t, deps.db, "other", "Other", "ready")
 
 	for i := 0; i < 2; i++ {
 		resp := get(t, srv, "/user/explore/me/other")

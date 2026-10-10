@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -98,6 +98,16 @@ func pairKey(a, b *Participant) string {
 	return b.ID + ":" + a.ID
 }
 
+// matchAssessmentReply is the LLM's raw reply shape for a Match assessment.
+// Score is a pointer so a missing field is distinguishable from a zero score.
+type matchAssessmentReply struct {
+	Score       *int     `json:"score"`
+	Reason      string   `json:"reason"`
+	RedFlags    []string `json:"red_flags"`
+	GreenFlags  []string `json:"green_flags"`
+	Icebreakers []string `json:"icebreakers"`
+}
+
 func (m *Matcher) assess(p1, p2 *Participant) (*matchResult, error) {
 	system := `You are the matchmaker at a tech meetup blind date event.
 Analyze two developers' profiles and produce a fun, humorous compatibility assessment.
@@ -107,23 +117,14 @@ Respond with ONLY valid JSON — no markdown:
 	user := "Compare these two developers:\n\n" +
 		describeDeveloper(1, p1) + "\n\n" + describeDeveloper(2, p2) + m.followNote(p1, p2)
 
-	response, err := m.llm.Chat(system, user)
+	reply, err := AskStructured(m.llm, system, user, func(r matchAssessmentReply) error {
+		if r.Score == nil {
+			return errors.New("match reply has no score")
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	var reply struct {
-		Score       *int     `json:"score"`
-		Reason      string   `json:"reason"`
-		RedFlags    []string `json:"red_flags"`
-		GreenFlags  []string `json:"green_flags"`
-		Icebreakers []string `json:"icebreakers"`
-	}
-	if err := json.Unmarshal([]byte(extractJSON(response)), &reply); err != nil {
-		return nil, fmt.Errorf("match parse error: %v (raw: %s)", err, response)
-	}
-	if reply.Score == nil {
-		return nil, fmt.Errorf("match reply has no score (raw: %s)", response)
 	}
 	return &matchResult{
 		Score:       min(max(*reply.Score, 0), 100),
