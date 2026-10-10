@@ -271,6 +271,28 @@ func TestExplore_ShowsPersonasOnlyNotHandlesOrNames(t *testing.T) {
 	}
 }
 
+// TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal covers
+// #47's acceptance criterion: after the Reveal, two ready Participants can
+// Explore each other, in either direction.
+func TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
+	srv, deps := newTestServer(t, llm, nil)
+	deps.db.Reveal()
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+
+	for _, path := range []string{"/user/explore/a/b", "/user/explore/b/a"} {
+		resp := get(t, srv, path)
+		if resp.StatusCode != 200 {
+			t.Errorf("%s: want 200, got %d", path, resp.StatusCode)
+			continue
+		}
+		if body := readBody(t, resp); !strings.Contains(body, "80%") {
+			t.Errorf("%s: explore page: want the score, got %q", path, body)
+		}
+	}
+}
+
 func TestBigScreen_GraphHasMatchedAndPotentialEdges(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")

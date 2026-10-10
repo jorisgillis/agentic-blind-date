@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -145,6 +147,17 @@ func (g *fakeGitHub) followLookups() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return len(g.lookups)
+}
+
+// timeoutGitHub is a GitHubAPI whose profile fetch fails with a
+// deadline-exceeded error, like the production client when its bounded timeout
+// fires (spec #46's fault, injected without touching production code).
+type timeoutGitHub struct {
+	fakeGitHub
+}
+
+func (*timeoutGitHub) FetchProfile(handle string) (*GitHubProfile, error) {
+	return nil, fmt.Errorf("Get \"https://api.github.com/users/%s\": %w", handle, context.DeadlineExceeded)
 }
 
 // testSrv serves the mux in-process: no port is bound and nothing leaves the process.

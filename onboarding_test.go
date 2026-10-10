@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func onboardingFor(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*Onboarding, *DB) {
+func onboardingFor(t *testing.T, llm *fakeLLM, gh GitHubAPI) (*Onboarding, *DB) {
 	t.Helper()
 	db := newTestDB(t)
 	interview := NewInterview(db, llm)
@@ -289,6 +289,26 @@ func TestOnboarding_AGitHubProfileThatCannotBeFetchedFallsBackToTheHandle(t *tes
 	fallback := o.githubProfile(reload(t, db, "ghost"))
 	if fallback.Login != "ghost" || fallback.Name != "ghost" || len(fallback.Languages) != 0 {
 		t.Errorf("fallback profile: want the bare handle profile, got %+v", fallback)
+	}
+}
+
+// TestOnboarding_AGitHubFetchThatTimesOutFallsBackToTheMinimalProfile covers
+// #46's acceptance criterion: when the GitHub profile fetch times out,
+// onboarding continues with the minimal profile built from the handle, and the
+// Interview still starts.
+func TestOnboarding_AGitHubFetchThatTimesOutFallsBackToTheMinimalProfile(t *testing.T) {
+	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?"]}`)
+	o, db := onboardingFor(t, llm, &timeoutGitHub{})
+
+	id, err := o.Register("Octo", "octo", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	eventually(t, "interview started", func() bool { return reload(t, db, id).PipelineStep == StepInterviewing })
+	p := reload(t, db, id)
+	if p.Profile == nil || p.Profile.Login != "octo" || p.Profile.Name != "octo" || len(p.Profile.Languages) != 0 {
+		t.Errorf("want the minimal profile built from the handle, got %+v", p.Profile)
 	}
 }
 
