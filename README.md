@@ -108,6 +108,8 @@ The organiser picks the provider for the whole deployment with `LLM_PROVIDER`. E
 
 An unknown `LLM_PROVIDER` or a missing required key or model stops the app at startup with a clear message, before the event.
 
+Transient failures — network errors, timeouts, `429 Too Many Requests` and `5xx` responses — are retried up to twice with exponential back-off. When the provider answers `429`, the error message carries a hint: it may be a workspace or organisation spending cap on the API key rather than an ordinary rate limit.
+
 #### Running against Ollama
 
 Ollama has no universal default model, so pull one first and name it in `LLM_MODEL`:

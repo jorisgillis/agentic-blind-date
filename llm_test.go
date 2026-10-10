@@ -121,33 +121,66 @@ func TestOpenAIClient_RetriesTransientFailures(t *testing.T) {
 	}
 }
 
-func TestOpenAIClient_RetriesEvery5xxAndGivesUpAfterThreeAttempts(t *testing.T) {
-	for _, status := range []int{500, 502, 503, 504} {
-		u := newUpstream().on(chatPath, status, "boom")
+// TestOpenAIClient_RetryPolicyByStatus consolidates the retry rules into one
+// table: transient statuses (429 and 5xx) are retried up to three attempts
+// before giving up, while permanent 4xx failures return after a single attempt.
+func TestOpenAIClient_RetryPolicyByStatus(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status    int
+		wantTries int
+	}{
+		"429 is retried":   {429, 3},
+		"500 is retried":   {500, 3},
+		"502 is retried":   {502, 3},
+		"503 is retried":   {503, 3},
+		"504 is retried":   {504, 3},
+		"400 is permanent": {400, 1},
+		"401 is permanent": {401, 1},
+		"403 is permanent": {403, 1},
+		"404 is permanent": {404, 1},
+		"422 is permanent": {422, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			u := newUpstream().on(chatPath, tc.status, `{"error": {"message": "nope"}}`)
 
-		_, err := openAIFor(u, "key", "m", true).Chat("s", "u")
+			_, err := openAIFor(u, "key", "m", true).Chat("s", "u")
 
-		if err == nil {
-			t.Fatalf("%d: want an error", status)
-		}
-		if len(u.requests) != 3 {
-			t.Errorf("%d: attempts: want 3, got %d", status, len(u.requests))
-		}
+			if err == nil {
+				t.Fatalf("%d: want an error", tc.status)
+			}
+			if len(u.requests) != tc.wantTries {
+				t.Errorf("%d: attempts: want %d, got %d", tc.status, tc.wantTries, len(u.requests))
+			}
+		})
 	}
 }
 
-func TestOpenAIClient_NeverRetriesPermanentFailures(t *testing.T) {
-	for _, status := range []int{400, 401, 403, 404, 422} {
-		u := newUpstream().on(chatPath, status, `{"error": {"message": "nope"}}`)
+// TestOpenAIClient_A429HintsAtASpendingCap covers #35 (via #103): a 429 error
+// must hint that a workspace or organisation spending cap can masquerade as an
+// ordinary rate limit.
+func TestOpenAIClient_A429HintsAtASpendingCap(t *testing.T) {
+	u := newUpstream().on(chatPath, 429, `{"error": {"message": "slow down"}}`)
 
-		_, err := openAIFor(u, "key", "m", true).Chat("s", "u")
+	_, err := openAIFor(u, "key", "m", true).Chat("s", "u")
 
-		if err == nil {
-			t.Fatalf("%d: want an error", status)
-		}
-		if len(u.requests) != 1 {
-			t.Errorf("%d: should not be retried, got %d attempts", status, len(u.requests))
-		}
+	if err == nil || !strings.Contains(err.Error(), "429") {
+		t.Fatalf("want the 429 status in the error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "spending cap") {
+		t.Errorf("a 429 should hint at a workspace or organisation spending cap, got %v", err)
+	}
+}
+
+// TestOpenAIClient_AMalformedBaseURLReturnsAClearError covers #103: a
+// configured base URL that cannot be parsed must return a clear error from
+// doChat instead of nil-panicking on the request later.
+func TestOpenAIClient_AMalformedBaseURLReturnsAClearError(t *testing.T) {
+	c := NewOpenAIClient("http://\x7f.example", "key", "m", true, &http.Client{}, instantClock{})
+
+	_, err := c.Chat("s", "u")
+
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
+		t.Errorf("want a clear invalid-base-URL error, got %v", err)
 	}
 }
 

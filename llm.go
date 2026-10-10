@@ -124,7 +124,10 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 	}
 	body, _ := json.Marshal(req)
 
-	httpReq, _ := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body)) // built from a configured base URL
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body)) // built from a configured base URL
+	if err != nil {
+		return "", &chatError{msg: fmt.Sprintf("LLM: invalid base URL %q: %v", c.baseURL, err)}
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
@@ -146,8 +149,13 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 		if resp.StatusCode == http.StatusNotFound {
 			log.Printf("LLM model %q not found (try pulling it first): %s", c.model, text)
 		}
+		msg := fmt.Sprintf("LLM HTTP %d: %s", resp.StatusCode, text)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			// #35: a 429 often means a workspace or organisation spending cap, not a rate limit.
+			msg += " — this may be a workspace or organisation spending cap rather than an ordinary rate limit"
+		}
 		return "", &chatError{
-			msg:       fmt.Sprintf("LLM HTTP %d: %s", resp.StatusCode, text),
+			msg:       msg,
 			retryable: retryableStatus(resp.StatusCode),
 		}
 	}
