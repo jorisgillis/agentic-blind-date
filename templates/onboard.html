@@ -19,8 +19,11 @@
     </div>
 
     {{/* The fragment self-contains the polling div (hx-swap="outerHTML") */}}
-    {{/* fragment self-contains the polling div */}}
-    {{template "fragment-pipeline-step.html" .}}
+    {{if .Question}}
+      {{template "fragment-question.html" .Question}}
+    {{else}}
+      {{template "fragment-pipeline-step.html" .}}
+    {{end}}
 
   </div>
   <script>

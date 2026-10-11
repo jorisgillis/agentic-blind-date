@@ -90,10 +90,14 @@ func TestPipelineStream_RefreshesWhenTheInterviewStartsAndRedirectsWhenDone(t *t
 	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
 
 	s := open(t, srv, "/user/pipeline-stream/p")
-	sentNothingNew(t, s, 1, "", "while preparing")
+	waitFor(t, s, "event: refresh") // the connect-time sync
+	synced := s.String()
+	sentNothingNew(t, s, 1, synced, "while preparing")
 
 	forceStep(deps.db, "p", StepInterviewing)
-	waitFor(t, s, "event: refresh")
+	eventually(t, "a second refresh when the Interview starts", func() bool {
+		return strings.Count(s.String(), "event: refresh") >= 2
+	})
 
 	before := s.String()
 	deps.db.LogActivity("someone else did something")
@@ -111,6 +115,19 @@ func TestPipelineStream_RedirectsImmediatelyWhenAlreadyDone(t *testing.T) {
 	s := open(t, srv, "/user/pipeline-stream/r")
 
 	waitFor(t, s, "data: /user/wait/r")
+}
+
+func TestPipelineStream_SyncsOnConnectWhenTheStepAlreadySettled(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.CreateParticipant("p", "p", "P", true)
+	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
+	forceStep(deps.db, "p", StepInterviewing)
+
+	s := open(t, srv, "/user/pipeline-stream/p")
+
+	// Nothing ever changes: the sync comes from connecting, so a page that
+	// rendered before the step settled (a reload, a restart) still catches up.
+	waitFor(t, s, "event: refresh")
 }
 
 func TestWaitStream_RefreshesOnChangesAndRedirectsOnTheReveal(t *testing.T) {

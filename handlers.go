@@ -198,7 +198,25 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, dest, http.StatusSeeOther)
 		return
 	}
-	h.render(w, "onboard.html", p)
+	h.render(w, "onboard.html", onboardPage{Participant: p, Question: h.openQuestion(p)})
+}
+
+// onboardPage is the Onboard page's data: the Participant plus the Interview
+// question to show right away when the Interview has already started, so a
+// page loaded mid-Interview (a reload, a restart) shows the question instead
+// of the preparing placeholder.
+type onboardPage struct {
+	*Participant
+	Question *QuestionData
+}
+
+// openQuestion is the Interview question the pipeline area shows right away:
+// the first unanswered one while the Interview is running, nil otherwise.
+func (h *Handler) openQuestion(p *Participant) *QuestionData {
+	if qd := h.interview.Next(p); qd != nil && p.PipelineStep == StepInterviewing {
+		return qd
+	}
+	return nil
 }
 
 // GET /user/pipeline/{id}  — HTMX, refreshed when the pipeline stream says so
@@ -213,7 +231,7 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("HX-Redirect", dest)
 		return
 	}
-	if qd := h.interview.Next(p); qd != nil && p.PipelineStep == StepInterviewing {
+	if qd := h.openQuestion(p); qd != nil {
 		h.render(w, "fragment-question.html", qd)
 		return
 	}
@@ -1775,8 +1793,10 @@ func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (do
 }
 
 // GET /user/pipeline-stream/{id}
-// Tells the onboarding page to refresh when the Participant's step changes
-// (the first question appears) and redirects once they belong elsewhere.
+// Tells the onboarding page to refresh when the stream opens — the page may
+// have rendered before the Participant's step settled — and when the step
+// changes (the first question appears), and redirects once they belong
+// elsewhere.
 func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -1788,6 +1808,7 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lastStep := first.PipelineStep
+	synced := false
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
@@ -1797,7 +1818,8 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 			sseRedirect(w, dest)
 			return true
 		}
-		if p.PipelineStep != lastStep {
+		if !synced || p.PipelineStep != lastStep {
+			synced = true
 			lastStep = p.PipelineStep
 			sseEvent(w, "refresh")
 		}

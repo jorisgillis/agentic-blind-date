@@ -100,6 +100,20 @@ func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	}
 }
 
+func TestOnboard_ShowsTheQuestionWhenTheInterviewAlreadyStarted(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "i", "I", "interviewing") // one unanswered question, as after a reload
+
+	body := readBody(t, get(t, srv, "/user/onboard/i"))
+
+	if strings.Contains(body, "Agent pipeline running") {
+		t.Errorf("want the interview, got the preparing placeholder")
+	}
+	if !strings.Contains(body, "Tabs or spaces?") {
+		t.Errorf("want the first question on a settled interview")
+	}
+}
+
 func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal() // after the Reveal, matched Participants see their Match

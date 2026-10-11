@@ -158,7 +158,8 @@ func TestStreams_EndWhenTheParticipantIsRemoved(t *testing.T) {
 	seed(t, deps.db, "w", "W", "ready")
 	pipeline := open(t, srv, "/user/pipeline-stream/i")
 	wait := open(t, srv, "/user/wait-stream/w")
-	sentNothingNew(t, pipeline, 1, "", "before removal")
+	waitFor(t, pipeline, "event: refresh") // the connect-time sync
+	sentNothingNew(t, pipeline, 1, pipeline.String(), "before removal")
 	sentNothingNew(t, wait, 1, "", "before removal")
 
 	NewRelationships(deps.db).Remove("i")
