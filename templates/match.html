@@ -36,6 +36,14 @@
       {{end}}
     </div>
 
+    {{/* Mission card — the evening's hunting ground, refreshed when the
+         match stream says so */}}
+    {{template "fragment-mission-card.html" .MissionCard}}
+
+    {{/* Meet section — your meet code QR and the handshake, right next to
+         the mission card, refreshed when the match stream says so */}}
+    {{template "fragment-meet-status.html" .MeetStatus}}
+
     {{if .Match}}
     {{$m := .Match}}
 
@@ -77,25 +85,13 @@
          the match stream says so */}}
     {{template "fragment-dossier.html" .Dossier}}
 
-    {{/* QR code */}}
-    <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
-      <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
-      <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
-    </div>
-
     {{else}}
     <div class="text-center text-gray-700 py-12">
       <p class="text-4xl mb-3">🤷</p>
       <p class="font-bold text-gray-900">You don't have a match (yet)</p>
-      <p class="text-sm mt-2">Hang tight — you can still meet people below.</p>
+      <p class="text-sm mt-2">Hang tight — your mission card above sends you hunting.</p>
     </div>
     {{end}}
-
-    {{/* Mission card — refreshed when the match stream says so */}}
-    {{template "fragment-mission-card.html" .MissionCard}}
-
-    {{/* Meet section — phase-gated, refreshed when the match stream says so */}}
-    {{template "fragment-meet-status.html" .MeetStatus}}
 
     {{/* Show & tell — sign-up open during the social and show & tell,
          refreshed when the match stream says so */}}
@@ -103,6 +99,12 @@
 
     {{/* Settings — the Participant's contact channels, entered once */}}
     {{template "fragment-settings.html" .Settings}}
+
+    {{/* Share your profile — the page's only QR, at the bottom */}}
+    <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
+      <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
+      <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
+    </div>
 
     {{/* Recap link — during closed, the recap page as a QR, refreshed when
          the match stream says so */}}

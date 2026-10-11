@@ -235,6 +235,43 @@ func TestPersonaCard(t *testing.T) {
 	}
 }
 
+// TestMatchPage_SectionOrder covers #130: the mission card sits high on the
+// page, the meet code QR right next to it, the match reveal and the dossier
+// below the mission card, and the share-profile QR at the bottom.
+func TestMatchPage_SectionOrder(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	seed(t, deps.db, "b", "The Crab", "ready")
+	pair(t, deps.db, "a", "b")
+	deps.events.Reveal()
+
+	body := readBody(t, get(t, srv, "/user/match/a"))
+
+	markers := []string{
+		"It's a match!",
+		`id="mission-card"`,
+		`id="meet-status"`,
+		"Find them in the room",
+		`id="dossier"`,
+		`id="showtell"`,
+		`id="settings"`,
+		`id="qr"`,
+		`id="recap"`,
+	}
+	last := -1
+	for _, m := range markers {
+		idx := strings.Index(body, m)
+		if idx < 0 {
+			t.Errorf("the match page should contain %q", m)
+			continue
+		}
+		if idx < last {
+			t.Errorf("%q appears out of order on the match page", m)
+		}
+		last = idx
+	}
+}
+
 // TestMatchPage_ShowsThePartnerAndTheLockedDossier covers the Reveal: the
 // Match page shows the partner's full persona card and the "find them in the
 // room" panel — personas only, never the partner's handle — while the
