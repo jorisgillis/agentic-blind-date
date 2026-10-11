@@ -65,6 +65,7 @@ type graphEdge struct {
 	Target  string `json:"target"`
 	Score   int    `json:"score"`
 	Matched bool   `json:"matched"`
+	Meeting bool   `json:"meeting"`
 }
 
 // Handler handles HTTP requests for the web application.
@@ -711,6 +712,29 @@ func (h *Handler) buildGraphPayload() map[string]any {
 		})
 	}
 
+	// Meeting edges: every completed meeting joins the graph alongside the
+	// match edges. A pair that are matched and met keeps one edge, flagged as
+	// both — the meeting is the stronger fact on the screen. The map holds
+	// edge indexes, not pointers: appending below may reallocate the slice.
+	byPair := map[string]int{}
+	for i := range edges {
+		byPair[edges[i].Source+":"+edges[i].Target] = i
+		byPair[edges[i].Target+":"+edges[i].Source] = i
+	}
+	meetings, _ := h.meetings.All()
+	for _, m := range meetings {
+		if !m.Completed() {
+			continue
+		}
+		key := m.A + ":" + m.B
+		if i, ok := byPair[key]; ok {
+			edges[i].Meeting = true
+			continue
+		}
+		seen[key] = true
+		edges = append(edges, graphEdge{Source: m.A, Target: m.B, Meeting: true})
+	}
+
 	type scored struct {
 		id    string
 		score int
@@ -753,7 +777,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 		}
 	}
 
-	return map[string]any{
+	payload := map[string]any{
 		"phase":       phase,
 		"phase_label": phase.Label(),
 		"revealed":    phase.AtLeast(PhaseSocial),
@@ -761,6 +785,28 @@ func (h *Handler) buildGraphPayload() map[string]any {
 		"edges":       edges,
 		"activity":    activity,
 	}
+
+	// The social scoreboard: the top 5 by connections, from the social on.
+	// During onboarding the Big Screen is the graph and the ticker only.
+	if phase.AtLeast(PhaseSocial) {
+		board, err := h.meetings.Leaderboard()
+		if err != nil {
+			log.Printf("Connection leaderboard: %v", err)
+		} else {
+			top := board
+			if len(top) > 5 {
+				top = top[:5]
+			}
+			payload["leaderboard"] = top
+			// The champion is named at the close: the Merge Trophy winner,
+			// the top of the final leaderboard. The closing ceremony screen
+			// is a later ticket; this is the naming.
+			if phase == PhaseClosed && len(top) > 0 {
+				payload["champion"] = &top[0]
+			}
+		}
+	}
+	return payload
 }
 
 // GET /bigscreen/graph-data  — kept as fallback; big screen now uses /bigscreen/stream
@@ -873,6 +919,17 @@ func (h *Handler) DataMeetings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, meetings)
 }
 
+// GET /data/leaderboard — debug: the connection ranking, derived from
+// completed meetings. The top entry is the Champion.
+func (h *Handler) DataLeaderboard(w http.ResponseWriter, r *http.Request) {
+	board, err := h.meetings.Leaderboard()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, board)
+}
+
 // GET /data/missioncard/{id} — debug: the Participant's Mission card — tiles,
 // reasons and stamp state.
 func (h *Handler) DataMissionCard(w http.ResponseWriter, r *http.Request) {
@@ -954,8 +1011,32 @@ func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
 		if after.MissionCardsLive() {
 			h.missions.GenerateAll()
 		}
+		// The champion is named at the close; the closing ceremony screen
+		// itself is a later ticket.
+		if after == PhaseClosed {
+			h.announceChampion()
+		}
 	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// announceChampion names the Merge Trophy winner on the ticker when the event
+// closes: the Participant with the most completed meetings, ties broken by
+// persona name. With no Participants there is no champion to name.
+func (h *Handler) announceChampion() {
+	champion, err := h.meetings.Champion()
+	if err != nil {
+		log.Printf("Champion at the close: %v", err)
+		return
+	}
+	if champion == nil {
+		return
+	}
+	noun := "connections"
+	if champion.Connections == 1 {
+		noun = "connection"
+	}
+	h.db.LogActivity(fmt.Sprintf("👑 %s %s takes the Merge Trophy with %d %s!", champion.Symbol, champion.Name, champion.Connections, noun))
 }
 
 // POST /admin/reset

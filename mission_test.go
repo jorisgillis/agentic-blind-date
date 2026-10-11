@@ -1261,7 +1261,7 @@ func TestMissionCardData_RanksAgainstTheTop5(t *testing.T) {
 	if len(top) != 5 {
 		t.Fatalf("the top 5: want 5 entries, got %d", len(top))
 	}
-	wantOrder := []string{"p1", "p2", "p3", "p4", "p5"} // ties broken by id
+	wantOrder := []string{"p1", "p2", "p3", "p4", "p5"} // ties broken by persona name
 	for i, want := range wantOrder {
 		if top[i].ID != want {
 			t.Errorf("top[%d]: want %s, got %s", i, want, top[i].ID)
@@ -1531,7 +1531,8 @@ func TestMeetings_Leaderboard(t *testing.T) {
 		}
 	}
 
-	// Both sides: one connection each; ties broken by id.
+	// Both sides: one connection each; ties broken by persona name, so the
+	// Crab ranks above the Gopher.
 	if _, _, err := ms.Confirm(b, a, OriginOther); err != nil {
 		t.Fatal(err)
 	}
@@ -1540,8 +1541,8 @@ func TestMeetings_Leaderboard(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []ConnectionStanding{
-		{ID: "a", Name: "The Gopher", Symbol: board[0].Symbol, Color: board[0].Color, Connections: 1},
-		{ID: "b", Name: "The Crab", Symbol: board[1].Symbol, Color: board[1].Color, Connections: 1},
+		{ID: "b", Name: "The Crab", Symbol: board[0].Symbol, Color: board[0].Color, Connections: 1},
+		{ID: "a", Name: "The Gopher", Symbol: board[1].Symbol, Color: board[1].Color, Connections: 1},
 		{ID: "c", Name: "The C", Symbol: board[2].Symbol, Color: board[2].Color, Connections: 0},
 	}
 	for i, w := range want {

@@ -290,8 +290,9 @@ type ConnectionStanding struct {
 }
 
 // Leaderboard ranks every Participant by their derived connection count —
-// one per completed meeting — ties broken by id so the order is
-// deterministic. Derived from the meetings table, never stored.
+// one per completed meeting — ties broken by persona name (then id), so the
+// order is deterministic and its top is the Champion. Derived from the
+// meetings table, never stored.
 func (ms *Meetings) Leaderboard() ([]ConnectionStanding, error) {
 	rows, err := ms.db.db.Query(`
 		SELECT p.id, p.persona_name, p.persona_symbol, p.persona_color,
@@ -300,7 +301,7 @@ func (ms *Meetings) Leaderboard() ([]ConnectionStanding, error) {
 		LEFT JOIN meetings m
 		  ON m.completed_at IS NOT NULL AND (m.participant_a = p.id OR m.participant_b = p.id)
 		GROUP BY p.id
-		ORDER BY connections DESC, p.id`)
+		ORDER BY connections DESC, p.persona_name, p.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +316,20 @@ func (ms *Meetings) Leaderboard() ([]ConnectionStanding, error) {
 		board = append(board, c)
 	}
 	return board, rows.Err()
+}
+
+// Champion names the Merge Trophy winner: the Participant with the most
+// completed meetings — the top of the Leaderboard, ties broken by persona
+// name. Nil when the event has no Participants.
+func (ms *Meetings) Champion() (*ConnectionStanding, error) {
+	board, err := ms.Leaderboard()
+	if err != nil {
+		return nil, err
+	}
+	if len(board) == 0 {
+		return nil, nil
+	}
+	return &board[0], nil
 }
 
 // RemoveParticipant deletes a Participant's Meetings when they leave the event.

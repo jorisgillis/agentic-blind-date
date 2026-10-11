@@ -114,6 +114,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /data/activity", h.DataActivity)
 	mux.HandleFunc("GET /data/state", h.DataState)
 	mux.HandleFunc("GET /data/meetings", h.DataMeetings)
+	mux.HandleFunc("GET /data/leaderboard", h.DataLeaderboard)
 	mux.HandleFunc("GET /data/missioncard/{id}", h.DataMissionCard)
 
 	mux.HandleFunc("GET /admin", h.Admin)

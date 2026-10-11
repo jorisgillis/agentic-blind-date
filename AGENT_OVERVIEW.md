@@ -141,13 +141,14 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/user/met/{id}` | Confirm a meeting (confirmer's id; target via `code` form value) |
 | GET | `/user/meet-status/{id}` | HTMX fragment: meet section (code, QR, "I met someone") |
 | GET | `/user/mission/{id}` | HTMX fragment: mission card section (3×3 grid, stamps, top connections) |
-| GET | `/bigscreen` | Projector view with D3 graph |
+| GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel (phase, counts, transition buttons) |
 | POST | `/admin/phase` | Advance the event to a later phase |
 | POST | `/admin/reveal` | Reveal matches (alias for the social phase) |
 | POST | `/admin/reset` | Clear all data |
 | GET | `/data/meetings` | Debug: meetings (JSON) |
+| GET | `/data/leaderboard` | Debug: connection ranking derived from completed meetings (JSON) |
 | GET | `/data/missioncard/{id}` | Debug: mission card (tiles, reasons, stamp state) |
 | GET | `/data/*` | Debug endpoints (JSON) |
 
