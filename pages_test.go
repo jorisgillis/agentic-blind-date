@@ -185,6 +185,55 @@ func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 	}
 }
 
+// TestPersonaCard covers #125: the wait page's persona card is a refreshable
+// fragment — the persona is crafted in the background after the last
+// interview answer, so the fragment serves a placeholder until it exists.
+func TestPersonaCard(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "r", "The Bard", "ready")
+	if err := deps.db.CreateParticipant("crafting", "crafting", "Crafting", true); err != nil {
+		t.Fatal(err)
+	}
+	forceStep(deps.db, "crafting", StepCreatingPersona)
+	seed(t, deps.db, "m", "M", "ready")
+	seed(t, deps.db, "m2", "M2", "ready")
+	pair(t, deps.db, "m", "m2")
+
+	// The wait page loads the card as a fragment and refreshes it by push.
+	body := readBody(t, get(t, srv, "/user/wait/r"))
+	for _, want := range []string{`hx-get="/user/persona/r"`, `htmx.trigger('#persona-card', 'refresh')`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the wait page should contain %q", want)
+		}
+	}
+
+	// A ready Participant sees their persona card.
+	body = readBody(t, get(t, srv, "/user/persona/r"))
+	for _, want := range []string{`id="persona-card"`, `hx-get="/user/persona/r"`, "The Bard", "Ships things", `src="/qr?data=/user/wait/r&size=120"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the persona card should show %q, got: %s", want, body)
+		}
+	}
+
+	// A Participant whose persona is still being crafted sees a placeholder.
+	body = readBody(t, get(t, srv, "/user/persona/crafting"))
+	if !strings.Contains(body, "Crafting your persona") {
+		t.Errorf("want the crafting placeholder, got: %s", body)
+	}
+	if strings.Contains(body, "/qr?data=") {
+		t.Error("no profile QR before the persona exists")
+	}
+
+	// A matched Participant belongs on the match page once the social begins.
+	deps.events.Reveal()
+	if loc := get(t, srv, "/user/persona/m").Header.Get("HX-Redirect"); loc != "/user/match/m" {
+		t.Errorf("matched: want HX-Redirect to match, got %q", loc)
+	}
+	if resp := get(t, srv, "/user/persona/nobody"); resp.StatusCode != 404 {
+		t.Errorf("unknown: want 404, got %d", resp.StatusCode)
+	}
+}
+
 // TestMatchPage_ShowsThePartnerAndTheLockedDossier covers the Reveal: the
 // Match page shows the partner's full persona card and the "find them in the
 // room" panel — personas only, never the partner's handle — while the

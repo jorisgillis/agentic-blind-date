@@ -324,6 +324,22 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "fragment-wait-status.html", h.waitStatusData(p))
 }
 
+// GET /user/persona/{id} — HTMX, the wait page's persona card, refreshed when
+// the wait stream says so: the persona is crafted in the background after
+// the last interview answer, so the page may have rendered before it exists.
+func (h *Handler) PersonaCard(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	if dest := h.destination(p); dest != "/user/wait/"+p.ID {
+		w.Header().Set("HX-Redirect", dest)
+		return
+	}
+	h.render(w, "fragment-persona-card.html", p)
+}
+
 // waitStatusData is the wait page's status section. A matched Participant
 // sees the teaser — their future Match's emoji and colour and a hint at what
 // the pair disagreed on, never the partner's identity, score or dossier. An
@@ -1830,8 +1846,8 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 
 // GET /user/wait-stream/{id}
 // Tells the wait page to refresh when what it shows changes (the ready count,
-// being matched, the meet section) and redirects once the Participant belongs
-// elsewhere.
+// being matched, the persona being crafted, the meet section) and redirects
+// once the Participant belongs elsewhere.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -1846,8 +1862,9 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 		ready   int
 		matched bool
 		meet    meetSignature
+		persona string
 	}
-	last := shown{h.db.ReadyCount(), first.IsMatched(), h.meetSignature(first)}
+	last := shown{h.db.ReadyCount(), first.IsMatched(), h.meetSignature(first), first.PersonaName}
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
@@ -1857,7 +1874,7 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 			sseRedirect(w, dest)
 			return true
 		}
-		if now := (shown{h.db.ReadyCount(), p.IsMatched(), h.meetSignature(p)}); now != last {
+		if now := (shown{h.db.ReadyCount(), p.IsMatched(), h.meetSignature(p), p.PersonaName}); now != last {
 			last = now
 			sseEvent(w, "refresh")
 		}

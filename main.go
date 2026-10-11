@@ -105,6 +105,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("POST /user/answer/{id}", h.SubmitAnswer)
 	mux.HandleFunc("GET /user/wait/{id}", h.Wait)
 	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
+	mux.HandleFunc("GET /user/persona/{id}", h.PersonaCard)
 	mux.HandleFunc("GET /user/match/{id}", h.Match)
 	mux.HandleFunc("GET /user/dossier/{id}", h.Dossier)
 	mux.HandleFunc("GET /user/mission/{id}", h.MissionCard)

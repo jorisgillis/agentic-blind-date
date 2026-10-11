@@ -145,6 +145,23 @@ func TestWaitStream_RefreshesOnChangesAndRedirectsOnTheReveal(t *testing.T) {
 	waitFor(t, s, "event: redirect\ndata: /user/match/a")
 }
 
+// TestWaitStream_RefreshesWhenThePersonaIsCrafted covers #125: the persona is
+// crafted in the background after the last interview answer, and the wait
+// page's card appears by push when it lands.
+func TestWaitStream_RefreshesWhenThePersonaIsCrafted(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.CreateParticipant("a", "a", "A", true); err != nil {
+		t.Fatal(err)
+	}
+	forceStep(deps.db, "a", StepCreatingPersona)
+
+	s := open(t, srv, "/user/wait-stream/a")
+	sentNothingNew(t, s, 1, "", "the persona is still being crafted")
+
+	setPersona(t, deps.db, "a", "The Bard", "Ships things")
+	waitFor(t, s, "event: refresh")
+}
+
 func TestScreenStream_PushesTheGraphNowAndOnEveryChange(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")

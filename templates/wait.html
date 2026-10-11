@@ -22,21 +22,9 @@
 
     {{$p := .Participant}}
 
-    {{/* Persona card */}}
-    <div class="flex flex-col items-center text-center pt-2">
-      <div class="w-36 h-36 rounded-3xl bg-white/20 flex items-center justify-center text-8xl mb-4 shadow-xl ring-4 ring-black/10">
-        {{$p.PersonaSymbol}}
-      </div>
-      <h2 class="text-2xl font-black {{textColor $p.PersonaColor}}">{{$p.PersonaName}}</h2>
-      {{if $p.PersonaTagline}}
-      <p class="text-gray-700 text-sm mt-1 italic" data-md>"{{$p.PersonaTagline}}"</p>
-      {{end}}
-      <p class="text-gray-600 text-xs mt-1">{{$p.DisplayHandle}}</p>
-      <div class="mt-4">
-        <p class="text-gray-600 text-xs mb-2">📲 Let others find your profile</p>
-        <img id="qr" src="/qr?data=/user/wait/{{$p.ID}}&size=120" alt="QR code" class="mx-auto rounded-lg shadow-md" width="120" height="120" />
-      </div>
-    </div>
+    {{/* Persona card — refreshed when the wait stream says so: the persona
+         is crafted in the background after the last interview answer */}}
+    {{template "fragment-persona-card.html" .Participant}}
 
     {{/* GitHub summary */}}
     {{$prof := .Profile}}
@@ -127,7 +115,7 @@
     document.addEventListener('htmx:afterSwap', renderMd);
     const _es = new EventSource('/user/wait-stream/{{$p.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
-    _es.addEventListener('refresh', () => { htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); htmx.trigger('#showtell', 'refresh'); htmx.trigger('#recap', 'refresh'); });
+    _es.addEventListener('refresh', () => { htmx.trigger('#persona-card', 'refresh'); htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); htmx.trigger('#showtell', 'refresh'); htmx.trigger('#recap', 'refresh'); });
     _es.onerror = () => _es.close();
   </script>
 </body>
