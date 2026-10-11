@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
@@ -871,6 +872,20 @@ func TestShowTellStage_Route(t *testing.T) {
 	}
 	if resp := stage(url.Values{"id": {"4242"}, "action": {"stage"}}); resp.StatusCode != 404 {
 		t.Errorf("an unknown sign-up: want 404, got %d", resp.StatusCode)
+	}
+	// An error response must not fall through to the redirect — a second
+	// WriteHeader is superfluous (#128). Observed on a recorder, where the
+	// redirect's Location header would leak into the header map.
+	rec := httptest.NewRecorder()
+	form := strings.NewReader("id=4242&action=stage")
+	req := httptest.NewRequest("POST", "/admin/showtell/stage", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	srv.h.ServeHTTP(rec, req)
+	if rec.Code != 404 {
+		t.Errorf("an unknown sign-up: want 404, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Errorf("an error response must not carry a redirect, got Location %q", loc)
 	}
 	id := signupID(t, deps, "a")
 	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"stage"}}); resp.Header.Get("Location") != "/admin" {

@@ -1080,8 +1080,11 @@ func (h *Handler) ShowTellStage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 	case err != nil:
 		http.Error(w, "updating the show & tell queue failed: "+err.Error(), 500)
+	default:
+		// Only the success path redirects — an http.Error above already
+		// wrote the response, and a second WriteHeader would be superfluous.
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 	}
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 // POST /admin/showtell/move — reorder the queue: the "id" form value is the
