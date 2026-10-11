@@ -598,7 +598,7 @@ func TestRecapLink_ShowsTheQrOnlyWhenClosed(t *testing.T) {
 	}
 	body = readBody(t, get(t, srv, "/user/recap-link/a"))
 	token := recapToken(t, srv, "a")
-	if !strings.Contains(body, `id="recap-qr"`) || !strings.Contains(body, `data-recap="/user/recap/`+token+`"`) {
+	if !strings.Contains(body, `id="recap-qr"`) || !strings.Contains(body, `src="/qr?data=/user/recap/`+token+`&size=150"`) {
 		t.Errorf("during closed the recap link shows as a QR, got: %s", body)
 	}
 	if again := recapToken(t, srv, "a"); again != token {
@@ -655,7 +655,7 @@ func TestPersonalPages_ShowTheRecapQrWhenClosed(t *testing.T) {
 	}
 	for _, path := range []string{"/user/match/aaa", "/user/wait/solo"} {
 		body := readBody(t, get(t, srv, path))
-		if !strings.Contains(body, `id="recap-qr"`) || !strings.Contains(body, `data-recap="/user/recap/`) {
+		if !strings.Contains(body, `id="recap-qr"`) || !strings.Contains(body, `src="/qr?data=/user/recap/`) {
 			t.Errorf("%s: the recap QR shows during closed, got: %s", path, body)
 		}
 	}

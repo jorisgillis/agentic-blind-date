@@ -159,7 +159,7 @@
   <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
     <p class="text-gray-700 font-bold text-xs uppercase tracking-wide mb-2">🤝 Your meet code</p>
     <p class="font-mono text-3xl font-black tracking-widest text-gray-900">{{.Me.MeetCode}}</p>
-    <img id="meet-qr" data-meet="/user/m/{{.Me.ID}}" alt="Your meet link QR code" class="mx-auto rounded-lg mt-3 shadow-sm" width="150" height="150" />
+    <img id="meet-qr" src="/qr?data=/user/m/{{.Me.ID}}&size=150" alt="Your meet link QR code" class="mx-auto rounded-lg mt-3 shadow-sm" width="150" height="150" />
     <p class="text-gray-600 text-xs mt-2">Show this QR — the camera opens your meet page — or share your code.</p>
   </div>
 
@@ -794,7 +794,7 @@
   {{if .Token}}
   <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center space-y-2">
     <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📲 Your recap</p>
-    <img id="recap-qr" data-recap="/user/recap/{{.Token}}" alt="Your personal recap QR code" class="mx-auto rounded-lg shadow-sm" width="150" height="150" />
+    <img id="recap-qr" src="/qr?data=/user/recap/{{.Token}}&size=150" alt="Your personal recap QR code" class="mx-auto rounded-lg shadow-sm" width="150" height="150" />
     <p class="text-gray-600 text-xs">Scan to open your personal recap — your evening, kept.</p>
   </div>
   {{end}}

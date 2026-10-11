@@ -854,7 +854,7 @@ func TestMeetStatus_IsPhaseGatedAndShowsTheSection(t *testing.T) {
 
 	deps.events.Reveal()
 	body = readBody(t, get(t, srv, "/user/meet-status/a"))
-	for _, want := range []string{code, `data-meet="/user/m/a"`, `hx-post="/user/met/a"`, "I met someone", "0 connection"} {
+	for _, want := range []string{code, `src="/qr?data=/user/m/a&size=150"`, `hx-post="/user/met/a"`, "I met someone", "0 connection"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the meet section should show %q", want)
 		}
@@ -1051,6 +1051,9 @@ func TestMatchStream_UnknownParticipantIs404AndEndsWhenRemoved(t *testing.T) {
 	}
 
 	s = open(t, srv, "/user/match-stream/a")
+	// Wait until the stream is established: only then can the removal be
+	// observed by an in-watch check (and not by the handler's initial lookup).
+	sentNothingNew(t, s, 1, "", "while the stream settles")
 	if err := NewRelationships(deps.db).Remove("a"); err != nil {
 		t.Fatal(err)
 	}

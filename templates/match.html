@@ -80,7 +80,7 @@
     {{/* QR code */}}
     <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
       <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
-      <img id="qr" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
+      <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
     </div>
 
     {{else}}
@@ -117,26 +117,6 @@
       });
     }
     document.addEventListener('DOMContentLoaded', renderMd);
-    const qr = document.getElementById('qr');
-    if (qr) {
-      qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.href);
-    }
-    function renderMeetQr() {
-      const el = document.getElementById('meet-qr');
-      if (el) {
-        el.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.origin + el.dataset.meet);
-      }
-    }
-    document.addEventListener('DOMContentLoaded', renderMeetQr);
-    document.addEventListener('htmx:afterSwap', renderMeetQr);
-    function renderRecapQr() {
-      const el = document.getElementById('recap-qr');
-      if (el) {
-        el.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.origin + el.dataset.recap);
-      }
-    }
-    document.addEventListener('DOMContentLoaded', renderRecapQr);
-    document.addEventListener('htmx:afterSwap', renderRecapQr);
     const _mes = new EventSource('/user/match-stream/{{.Me.ID}}');
     _mes.addEventListener('refresh', () => {
       htmx.trigger('#meet-status', 'refresh');

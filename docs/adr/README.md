@@ -36,6 +36,7 @@ Each ADR follows this structure:
 | [0015](0015-showtell-audience-questions.md) | Show & Tell — Audience Questions Through Personas | Accepted | 2026-10-10 |
 | [0016](0016-closing-ceremony-public-recap-host-export.md) | Closing Ceremony, Public Recap and the Host Export Pack | Accepted | 2026-10-10 |
 | [0017](0017-structured-leveled-server-logging.md) | Structured, Leveled Server Logging | Accepted | 2026-10-11 |
+| [0018](0018-server-side-qr-generation.md) | Server-Side QR Generation | Accepted | 2026-10-11 |
 
 ## When to Create an ADR
 

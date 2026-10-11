@@ -7,7 +7,6 @@
   <title>Agentic Blind Date — Big Screen</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     html, body { height: 100%; overflow: hidden; }
     .node { cursor: grab; }
@@ -31,7 +30,7 @@
         <p id="phase-label" class="text-sm text-gray-400">Loading...</p>
         <p id="count-label" class="text-xs text-gray-600"></p>
       </div>
-      <div id="qr" class="rounded-lg overflow-hidden flex-shrink-0"></div>
+      <img id="qr" src="/qr?data=/user&size=110" alt="Join the event" class="rounded-lg flex-shrink-0" width="110" height="110" />
     </div>
   </header>
 
@@ -92,15 +91,7 @@
 <script>
 const colorMap = {{.Palette}};
 
-// QR code pointing to /user — at the close it becomes the recap QR (below)
-new QRCode(document.getElementById('qr'), {
-  text: window.location.origin + '/user',
-  width: 110,
-  height: 110,
-  colorDark: '#ffffff',
-  colorLight: '#030712',
-  correctLevel: QRCode.CorrectLevel.M,
-});
+// The join QR points to /user — at the close it becomes the recap QR (below)
 let recapQrUrl = null;
 
 // D3 force simulation
@@ -342,16 +333,8 @@ function updateGraph(data) {
   // The recap QR: at the close the join QR becomes the recap QR.
   if (data.recap_url && recapQrUrl !== data.recap_url) {
     recapQrUrl = data.recap_url;
-    const qr = document.getElementById('qr');
-    qr.textContent = '';
-    new QRCode(qr, {
-      text: window.location.origin + recapQrUrl,
-      width: 110,
-      height: 110,
-      colorDark: '#ffffff',
-      colorLight: '#030712',
-      correctLevel: QRCode.CorrectLevel.M,
-    });
+    document.getElementById('qr').src =
+      '/qr?data=' + encodeURIComponent(recapQrUrl) + '&size=110';
   }
 
   // Status labels

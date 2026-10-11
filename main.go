@@ -121,6 +121,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("POST /user/showtell/question/{id}", h.ShowTellQuestion)
 
 	mux.HandleFunc("GET /recap", h.EventRecap)
+	mux.HandleFunc("GET /qr", h.QR)
 
 	mux.HandleFunc("GET /bigscreen", h.Screen)
 	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
