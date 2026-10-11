@@ -43,7 +43,15 @@
     <canvas id="confetti" class="absolute inset-0 pointer-events-none"></canvas>
     <div id="leaderboard" class="absolute top-4 left-4 bg-gray-900/90 border border-gray-700 rounded-xl p-4 hidden" style="min-width: 280px; z-index: 5;">
       <h2 class="text-xs uppercase tracking-widest text-gray-400 mb-2">Connections</h2>
+      <p id="champion" class="hidden text-amber-400 font-bold text-sm mb-2"></p>
       <ol id="leaderboard-list" class="space-y-1 text-sm"></ol>
+    </div>
+    <div id="stats" class="absolute top-4 right-4 bg-gray-900/90 border border-gray-700 rounded-xl p-4 hidden text-sm space-y-1" style="min-width: 240px; z-index: 5;">
+      <h2 class="text-xs uppercase tracking-widest text-gray-400 mb-2">The evening</h2>
+      <p>👥 <span id="stat-participants"></span> participants</p>
+      <p>🤝 <span id="stat-meetings"></span> completed meetings</p>
+      <p>📇 <span id="stat-exchanges"></span> contact details exchanged</p>
+      <p>❓ <span id="stat-questions"></span> questions (<span id="stat-answered"></span> answered)</p>
     </div>
     <div id="presenter" class="absolute inset-0 hidden items-center justify-center bg-gray-950/80" style="z-index: 10;">
       <div class="bg-gray-900 border border-purple-500 rounded-3xl p-10 max-w-xl w-full mx-4 text-center space-y-4 shadow-2xl">
@@ -84,7 +92,7 @@
 <script>
 const colorMap = {{.Palette}};
 
-// QR code pointing to /user
+// QR code pointing to /user — at the close it becomes the recap QR (below)
 new QRCode(document.getElementById('qr'), {
   text: window.location.origin + '/user',
   width: 110,
@@ -93,6 +101,7 @@ new QRCode(document.getElementById('qr'), {
   colorLight: '#030712',
   correctLevel: QRCode.CorrectLevel.M,
 });
+let recapQrUrl = null;
 
 // D3 force simulation
 const container = document.getElementById('graph-container');
@@ -304,6 +313,45 @@ function updateGraph(data) {
     });
   } else {
     panel.classList.add('hidden');
+  }
+
+  // The closing view: the evening's stats, sent from closed on.
+  const stats = data.stats;
+  const statsPanel = document.getElementById('stats');
+  if (stats) {
+    statsPanel.classList.remove('hidden');
+    document.getElementById('stat-participants').textContent = stats.participants;
+    document.getElementById('stat-meetings').textContent = stats.meetings;
+    document.getElementById('stat-exchanges').textContent = stats.contact_exchanges;
+    document.getElementById('stat-questions').textContent = stats.questions;
+    document.getElementById('stat-answered').textContent = stats.questions_answered;
+  } else {
+    statsPanel.classList.add('hidden');
+  }
+
+  // The champion takes the Merge Trophy on the final leaderboard.
+  const champion = data.champion;
+  const championEl = document.getElementById('champion');
+  if (champion) {
+    championEl.classList.remove('hidden');
+    championEl.textContent = '👑 ' + (champion.persona_symbol || '') + ' ' + (champion.persona_name || '') + ' takes the Merge Trophy';
+  } else {
+    championEl.classList.add('hidden');
+  }
+
+  // The recap QR: at the close the join QR becomes the recap QR.
+  if (data.recap_url && recapQrUrl !== data.recap_url) {
+    recapQrUrl = data.recap_url;
+    const qr = document.getElementById('qr');
+    qr.textContent = '';
+    new QRCode(qr, {
+      text: window.location.origin + recapQrUrl,
+      width: 110,
+      height: 110,
+      colorDark: '#ffffff',
+      colorLight: '#030712',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
   }
 
   // Status labels

@@ -79,6 +79,7 @@ type Handler struct {
 	recaps      *Recaps
 	missions    *Missions
 	showtell    *ShowTell
+	closing     *Closing
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -111,9 +112,11 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	events := NewEventStore(db)
 	meetings := NewMeetings(db, events)
+	channels := NewContactChannels(db)
 	return &Handler{
 		db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
-		channels: NewContactChannels(db), recaps: NewRecaps(db), missions: missions, showtell: showtell,
+		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell,
+		closing:    NewClosing(db, meetings, channels, showtell),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
 	}
@@ -878,6 +881,39 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 	}
 }
 
+// ── the closing ceremony: the public event recap + the host export pack ────
+
+// GET /recap — the public event recap: the evening's stats, the top
+// connectors, the persona gallery and the show & tell list with links.
+// Available only once the event is closed — before that there is no recap.
+// Personas only: no contact data, no identities.
+func (h *Handler) EventRecap(w http.ResponseWriter, r *http.Request) {
+	if !h.events.State().IsClosed() {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, "event-recap.html", h.closing.Recap())
+}
+
+// GET /admin/export — the host's export pack, downloaded as JSON (the
+// default) or Markdown (?format=md) and pasted into the post-meetup blast.
+// Personas and counts only — the pack never carries contact-channel values
+// or GitHub identity mappings.
+func (h *Handler) AdminExport(w http.ResponseWriter, r *http.Request) {
+	pack := h.closing.Pack()
+	if r.URL.Query().Get("format") == "md" {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="agentic-blind-date-export.md"`)
+		fmt.Fprint(w, renderExportMarkdown(pack))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="agentic-blind-date-export.json"`)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.Encode(pack)
+}
+
 // ── show & tell: sign-up, the host queue, presenter mode ───────────────────
 
 // POST /user/showtell/signup/{id} — sign up for show & tell (a title, a
@@ -1304,12 +1340,19 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			}
 			payload["leaderboard"] = top
 			// The champion is named at the close: the Merge Trophy winner,
-			// the top of the final leaderboard. The closing ceremony screen
-			// is a later ticket; this is the naming.
+			// the top of the final leaderboard.
 			if phase == PhaseClosed && len(top) > 0 {
 				payload["champion"] = &top[0]
 			}
 		}
+	}
+
+	// The closing view: from closed on, the Big Screen also carries the
+	// evening's stats and the recap QR — alongside the final leaderboard,
+	// the champion and the graph with all meeting edges.
+	if phase == PhaseClosed {
+		payload["stats"] = h.closing.Stats()
+		payload["recap_url"] = "/recap"
 	}
 
 	// Presenter mode: from show & tell on, the Big Screen shows the on-stage
@@ -1591,8 +1634,7 @@ func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
 		if after.MissionCardsLive() {
 			h.missions.GenerateAll()
 		}
-		// The champion is named at the close; the closing ceremony screen
-		// itself is a later ticket.
+		// The champion is named at the close.
 		if after == PhaseClosed {
 			h.announceChampion()
 		}

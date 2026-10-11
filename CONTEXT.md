@@ -186,7 +186,7 @@ Global state of the event — its **Phase** — changed only by the host from th
 - **Onboarding** (`onboarding`): the default after a Reset. Participants register and Continuous Matching runs, but Matches stay hidden. Matched Participants wait on the wait page and see a teaser, and the Big Screen shows persona names only.
 - **Social** (`social`): the Big Reveal at the break. Matches are revealed and every Match page opens — the full persona card, no handles — while the Dossier stays locked; newcomers see their Match as soon as they are matched. Matching freezes: pairs are final. Mission cards go live and meeting confirmation opens.
 - **Show & Tell** (`showtell`): everything in the Social stays; show & tell sign-up and the audience question queue go live, and the Big Screen gains presenter mode.
-- **Closed** (`closed`): meeting confirmation is disabled; the closing view shows a recap QR, and personal recap pages persist. The dossiers unlock: the assessment is visible again, on the page and in the JSON debug endpoints.
+- **Closed** (`closed`): meeting confirmation is disabled; the closing view shows the final leaderboard naming the champion, the graph with all meeting edges, the evening's stats and the recap QR, and the public event recap opens at `/recap`; personal recap pages persist. The dossiers unlock: the assessment is visible again, on the page and in the JSON debug endpoints.
 
 Rematching does not change the Phase; Reset returns it to `onboarding`. A database holding the legacy value `revealed` is migrated to `social` at startup. The Big Screen shows persona names only, in every phase.
 
@@ -210,7 +210,7 @@ A confirmed physical meeting between two participants. Stored as one canonical r
 A participant's count of completed meetings — one connection per completed meeting. Derived from the meetings table, never stored.
 
 ### Champion
-The Merge Trophy winner: the participant with the most completed meetings — the top of the connection leaderboard. Deterministic: most connections, ties broken by persona name. The champion is named on the ticker when the event closes; the closing ceremony screen itself is a later ticket.
+The Merge Trophy winner: the participant with the most completed meetings — the top of the connection leaderboard. Deterministic: most connections, ties broken by persona name. The champion is named on the ticker and crowned on the Big Screen's closing view when the event closes.
 
 ### Mission Card
 A participant's personal 3×3 grid of personas to meet, live during the Social and Show & Tell. Cards are generated at the social transition for everyone ready — in a background worker pool, so the transition returns immediately — and straight away for latecomers reaching ready during those phases; never during onboarding or once closed. The center tile is the participant's Match, falling back to their top-affinity persona while unmatched; the eight surrounding tiles are four affinity picks (highest heuristic pair score) and four wildcards (deliberately different), excluding the Match, the participant, and everyone already met. Tiles snapshot the persona at generation, so a card is fixed once dealt. A **Stamp** marks a tile whose person the participant has a completed Meeting with — stamps derive from the meetings, never stored. The surrounding tiles' reasons come from the **Mission Agent**: one batched LLM call per card, with a generic fallback reason when the LLM fails, so a card always generates. Card generation never writes pairing data.
@@ -225,6 +225,18 @@ A Participant's page of their evening, kept: `GET /user/recap/{token}`, gated by
 The stage of the `showtell` phase: Participants volunteer a talk, the Host runs the queue, the Big Screen presents the current speaker. A **Sign-up** is one row per Participant in `showtell_signups` — a title (required), a one-line description, an optional repo link — live during the Social and Show & Tell phases only; late sign-ups join the tail of the queue, and re-signing up updates the talk in place. A sign-up's **Status** is `queued` → `on_stage` → `presented`. The Host's queue (in `/admin`) reorders queued talks up/down and removes any of them. **Presenter mode** is a show & tell gain: the Host puts one queued sign-up on stage — the Big Screen shows their persona card with the **Hype Agent's** intro line (a generic fallback when the LLM fails) — and marks the talk done to free the stage. The **Identity Reveal** is the Host's explicit action and the only one: it flips the presenter's card to their GitHub handle/name. Personas only, everywhere, otherwise; the reveal is the single place a handle reaches the Big Screen besides the owner's own recap. Everything arrives by push — the personal pages' streams watch the Participant's sign-up state, the host console's queue stream watches the queue, the Big Screen's stream pushes the presenter card and the reveal.
 
 A **Question** is one row per audience question in `showtell_questions` — the text (1–300 characters), the asker, and the Sign-up on stage when it was submitted. Asking is live during Show & Tell only and only while someone is on stage (the submit button is disabled while the stage is empty); it needs no meeting and earns nothing — no connection, no raffle — answered questions count toward the audience-participation success metric. A question's **Status** is `queued` → `asked` → `answered`, or `dismissed` from queued or asked; answered and dismissed are final. The Host's question queue (in `/admin`) marks a question asked — the Big Screen shows the current question with the asker's persona only ("🐯 The Crab asks: …"), one at a time — answered, or dismissed. The personal page's section carries the form and the asker's questions with their status, and the recap shows the Participant's show & tell items. Personas only, everywhere — there is no reveal for askers.
+
+### Closing Ceremony
+When the event closes, the Big Screen's closing view shows the final leaderboard naming the Champion — the Merge Trophy winner — the event graph with all meeting edges, the evening's stats, and the recap QR linking to the public event recap. Meeting confirmation stays disabled. Everything arrives by push, like every other screen change.
+
+### Public Event Recap
+`GET /recap` — the evening's public page, available only once the event is closed. It shows the evening's stats, the top connectors, the persona gallery and the show & tell list with links. Personas only — no contact data, no identities.
+
+### Host Export Pack
+`GET /admin/export` — the host's post-meetup blast pack, downloaded as JSON (the default) or Markdown (`?format=md`). It carries the headline stats, the full connection leaderboard, the top personas, the best LLM-generated match reasons and icebreakers (anonymized to the pair's personas), the show & tell list, the question count and the success metrics. Personas and counts only: the pack never contains contact-channel values or GitHub identity mappings — the host pastes it into the post-meetup blast as it is.
+
+### Success Metrics
+The evening's scorecard against the v2 goals, derived at the close — never stored: completed meetings, connections made (one per side per completed meeting), answered questions, and the audience-participation goal — met at ten or more answered questions.
 
 ## Subdomains
 
@@ -284,3 +296,6 @@ The **Relationship module** owns Relationship State and enforces the Key Invaria
 | Dossier | The Match's fun payload (reason, flags, icebreakers), locked on the Match page until the pair's Meeting is completed |
 | Contact Channel | A contact detail (github, email, linkedin, instagram, mastodon, other) a Participant enters once in their settings, off by default, revealed only under the mutual rule |
 | Personal Recap | The Participant's persistent recap page at `/user/recap/{token}` — persona card, unlocked dossier, connections with revealed channels, personal stats — gated by an unguessable UUID token |
+| Public Event Recap | The evening's public page at `/recap`, available only once closed — stats, top connectors, the persona gallery, the show & tell list. Personas only |
+| Host Export Pack | The host's post-meetup blast pack at `/admin/export` (JSON or Markdown) — headline stats, leaderboard, top personas, best anonymized match reasons, show & tell list, question count, success metrics. Personas and counts only |
+| Success Metrics | The evening's derived scorecard: completed meetings, connections made, answered questions, and the audience-participation goal (≥10 answered questions) |

@@ -54,6 +54,7 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 | **Matchmaking** | `matchmaking.go` | Continuous Matching and the admin Rematch; the Matcher (`matcher.go`) runs the 3-phase algorithm |
 | **Fixed Questions** | `questions.go` | 5 predefined opinionated questions |
 | **HTTP Handlers** | `handlers.go` | All route handlers, HTMX fragments, JSON endpoints |
+| **Closing Ceremony** | `closing.go` | The closing view's stats, the public event recap and the host export pack (personas and counts only) |
 | **Templates** | `templates/*.html` | Server-side rendered HTML with HTMX, Tailwind, D3.js |
 
 ---
@@ -71,6 +72,7 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 ### Admin Actions
 - **Advance Phase** (`POST /admin/phase`) → Moves the event forward: `social` (the Big Reveal), `showtell`, `closed`
 - **Trigger Reveal** (`POST /admin/reveal`) → Alias for advancing to the social phase
+- **Export Pack** (`GET /admin/export`) → Download the post-meetup blast pack (JSON, or Markdown with `?format=md`) — personas and counts only
 - **Reset Event** (`POST /admin/reset`) → Clears all data and returns to `onboarding`
 
 ### Big Screen
@@ -148,9 +150,11 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/user/showtell/signup/{id}` | Sign up for show & tell (title, one-line description, optional repo link) — open during the social and show & tell |
 | GET | `/user/showtell/{id}` | HTMX fragment: the show & tell section (sign-up form, queue place, status, question form, the asker's questions) |
 | POST | `/user/showtell/question/{id}` | Ask the presenter on stage a question (through the asker's persona) — live during show & tell, needs no meeting, earns nothing |
-| GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on; presenter mode at show & tell) |
+| GET | `/recap` | Public event recap (stats, top connectors, persona gallery, show & tell list) — available only when closed, personas only |
+| GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on; presenter mode at show & tell; closing view with champion, stats and recap QR at closed) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel (phase, counts, transition buttons) |
+| GET | `/admin/export` | Host export pack download (JSON default, `?format=md` for Markdown) — personas and counts only |
 | POST | `/admin/phase` | Advance the event to a later phase |
 | POST | `/admin/reveal` | Reveal matches (alias for the social phase) |
 | POST | `/admin/reset` | Clear all data |
