@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -311,17 +312,20 @@ func TestAdminRematch_PairsTheReadyParticipants(t *testing.T) {
 
 	resp := post(t, srv, "/admin/rematch", nil)
 
-	if resp.Header.Get("Location") != "/admin" {
-		t.Errorf("want redirect back to admin, got %q", resp.Header.Get("Location"))
+	// The host lands back on the console with a confirmation notice (#127).
+	loc := resp.Header.Get("Location")
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, "/admin?notice=") {
+		t.Errorf("want a redirect to the admin console with a notice, got %d %q", resp.StatusCode, loc)
 	}
 	eventually(t, "both matched", func() bool {
 		return reload(t, deps.db, "a").MatchedWith == "b" && reload(t, deps.db, "b").MatchedWith == "a"
 	})
 }
 
-// TestAdminRematch_IsRejectedOnceMatchingIsFrozen covers #115: from the social
-// onward the endpoint rejects the rematch with a clear message — no matching
-// runs and the frozen pairs are left exactly as they were.
+// TestAdminRematch_IsRejectedOnceMatchingIsFrozen covers #115 and #127: from
+// the social onward the endpoint rejects the rematch — the host lands back on
+// the console with a notice explaining why, no matching runs and the frozen
+// pairs are left exactly as they were.
 func TestAdminRematch_IsRejectedOnceMatchingIsFrozen(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", `{"score": 70, "reason": "fine"}`)
 	srv, deps := newTestServer(t, llm, nil)
@@ -337,11 +341,11 @@ func TestAdminRematch_IsRejectedOnceMatchingIsFrozen(t *testing.T) {
 
 	resp := post(t, srv, "/admin/rematch", nil)
 
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("from the social onward: want 400, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("from the social onward: want a redirect, got %d", resp.StatusCode)
 	}
-	if body := readBody(t, resp); !strings.Contains(body, "Matching is frozen") {
-		t.Errorf("the rejection should say why, got %q", body)
+	if loc, _ := url.QueryUnescape(resp.Header.Get("Location")); !strings.Contains(loc, "Matching is frozen") {
+		t.Errorf("the rejection should say why, got %q", loc)
 	}
 	// No matching ran: the pairs are final and nothing was logged.
 	if n := llm.callsMatching("matchmaker"); n != 0 {
@@ -354,6 +358,22 @@ func TestAdminRematch_IsRejectedOnceMatchingIsFrozen(t *testing.T) {
 	}
 	if msgs, _ := deps.db.GetRecentActivity(10); strings.Contains(strings.Join(msgs, "\n"), "ematch") {
 		t.Errorf("a rejected rematch should log nothing about rematching, got %v", msgs)
+	}
+}
+
+// TestAdmin_NoticeIsRendered covers #127: a notice query parameter (set by
+// host actions like the rematch) is shown on the console, HTML-escaped.
+func TestAdmin_NoticeIsRendered(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	if body := readBody(t, get(t, srv, "/admin")); strings.Contains(body, "border-indigo-700") {
+		t.Error("no notice box without the query parameter")
+	}
+
+	notice := "🔄 Rematch started — <b>the matchmaker</b>"
+	body := readBody(t, get(t, srv, "/admin?notice="+url.QueryEscape(notice)))
+	if !strings.Contains(body, "🔄 Rematch started — &lt;b&gt;the matchmaker&lt;/b&gt;") {
+		t.Errorf("the notice should be rendered HTML-escaped, got: %s", body)
 	}
 }
 

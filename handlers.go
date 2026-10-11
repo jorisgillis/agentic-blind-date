@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -1629,6 +1630,7 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 		"Ready":             h.db.ReadyCount(),
 		"Matched":           h.db.MatchedCount(),
 		"Next":              phase.Next(),
+		"Notice":            r.URL.Query().Get("notice"),
 		"ShowTell":          h.showtellQueueData(),
 		"ShowTellQuestions": h.showtellQuestionsData(),
 	})
@@ -1708,10 +1710,11 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/rematch — rejected from the social onward: matching is frozen,
-// pairs are final.
+// pairs are final. Either way the host lands back on the console with a
+// notice: a bare 400 left the host guessing whether the click registered.
 func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 	if phase := h.events.State(); phase.MatchingFrozen() {
-		http.Error(w, "Matching is frozen from the social onward — pairs are final.", http.StatusBadRequest)
+		http.Redirect(w, r, "/admin?notice="+url.QueryEscape("Matching is frozen from the social onward — pairs are final."), http.StatusSeeOther)
 		return
 	}
 	h.db.LogActivity("🔄 Admin triggered full rematch")
@@ -1721,7 +1724,7 @@ func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 			h.db.LogActivity("⚠️ Rematch failed: " + err.Error())
 		}
 	}()
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?notice="+url.QueryEscape("🔄 Rematch started — the matchmaker agents are at work."), http.StatusSeeOther)
 }
 
 // DELETE /data/participant/{id}

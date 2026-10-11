@@ -88,8 +88,9 @@ func TestRematch_KeepsThePhase(t *testing.T) {
 
 			resp := post(t, srv, "/admin/rematch", nil)
 			if phase.MatchingFrozen() {
-				if resp.StatusCode != http.StatusBadRequest {
-					t.Errorf("from the social onward the endpoint rejects the rematch: want 400, got %d", resp.StatusCode)
+				// The rejection navigates back to the console with a notice (#127).
+				if resp.StatusCode != http.StatusSeeOther {
+					t.Errorf("from the social onward the endpoint rejects the rematch: want 303, got %d", resp.StatusCode)
 				}
 			} else {
 				if resp.StatusCode != http.StatusSeeOther {
