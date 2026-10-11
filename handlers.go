@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -77,6 +78,7 @@ type Handler struct {
 	channels    *ContactChannels
 	recaps      *Recaps
 	missions    *Missions
+	showtell    *ShowTell
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -96,7 +98,7 @@ type StreamObserver interface {
 // NewHandler creates a new Handler with the given dependencies.
 // It initializes the templates and takes the modules the pages use.
 // streams may be nil: production observes nothing.
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, missions *Missions, streams StreamObserver) *Handler {
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, missions *Missions, showtell *ShowTell, streams StreamObserver) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -111,7 +113,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	meetings := NewMeetings(db, events)
 	return &Handler{
 		db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
-		channels: NewContactChannels(db), recaps: NewRecaps(db), missions: missions,
+		channels: NewContactChannels(db), recaps: NewRecaps(db), missions: missions, showtell: showtell,
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
 	}
@@ -282,6 +284,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	data["QAPairs"] = qaPairs
 	data["MeetStatus"] = h.meetStatusData(p)
 	data["MissionCard"] = h.missionCardData(p)
+	data["ShowTell"] = h.showtellData(p)
 	data["Settings"] = h.settingsData(p)
 	data["RecapLink"] = h.recapLinkData(p)
 	h.render(w, "wait.html", data)
@@ -357,6 +360,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		"Dossier":     dossier,
 		"MeetStatus":  h.meetStatusData(p),
 		"MissionCard": h.missionCardData(p),
+		"ShowTell":    h.showtellData(p),
 		"Settings":    h.settingsData(p),
 		"RecapLink":   h.recapLinkData(p),
 	})
@@ -667,13 +671,15 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // meetSignature is what the meet streams watch: the phase, the Participant's
-// meetings (their count and how many are completed) and whether their
-// Mission card exists — a freshly generated card appears via push.
+// meetings (their count and how many are completed), whether their Mission
+// card exists — a freshly generated card appears via push — and their show &
+// tell sign-up state.
 type meetSignature struct {
 	phase     Phase
 	meetings  int
 	completed int
 	card      bool
+	showtell  string
 }
 
 func (h *Handler) meetSignature(p *Participant) meetSignature {
@@ -684,7 +690,7 @@ func (h *Handler) meetSignature(p *Participant) meetSignature {
 			completed++
 		}
 	}
-	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID)}
+	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID), h.showtell.Signature(p.ID)}
 }
 
 // ── contact exchange: settings + the post-meeting prompt ───────────────────
@@ -857,6 +863,177 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 	}
 }
 
+// ── show & tell: sign-up, the host queue, presenter mode ───────────────────
+
+// POST /user/showtell/signup/{id} — sign up for show & tell (a title, a
+// one-line description and an optional repo link), or update the sign-up.
+// Open during the social and show & tell only.
+func (h *Handler) ShowTellSignup(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	err = h.showtell.Signup(p, r.FormValue("title"), r.FormValue("description"), r.FormValue("repo"))
+	switch {
+	case errors.Is(err, ErrShowTellClosed):
+		http.Error(w, "Show & tell sign-up is only open during the social and show & tell.", 400)
+	case errors.Is(err, ErrInvalidSignup):
+		http.Error(w, err.Error(), 400)
+	case err != nil:
+		http.Error(w, "signing up failed: "+err.Error(), 500)
+	default:
+		data := h.showtellData(p)
+		data["Saved"] = true
+		h.render(w, "fragment-showtell.html", data)
+	}
+}
+
+// GET /user/showtell/{id} — HTMX, the personal page's show & tell section,
+// refreshed when the page's stream says so.
+func (h *Handler) ShowTellStatus(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, "fragment-showtell.html", h.showtellData(p))
+}
+
+// showtellData is the personal page's show & tell section: the sign-up form —
+// open during the social and show & tell — with the Participant's sign-up and
+// its place in the host's queue, if any.
+func (h *Handler) showtellData(p *Participant) map[string]any {
+	data := map[string]any{
+		"Me":   p,
+		"Open": h.events.State().AllowsShowTell(),
+	}
+	signup, err := h.showtell.ForParticipant(p.ID)
+	if err != nil {
+		log.Printf("Show & tell sign-up for %s: %v", p.ID, err)
+	}
+	if signup != nil {
+		data["Signup"] = signup
+		data["Position"] = h.showtell.QueuePosition(p.ID)
+	}
+	return data
+}
+
+// POST /admin/showtell/stage — the host's presenter-mode actions on a sign-up
+// (the "id" form value): "stage" puts it on stage with the Hype Agent's intro,
+// "reveal" flips the presenter's card to their GitHub handle/name — the only
+// place an identity leaves the server besides the owner's own recap — and
+// "done" marks the talk presented.
+func (h *Handler) ShowTellStage(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "That sign-up is not in the queue.", 400)
+		return
+	}
+	switch r.FormValue("action") {
+	case "stage":
+		_, err = h.showtell.Stage(id)
+	case "reveal":
+		_, err = h.showtell.RevealIdentity(id)
+	case "done":
+		_, err = h.showtell.Done(id)
+	default:
+		http.Error(w, "Unknown action — stage, reveal or done.", 400)
+		return
+	}
+	switch {
+	case errors.Is(err, ErrShowTellClosed):
+		http.Error(w, "Presenter mode is only live during show & tell.", 400)
+	case errors.Is(err, ErrSignupNotFound):
+		http.Error(w, "That sign-up is not in the queue.", 404)
+	case errors.Is(err, ErrAlreadyOnStage), errors.Is(err, ErrNotOnStage), errors.Is(err, ErrSignupNotQueued):
+		http.Error(w, err.Error(), 400)
+	case err != nil:
+		http.Error(w, "updating the show & tell queue failed: "+err.Error(), 500)
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// POST /admin/showtell/move — reorder the queue: the "id" form value is the
+// sign-up, "dir" is up or down.
+func (h *Handler) ShowTellMove(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "That sign-up is not in the queue.", 400)
+		return
+	}
+	if err := h.showtell.Move(id, r.FormValue("dir")); errors.Is(err, ErrInvalidDirection) {
+		http.Error(w, err.Error(), 400)
+	} else if err != nil {
+		http.Error(w, "reordering the queue failed: "+err.Error(), 500)
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// POST /admin/showtell/remove — take a sign-up out of the queue.
+func (h *Handler) ShowTellRemove(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "That sign-up is not in the queue.", 400)
+		return
+	}
+	if err := h.showtell.Remove(id); err != nil {
+		http.Error(w, "removing the sign-up failed: "+err.Error(), 500)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// GET /admin/showtell-queue — HTMX, the host console's show & tell queue,
+// refreshed when the queue stream says so.
+func (h *Handler) ShowTellQueue(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "fragment-showtell-queue.html", h.showtellQueueData())
+}
+
+// showtellQueueData is the host console's show & tell queue: every sign-up
+// with its presenter's Persona and status — the queue, the stage and the
+// already-presented talks.
+func (h *Handler) showtellQueueData() map[string]any {
+	queue, err := h.showtell.Queue()
+	if err != nil {
+		log.Printf("Show & tell queue: %v", err)
+	}
+	return map[string]any{
+		"Open":  h.events.State().AllowsShowTell(),
+		"Queue": queue,
+	}
+}
+
+// GET /admin/showtell-stream — tells the host console to refresh the show &
+// tell queue when it changes.
+func (h *Handler) ShowTellStream(w http.ResponseWriter, r *http.Request) {
+	if !sseHeaders(w) {
+		return
+	}
+	last := h.showtellQueueSignature()
+	h.watch(w, r, func() bool {
+		if now := h.showtellQueueSignature(); now != last {
+			last = now
+			sseEvent(w, "refresh")
+		}
+		return false
+	})
+}
+
+// showtellQueueSignature is what the queue stream watches: every sign-up's id,
+// status, place and reveal state.
+func (h *Handler) showtellQueueSignature() string {
+	queue, err := h.showtell.Queue()
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, s := range queue {
+		fmt.Fprintf(&b, "%d:%s:%d:%t;", s.ID, s.Status, s.Position, s.IdentityRevealed)
+	}
+	return b.String()
+}
+
 // ── /bigscreen ─────────────────────────────────────────────────────────────
 
 // GET /bigscreen
@@ -998,6 +1175,53 @@ func (h *Handler) buildGraphPayload() map[string]any {
 				payload["champion"] = &top[0]
 			}
 		}
+	}
+
+	// Presenter mode: from show & tell on, the Big Screen shows the on-stage
+	// presenter's card with the hype intro — personas only, until the host's
+	// explicit identity reveal flips the card to the GitHub handle/name.
+	if phase == PhaseShowTell {
+		if presenter := h.presenterPayload(); presenter != nil {
+			payload["presenter"] = presenter
+		}
+	}
+	return payload
+}
+
+// presenterPayload is the Big Screen's presenter mode: the on-stage sign-up
+// with its presenter's Persona, the talk and the hype intro. Personas only —
+// the identity (the GitHub handle/name) is carried only once the host's
+// explicit reveal action set IdentityRevealed; it is the only place a handle
+// reaches the screen besides the owner's own recap.
+func (h *Handler) presenterPayload() map[string]any {
+	signup, err := h.showtell.OnStage()
+	if err != nil {
+		log.Printf("On-stage presenter: %v", err)
+		return nil
+	}
+	if signup == nil {
+		return nil
+	}
+	payload := map[string]any{
+		"signup_id":         signup.ID,
+		"title":             signup.Title,
+		"description":       signup.Description,
+		"repo_url":          signup.RepoURL,
+		"persona_name":      signup.PersonaName,
+		"persona_symbol":    signup.PersonaSymbol,
+		"persona_color":     signup.PersonaColor,
+		"persona_tagline":   signup.PersonaTagline,
+		"hype":              signup.Hype,
+		"identity_revealed": signup.IdentityRevealed,
+	}
+	if signup.IdentityRevealed {
+		p, err := h.store.Get(signup.ParticipantID)
+		if err != nil {
+			log.Printf("Revealed presenter %s: %v", signup.ParticipantID, err)
+			return payload
+		}
+		payload["handle"] = p.DisplayHandle()
+		payload["name"] = p.Name
 	}
 	return payload
 }
@@ -1171,15 +1395,17 @@ func writeJSON(w http.ResponseWriter, v any) {
 // ── /admin ─────────────────────────────────────────────────────────────────
 
 // GET /admin: the host console — the current Phase with its label and the
-// participant counts, plus one transition button per reachable forward phase.
+// participant counts, the show & tell queue, and one transition button per
+// reachable forward phase.
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 	phase := h.events.State()
 	h.render(w, "admin.html", map[string]any{
-		"Phase":   phase,
-		"Count":   h.db.ParticipantCount(),
-		"Ready":   h.db.ReadyCount(),
-		"Matched": h.db.MatchedCount(),
-		"Next":    phase.Next(),
+		"Phase":    phase,
+		"Count":    h.db.ParticipantCount(),
+		"Ready":    h.db.ReadyCount(),
+		"Matched":  h.db.MatchedCount(),
+		"Next":     phase.Next(),
+		"ShowTell": h.showtellQueueData(),
 	})
 }
 
@@ -1295,6 +1521,10 @@ func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.recaps.RemoveParticipant(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := h.showtell.RemoveParticipant(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

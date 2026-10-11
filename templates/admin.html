@@ -7,6 +7,7 @@
   <meta http-equiv="refresh" content="5">
   <title>Admin — Agentic Blind Date</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body class="bg-gray-950 text-white min-h-screen px-6 py-10">
   <div class="max-w-sm mx-auto space-y-6">
@@ -41,6 +42,10 @@
         <span class="font-bold">{{.Matched}}</span>
       </div>
     </div>
+
+    {{if .ShowTell.Open}}
+    {{template "fragment-showtell-queue.html" .ShowTell}}
+    {{end}}
 
     <div class="text-center py-4 text-indigo-400 font-bold">
       ✨ Continuous matching active
@@ -90,6 +95,14 @@
     </div>
 
   </div>
+  {{if .ShowTell.Open}}
+  <script>
+    // The show & tell queue arrives by push, not polling.
+    const _showtell = new EventSource('/admin/showtell-stream');
+    _showtell.addEventListener('refresh', () => htmx.trigger('#showtell-queue', 'refresh'));
+    _showtell.onerror = () => _showtell.close();
+  </script>
+  {{end}}
 </body>
 </html>
 {{end}}

@@ -143,7 +143,7 @@ type plainWriter struct{ http.ResponseWriter }
 func TestStreams_NeedAWriterThatCanStream(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "p", "P", "ready")
-	for _, path := range []string{"/user/pipeline-stream/p", "/user/wait-stream/p", "/bigscreen/stream"} {
+	for _, path := range []string{"/user/pipeline-stream/p", "/user/wait-stream/p", "/bigscreen/stream", "/admin/showtell-stream"} {
 		rec := httptest.NewRecorder()
 		srv.h.ServeHTTP(plainWriter{rec}, httptest.NewRequest("GET", path, nil))
 		if rec.Code != 500 {
@@ -180,7 +180,7 @@ func TestStreams_SendAHeartbeatWhenIdle(t *testing.T) {
 
 func TestRender_AMissingTemplateIsAnError(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
-	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, deps.missions, nil)
+	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, deps.missions, deps.showtell, nil)
 	rec := httptest.NewRecorder()
 
 	h.render(rec, "no-such-template.html", nil)

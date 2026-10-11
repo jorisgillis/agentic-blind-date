@@ -145,12 +145,19 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/user/settings/{id}` | Save the contact channels (entered once) |
 | GET | `/user/recap-link/{id}` | HTMX fragment: the recap link — the recap page as a QR during closed |
 | GET | `/user/recap/{token}` | Personal recap page (persona card, dossier, connections, stats) — unguessable UUID token |
-| GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on) |
+| POST | `/user/showtell/signup/{id}` | Sign up for show & tell (title, one-line description, optional repo link) — open during the social and show & tell |
+| GET | `/user/showtell/{id}` | HTMX fragment: the show & tell section (sign-up form, queue place, status) |
+| GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on; presenter mode at show & tell) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel (phase, counts, transition buttons) |
 | POST | `/admin/phase` | Advance the event to a later phase |
 | POST | `/admin/reveal` | Reveal matches (alias for the social phase) |
 | POST | `/admin/reset` | Clear all data |
+| POST | `/admin/showtell/stage` | Presenter mode: put a sign-up on stage (with the Hype Agent's intro), reveal the presenter's identity, or mark the talk done |
+| POST | `/admin/showtell/move` | Reorder the show & tell queue (up/down) |
+| POST | `/admin/showtell/remove` | Remove a sign-up from the queue |
+| GET | `/admin/showtell-queue` | HTMX fragment: the show & tell queue (personas, status, reorder, remove, on stage, reveal, done) |
+| GET | `/admin/showtell-stream` | SSE stream for the host console's queue |
 | GET | `/data/meetings` | Debug: meetings (JSON) |
 | GET | `/data/leaderboard` | Debug: connection ranking derived from completed meetings (JSON) |
 | GET | `/data/channels` | Debug: per-participant opted-in contact-channel counts (JSON, counts only) |
@@ -202,6 +209,16 @@ value, enabled (0/1, off by default)
 ```sql
 participant_id (PRIMARY KEY), token (UUID, UNIQUE), created_at
 -- one unguessable recap token per participant; the recap page persists across restarts
+```
+
+**showtell_signups:**
+```sql
+id, participant_id (UNIQUE, REFERENCES participants), title, description,
+repo_url, status ('queued'|'on_stage'|'presented'), identity_revealed (0/1),
+hype, position, created_at
+-- one sign-up per participant; sign-up opens with the social; the host queue
+-- reorders by position; the identity reveal (the host's explicit action) is
+-- the only way a handle reaches the Big Screen's presenter card
 ```
 
 **activity_log:**

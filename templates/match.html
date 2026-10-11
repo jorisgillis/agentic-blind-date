@@ -97,6 +97,10 @@
     {{/* Meet section — phase-gated, refreshed when the match stream says so */}}
     {{template "fragment-meet-status.html" .MeetStatus}}
 
+    {{/* Show & tell — sign-up open during the social and show & tell,
+         refreshed when the match stream says so */}}
+    {{template "fragment-showtell.html" .ShowTell}}
+
     {{/* Settings — the Participant's contact channels, entered once */}}
     {{template "fragment-settings.html" .Settings}}
 
@@ -139,6 +143,7 @@
       const dossier = document.getElementById('dossier');
       if (dossier) htmx.trigger(dossier, 'refresh');
       htmx.trigger('#mission-card', 'refresh');
+      htmx.trigger('#showtell', 'refresh');
       htmx.trigger('#recap', 'refresh');
     });
     _mes.onerror = () => _mes.close();

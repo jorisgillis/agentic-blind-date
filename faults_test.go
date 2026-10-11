@@ -11,19 +11,22 @@ import (
 //
 // Tags name what a write (or, for "persona_lookup", "activity_read",
 // "meet_backfill_read", "meet_read", "mission_read", "connection_read",
-// "channel_read", "channel_count_read", "recap_read", "recap_token_read"
-// and "participant_read", a read) is, not which SQL column it touches:
-// "create", "persona_lookup", "delete", "interests", "persona", "profile",
-// "answers", "pipeline_step", "start_interview", "pair", "unpair",
+// "channel_read", "channel_count_read", "recap_read", "recap_token_read",
+// "showtell_read" and "participant_read", a read) is, not which SQL column
+// it touches: "create", "persona_lookup", "delete", "interests", "persona",
+// "profile", "answers", "pipeline_step", "start_interview", "pair", "unpair",
 // "activity_read", "meet_code", "meet_insert", "meet_update",
 // "meet_complete", "meet_delete", "meet_backfill_read", "meet_read",
 // "mission_insert", "mission_delete", "mission_read", "connection_read",
 // "channel_insert", "channel_delete", "channel_read", "channel_count_read",
 // "recap_insert", "recap_delete", "recap_read", "recap_token_read",
-// "participant_read", "reset_participants", "reset_activity",
-// "reset_event_state", "reset_meetings", "reset_mission_cards",
-// "reset_contact_channels" and "reset_recaps". Each tag maps to exactly the
-// write it names, so a test can fail one write and leave the others alone.
+// "showtell_insert", "showtell_update", "showtell_delete", "showtell_read",
+// "participant_read", "presenter_identity_read", "reset_participants",
+// "reset_activity", "reset_event_state", "reset_meetings",
+// "reset_mission_cards", "reset_contact_channels", "reset_recaps" and
+// "reset_showtell_signups".
+// Each tag maps to exactly the write it names, so a test can fail one write
+// and leave the others alone.
 
 // failWrites makes writes fail until the returned function is called (or
 // the test ends): every write, or, when tags are given, only the writes
@@ -123,6 +126,9 @@ func writeFaults(message string) map[string][2]string {
 		"channel_delete":         trigger("channel_delete", "DELETE", "contact_channels", ""),
 		"recap_insert":           trigger("recap_insert", "INSERT", "recaps", ""),
 		"recap_delete":           trigger("recap_delete", "DELETE", "recaps", ""),
+		"showtell_insert":        trigger("showtell_insert", "INSERT", "showtell_signups", ""),
+		"showtell_update":        trigger("showtell_update", "UPDATE", "showtell_signups", ""),
+		"showtell_delete":        trigger("showtell_delete", "DELETE", "showtell_signups", ""),
 		"reset_participants":     trigger("reset_participants", "DELETE", "participants", ""),
 		"reset_activity":         trigger("reset_activity", "DELETE", "activity_log", ""),
 		"reset_event_state":      trigger("reset_event_state", "INSERT", "event_state", ""),
@@ -130,6 +136,7 @@ func writeFaults(message string) map[string][2]string {
 		"reset_mission_cards":    trigger("reset_mission_cards", "DELETE", "mission_cards", ""),
 		"reset_contact_channels": trigger("reset_contact_channels", "DELETE", "contact_channels", ""),
 		"reset_recaps":           trigger("reset_recaps", "DELETE", "recaps", ""),
+		"reset_showtell_signups": trigger("reset_showtell_signups", "DELETE", "showtell_signups", ""),
 		"persona_lookup": {
 			`CREATE TEMP VIEW participants AS SELECT json(persona_color) AS persona_color, persona_symbol FROM main.participants`,
 			`DROP VIEW IF EXISTS temp.participants`,
@@ -183,10 +190,23 @@ func writeFaults(message string) map[string][2]string {
 			`CREATE TEMP VIEW recaps AS SELECT participant_id, NULL AS token FROM main.recaps`,
 			`DROP VIEW IF EXISTS temp.recaps`,
 		},
+		// The sign-up's select still matches (the join keeps working), but
+		// NULLs title, so scanning a row fails.
+		"showtell_read": {
+			`CREATE TEMP VIEW showtell_signups AS SELECT id, participant_id, NULL AS title, description, repo_url, status, identity_revealed, hype, position, created_at FROM main.showtell_signups`,
+			`DROP VIEW IF EXISTS temp.showtell_signups`,
+		},
 		// Any Participant scan fails: the view carries only two columns, so
 		// the full selectParticipant prepare fails.
 		"participant_read": {
 			`CREATE TEMP VIEW participants AS SELECT id, json(name) AS meet_code FROM main.participants`,
+			`DROP VIEW IF EXISTS temp.participants`,
+		},
+		// The presenter's identity lookup fails: the view keeps the columns
+		// the sign-up join and the leaderboard need, so the on-stage read
+		// still works, but the full selectParticipant prepare fails.
+		"presenter_identity_read": {
+			`CREATE TEMP VIEW participants AS SELECT id, persona_name, persona_symbol, persona_color, persona_tagline FROM main.participants`,
 			`DROP VIEW IF EXISTS temp.participants`,
 		},
 	}
@@ -231,6 +251,9 @@ func allWriteFaults(message string) [][2]string {
 		trigger("fault_delete_contact_channels", "DELETE", "contact_channels"),
 		trigger("fault_insert_recaps", "INSERT", "recaps"),
 		trigger("fault_delete_recaps", "DELETE", "recaps"),
+		trigger("fault_insert_showtell_signups", "INSERT", "showtell_signups"),
+		trigger("fault_update_showtell_signups", "UPDATE", "showtell_signups"),
+		trigger("fault_delete_showtell_signups", "DELETE", "showtell_signups"),
 	}
 }
 

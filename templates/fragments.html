@@ -521,6 +521,157 @@
 {{end}}
 
 
+{{/* The personal page's show & tell section — open during the social and
+     show & tell, refreshed when the page's stream says so: the sign-up form
+     (pre-filled once signed up) and the sign-up's status in the host's queue. */}}
+{{define "fragment-showtell.html"}}
+<div
+  id="showtell"
+  hx-get="/user/showtell/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+>
+{{if .Open}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎤 Show &amp; tell</p>
+    {{if .Signup}}
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl {{.Signup.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Signup.PersonaSymbol}}</div>
+      <div>
+        <p class="font-bold text-sm text-gray-900">{{.Signup.Title}}</p>
+        <p class="text-xs text-gray-700">
+          {{if eq .Signup.Status "queued"}}⏳ In the queue — #{{.Position}}
+          {{else if eq .Signup.Status "on_stage"}}🎤 You're on stage!
+          {{else}}✅ You presented{{end}}
+        </p>
+      </div>
+    </div>
+    {{if .Signup.IdentityRevealed}}
+    <p class="text-xs text-gray-700">🎭 The host revealed your identity on the big screen — go say hi!</p>
+    {{end}}
+    {{end}}
+    <form hx-post="/user/showtell/signup/{{.Me.ID}}" hx-target="#showtell" hx-swap="outerHTML" class="space-y-2">
+      <input
+        type="text"
+        name="title"
+        maxlength="120"
+        required
+        placeholder="Your talk's title"
+        value="{{if .Signup}}{{.Signup.Title}}{{end}}"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <input
+        type="text"
+        name="description"
+        maxlength="300"
+        placeholder="One line about it (optional)"
+        value="{{if .Signup}}{{.Signup.Description}}{{end}}"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <input
+        type="url"
+        name="repo"
+        placeholder="Repo link (optional)"
+        value="{{if .Signup}}{{.Signup.RepoURL}}{{end}}"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <button
+        type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors"
+      >
+        {{if .Signup}}Update my sign-up{{else}}Sign me up{{end}}
+      </button>
+      {{if .Saved}}<p class="text-green-800 text-xs font-semibold text-center">✅ You're in the queue</p>{{end}}
+    </form>
+  </div>
+{{end}}
+</div>
+{{end}}
+
+
+{{/* The host console's show & tell queue — refreshed when the queue stream
+     says so. Every sign-up with its presenter's Persona and status: reorder
+     and remove the queued ones, put the next one on stage, reveal the
+     presenter's identity (the only place a handle is shown) and mark talks
+     done. */}}
+{{define "fragment-showtell-queue.html"}}
+<div
+  id="showtell-queue"
+  hx-get="/admin/showtell-queue"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3"
+>
+  <p class="text-gray-400 text-xs uppercase tracking-widest">🎤 Show &amp; tell queue</p>
+  {{if .Queue}}
+  <ol class="space-y-2">
+    {{range .Queue}}
+    <li class="flex items-center gap-3 bg-gray-800/60 border border-gray-700 rounded-xl px-3 py-2">
+      <div class="w-9 h-9 rounded-lg {{.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0">{{.PersonaSymbol}}</div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-bold text-white truncate">{{.Title}}</p>
+        <p class="text-xs text-gray-400 truncate">{{.PersonaName}}{{if .Description}} — {{.Description}}{{end}}</p>
+        <p class="text-xs text-gray-500">
+          {{if eq .Status "queued"}}⏳ queued
+          {{else if eq .Status "on_stage"}}🎤 on stage{{if .IdentityRevealed}} — identity revealed{{end}}
+          {{else}}✅ presented{{end}}
+        </p>
+      </div>
+      <div class="flex items-center gap-1 flex-shrink-0">
+        {{if eq .Status "queued"}}
+        <form action="/admin/showtell/move" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="dir" value="up">
+          <button type="submit" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg" title="Move up">↑</button>
+        </form>
+        <form action="/admin/showtell/move" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="dir" value="down">
+          <button type="submit" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg" title="Move down">↓</button>
+        </form>
+        <form action="/admin/showtell/stage" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="stage">
+          <button type="submit" class="px-2 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold">On stage</button>
+        </form>
+        {{end}}
+        {{if eq .Status "on_stage"}}
+        {{if not .IdentityRevealed}}
+        <form action="/admin/showtell/stage" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="reveal">
+          <button
+            type="submit"
+            class="px-2 py-1 text-xs bg-pink-600 hover:bg-pink-500 text-white rounded-lg font-bold"
+            onclick="return confirm('Reveal this presenter&apos;s identity on the big screen?')"
+          >Reveal identity</button>
+        </form>
+        {{end}}
+        <form action="/admin/showtell/stage" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="done">
+          <button type="submit" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg">Done</button>
+        </form>
+        {{end}}
+        <form action="/admin/showtell/remove" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button
+            type="submit"
+            class="px-2 py-1 text-xs bg-gray-900 hover:bg-red-900 text-gray-500 hover:text-red-300 rounded-lg"
+            onclick="return confirm('Remove this sign-up from the queue?')"
+          >✕</button>
+        </form>
+      </div>
+    </li>
+    {{end}}
+  </ol>
+  {{else}}
+  <p class="text-gray-500 text-sm">No sign-ups yet — they appear here as participants sign up.</p>
+  {{end}}
+</div>
+{{end}}
+
+
 {{/* The personal page's recap link — refreshed when the page's stream says so:
      during closed, the Participant's recap page as a QR. The recap token is
      the unguessable UUID; it persists across restarts. */}}

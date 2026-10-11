@@ -205,6 +205,7 @@ type testDeps struct {
 	events      *EventStore
 	matcher     *Matcher
 	missions    *Missions
+	showtell    *ShowTell
 	llm         *fakeLLM
 	github      *fakeGitHub
 	onboarding  *Onboarding
@@ -241,14 +242,15 @@ func newTestServerOnDB(t *testing.T, db *DB, llm *fakeLLM, gh *fakeGitHub) (*tes
 	}
 	matcher := NewMatcher(db, gh, llm)
 	missions := NewMissions(db, matcher, llm)
+	showtell := NewShowTell(db, llm)
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
 	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking, missions)
 	srv := &testSrv{URL: "http://test", checks: map[string]int{}}
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, srv)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, srv)
 	srv.h = buildMux(h)
-	return srv, &testDeps{db: db, events: NewEventStore(db), matcher: matcher, missions: missions, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking, handler: h}
+	return srv, &testDeps{db: db, events: NewEventStore(db), matcher: matcher, missions: missions, showtell: showtell, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking, handler: h}
 }
 
 // forceStep puts a Participant at any Pipeline Step, bypassing the guarded

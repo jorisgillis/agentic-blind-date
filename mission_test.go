@@ -1248,7 +1248,7 @@ func TestMissionCardData_RanksAgainstTheTop5(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, nil)
+	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
 
 	data := h.missionCardData(reload(t, deps.db, "p1"))
 	if data["Connections"].(int) != 3 {
@@ -1286,7 +1286,7 @@ func TestMissionCardData_WithFewParticipantsTheTopIsTheWholeBoard(t *testing.T) 
 	if _, err := deps.missions.GenerateFor("p00"); err != nil {
 		t.Fatal(err)
 	}
-	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, nil)
+	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
 
 	data := h.missionCardData(reload(t, deps.db, "p00"))
 
@@ -1307,7 +1307,7 @@ func TestMissionCardData_ReportsReadFailures(t *testing.T) {
 		if _, err := deps.missions.GenerateFor("me"); err != nil {
 			t.Fatal(err)
 		}
-		return deps, NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, nil)
+		return deps, NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
 	}
 
 	t.Run("the card cannot be read", func(t *testing.T) {

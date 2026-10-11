@@ -60,6 +60,7 @@ func main() {
 
 	matcher := NewMatcher(db, github, llm)
 	missions := NewMissions(db, matcher, llm)
+	showtell := NewShowTell(db, llm)
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
@@ -67,7 +68,7 @@ func main() {
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, nil)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, nil)
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)
@@ -103,6 +104,8 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("POST /user/settings/{id}", h.SaveSettings)
 	mux.HandleFunc("GET /user/recap-link/{id}", h.RecapLink)
 	mux.HandleFunc("GET /user/recap/{token}", h.Recap)
+	mux.HandleFunc("POST /user/showtell/signup/{id}", h.ShowTellSignup)
+	mux.HandleFunc("GET /user/showtell/{id}", h.ShowTellStatus)
 
 	mux.HandleFunc("GET /bigscreen", h.Screen)
 	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
@@ -127,6 +130,11 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("POST /admin/reveal", h.TriggerReveal)
 	mux.HandleFunc("POST /admin/reset", h.Reset)
 	mux.HandleFunc("POST /admin/rematch", h.Rematch)
+	mux.HandleFunc("POST /admin/showtell/stage", h.ShowTellStage)
+	mux.HandleFunc("POST /admin/showtell/move", h.ShowTellMove)
+	mux.HandleFunc("POST /admin/showtell/remove", h.ShowTellRemove)
+	mux.HandleFunc("GET /admin/showtell-queue", h.ShowTellQueue)
+	mux.HandleFunc("GET /admin/showtell-stream", h.ShowTellStream)
 
 	return mux
 }

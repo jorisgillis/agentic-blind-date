@@ -32,6 +32,7 @@ Each ADR follows this structure:
 | [0011](0011-meeting-handshake.md) | Meeting Confirmation Handshake | Accepted | 2026-10-10 |
 | [0012](0012-reveal-ceremony-and-locked-dossier.md) | The Reveal Ceremony and the Locked Dossier | Accepted | 2026-10-10 |
 | [0013](0013-contact-exchange-and-personal-recap.md) | Contact Exchange and the Personal Recap | Accepted | 2026-10-10 |
+| [0014](0014-showtell-signup-host-queue-presenter-mode.md) | Show & Tell — Sign-up, Host Queue, Presenter Mode with Identity Reveal | Accepted | 2026-10-10 |
 
 ## When to Create an ADR
 

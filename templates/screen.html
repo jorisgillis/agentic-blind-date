@@ -45,6 +45,25 @@
       <h2 class="text-xs uppercase tracking-widest text-gray-400 mb-2">Connections</h2>
       <ol id="leaderboard-list" class="space-y-1 text-sm"></ol>
     </div>
+    <div id="presenter" class="absolute inset-0 hidden items-center justify-center bg-gray-950/80" style="z-index: 10;">
+      <div class="bg-gray-900 border border-purple-500 rounded-3xl p-10 max-w-xl w-full mx-4 text-center space-y-4 shadow-2xl">
+        <p id="presenter-hype" class="text-lg text-purple-300 italic"></p>
+        <div id="presenter-symbol" class="text-7xl"></div>
+        <div id="presenter-persona">
+          <p id="presenter-name" class="text-3xl font-black mt-2"></p>
+          <p id="presenter-tagline" class="text-gray-400 text-sm italic"></p>
+        </div>
+        <div id="presenter-identity" class="hidden">
+          <p id="presenter-handle" class="text-3xl font-black text-pink-400"></p>
+          <p id="presenter-real-name" class="text-gray-400 text-sm"></p>
+        </div>
+        <div class="border-t border-gray-700 pt-4 space-y-1">
+          <p id="presenter-title" class="text-xl font-bold"></p>
+          <p id="presenter-description" class="text-gray-400 text-sm"></p>
+          <a id="presenter-repo" class="text-indigo-400 text-sm underline" target="_blank" rel="noopener"></a>
+        </div>
+      </div>
+    </div>
     <div id="empty-state" class="absolute inset-0 flex items-center justify-center">
       <div class="text-center">
         <p class="text-6xl mb-4">📱</p>
@@ -292,6 +311,47 @@ function updateGraph(data) {
   // Activity ticker
   if (data.activity && data.activity.length > 0) {
     document.getElementById('ticker').textContent = data.activity[0];
+  }
+
+  // Presenter mode: the on-stage presenter's card with the hype intro —
+  // personas only, until the host's explicit identity reveal flips the card
+  // to the GitHub handle/name.
+  const presenter = data.presenter;
+  const panel = document.getElementById('presenter');
+  if (presenter) {
+    panel.classList.remove('hidden');
+    panel.classList.add('flex');
+    document.getElementById('presenter-hype').textContent = presenter.hype || '';
+    document.getElementById('presenter-symbol').textContent = presenter.persona_symbol || '🎤';
+    const nameEl = document.getElementById('presenter-name');
+    nameEl.textContent = presenter.persona_name || '';
+    nameEl.style.color = colorMap[presenter.persona_color] || '#ffffff';
+    document.getElementById('presenter-tagline').textContent = presenter.persona_tagline || '';
+    document.getElementById('presenter-title').textContent = presenter.title || '';
+    document.getElementById('presenter-description').textContent = presenter.description || '';
+    const repo = document.getElementById('presenter-repo');
+    if (presenter.repo_url) {
+      repo.textContent = presenter.repo_url;
+      repo.href = presenter.repo_url;
+      repo.classList.remove('hidden');
+    } else {
+      repo.classList.add('hidden');
+    }
+    // The identity reveal flips the card: the handle/name replaces the persona.
+    const persona = document.getElementById('presenter-persona');
+    const identity = document.getElementById('presenter-identity');
+    if (presenter.identity_revealed) {
+      document.getElementById('presenter-handle').textContent = presenter.handle || '';
+      document.getElementById('presenter-real-name').textContent = presenter.name || '';
+      persona.classList.add('hidden');
+      identity.classList.remove('hidden');
+    } else {
+      persona.classList.remove('hidden');
+      identity.classList.add('hidden');
+    }
+  } else {
+    panel.classList.add('hidden');
+    panel.classList.remove('flex');
   }
 }
 
