@@ -99,6 +99,10 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("POST /user/met/{id}", h.ConfirmMeeting)
 	mux.HandleFunc("GET /user/meet-status/{id}", h.MeetStatus)
 	mux.HandleFunc("GET /user/match-stream/{id}", h.MatchStream)
+	mux.HandleFunc("GET /user/settings/{id}", h.Settings)
+	mux.HandleFunc("POST /user/settings/{id}", h.SaveSettings)
+	mux.HandleFunc("GET /user/recap-link/{id}", h.RecapLink)
+	mux.HandleFunc("GET /user/recap/{token}", h.Recap)
 
 	mux.HandleFunc("GET /bigscreen", h.Screen)
 	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
@@ -115,6 +119,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /data/state", h.DataState)
 	mux.HandleFunc("GET /data/meetings", h.DataMeetings)
 	mux.HandleFunc("GET /data/leaderboard", h.DataLeaderboard)
+	mux.HandleFunc("GET /data/channels", h.DataChannels)
 	mux.HandleFunc("GET /data/missioncard/{id}", h.DataMissionCard)
 
 	mux.HandleFunc("GET /admin", h.Admin)

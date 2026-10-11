@@ -74,6 +74,8 @@ type Handler struct {
 	store       *ParticipantStore
 	events      *EventStore
 	meetings    *Meetings
+	channels    *ContactChannels
+	recaps      *Recaps
 	missions    *Missions
 	onboarding  *Onboarding
 	interview   *Interview
@@ -106,8 +108,10 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	events := NewEventStore(db)
+	meetings := NewMeetings(db, events)
 	return &Handler{
-		db: db, store: NewParticipantStore(db), events: events, meetings: NewMeetings(db, events), missions: missions,
+		db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
+		channels: NewContactChannels(db), recaps: NewRecaps(db), missions: missions,
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
 	}
@@ -278,6 +282,8 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	data["QAPairs"] = qaPairs
 	data["MeetStatus"] = h.meetStatusData(p)
 	data["MissionCard"] = h.missionCardData(p)
+	data["Settings"] = h.settingsData(p)
+	data["RecapLink"] = h.recapLinkData(p)
 	h.render(w, "wait.html", data)
 }
 
@@ -351,6 +357,8 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		"Dossier":     dossier,
 		"MeetStatus":  h.meetStatusData(p),
 		"MissionCard": h.missionCardData(p),
+		"Settings":    h.settingsData(p),
+		"RecapLink":   h.recapLinkData(p),
 	})
 }
 
@@ -590,11 +598,15 @@ func (h *Handler) MeetStatus(w http.ResponseWriter, r *http.Request) {
 
 // meetStatusData is the personal page's meet section: the Participant's meet
 // code and meet-link QR, the "I met someone" entry point and their meetings —
-// phase-gated to the social and show & tell.
+// phase-gated to the social and show & tell. A completed meeting carries the
+// exchange prompt's data: what the other side shares with them and what they
+// share with the other side — the mutual rule decides what is revealed.
 func (h *Handler) meetStatusData(p *Participant) map[string]any {
 	type meetingView struct {
-		Other  *Participant
-		Status MeetingStatus
+		Other    *Participant
+		Status   MeetingStatus
+		Revealed []ContactChannel // what the other side shares with me
+		Shared   []ContactChannel // what I share with them
 	}
 	var meetings []meetingView
 	if h.events.State().AllowsMeetings() {
@@ -604,7 +616,18 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 			if err != nil {
 				continue // the other side left the event; the row is debug-only
 			}
-			meetings = append(meetings, meetingView{Other: other, Status: m.StatusFor(p.ID)})
+			view := meetingView{Other: other, Status: m.StatusFor(p.ID)}
+			revealed, err := h.channels.Revealed(other.ID, p.ID)
+			if err != nil {
+				log.Printf("Channels revealed to %s by %s: %v", p.ID, other.ID, err)
+			}
+			shared, err := h.channels.Revealed(p.ID, other.ID)
+			if err != nil {
+				log.Printf("Channels shared by %s with %s: %v", p.ID, other.ID, err)
+			}
+			view.Revealed = revealed
+			view.Shared = shared
+			meetings = append(meetings, view)
 		}
 	}
 	return map[string]any{
@@ -662,6 +685,176 @@ func (h *Handler) meetSignature(p *Participant) meetSignature {
 		}
 	}
 	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID)}
+}
+
+// ── contact exchange: settings + the post-meeting prompt ───────────────────
+
+// GET /user/settings/{id} — HTMX, the personal page's settings section: the
+// Participant's contact channels, entered once, off by default.
+func (h *Handler) Settings(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, "fragment-settings.html", h.settingsData(p))
+}
+
+// POST /user/settings/{id} — saves the Participant's contact channels.
+func (h *Handler) SaveSettings(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var channels []ContactChannel
+	for _, name := range ContactChannelNames {
+		channels = append(channels, ContactChannel{
+			Channel: name,
+			Value:   strings.TrimSpace(r.FormValue(name)),
+			Enabled: r.FormValue(name+"_on") == "on",
+		})
+	}
+	if err := h.channels.Save(p.ID, channels); err != nil {
+		http.Error(w, "saving your contact details failed: "+err.Error(), 500)
+		return
+	}
+	data := h.settingsData(p)
+	data["Saved"] = true
+	h.render(w, "fragment-settings.html", data)
+}
+
+// settingsData is the personal page's settings section: the Participant's
+// contact channels — entered once, off by default — with the github channel
+// pre-filled from their GitHub profile.
+func (h *Handler) settingsData(p *Participant) map[string]any {
+	channels, err := h.channels.Channels(p.ID)
+	if err != nil {
+		log.Printf("Contact channels for %s: %v", p.ID, err)
+	}
+	for i := range channels {
+		if channels[i].Channel == "github" && channels[i].Value == "" {
+			channels[i].Value = githubHandle(p)
+		}
+	}
+	return map[string]any{"Me": p, "Channels": channels}
+}
+
+// githubHandle is the Participant's GitHub handle, pre-filled into the github
+// contact channel; empty for Non-GitHub Users.
+func githubHandle(p *Participant) string {
+	if !p.HasGitHub {
+		return ""
+	}
+	if p.Profile != nil && p.Profile.Login != "" {
+		return p.Profile.Login
+	}
+	return p.GitHubHandle
+}
+
+// ── the personal recap ─────────────────────────────────────────────────────
+
+// GET /user/recap-link/{id} — HTMX, the personal page's recap link: during
+// closed, the Participant's recap page as a QR — the unguessable link to
+// their evening, persistent across restarts.
+func (h *Handler) RecapLink(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, "fragment-recap-link.html", h.recapLinkData(p))
+}
+
+// recapLinkData is the personal page's recap link: the Participant's recap
+// token while the event is closed — before that there is nothing to show.
+func (h *Handler) recapLinkData(p *Participant) map[string]any {
+	data := map[string]any{"Me": p}
+	if h.events.State() == PhaseClosed {
+		token, err := h.recaps.TokenFor(p.ID)
+		if err != nil {
+			log.Printf("Recap token for %s: %v", p.ID, err)
+		} else {
+			data["Token"] = token
+		}
+	}
+	return data
+}
+
+// GET /user/recap/{token} — the personal recap page: the Participant's
+// evening, kept — their persona card, their match dossier (always unlocked
+// here), every connection with the channels they shared, the channels they
+// shared themselves, and their stats. The token is the unguessable UUID; an
+// unknown token is a 404.
+func (h *Handler) Recap(w http.ResponseWriter, r *http.Request) {
+	p, err := h.recaps.ByToken(r.PathValue("token"))
+	if err != nil {
+		http.Error(w, "loading the recap failed: "+err.Error(), 500)
+		return
+	}
+	if p == nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, "recap.html", h.recapData(p))
+}
+
+// recapData is the recap page's data: the Participant's persona card, their
+// match dossier (always unlocked here — the evening is theirs to keep), all
+// their connections with the channels those connections shared with them,
+// the channels they shared themselves, and their personal stats.
+func (h *Handler) recapData(p *Participant) map[string]any {
+	dossier, match := h.dossierData(p)
+	dossier["Unlocked"] = true // the recap always shows the dossier
+
+	type connectionView struct {
+		Other    *Participant
+		Revealed []ContactChannel
+	}
+	var connections []connectionView
+	ms, err := h.meetings.ForParticipant(p.ID)
+	if err != nil {
+		log.Printf("Recap meetings for %s: %v", p.ID, err)
+	}
+	for _, m := range ms {
+		if !m.Completed() {
+			continue // a connection is a completed meeting
+		}
+		other, err := h.store.Get(m.Other(p.ID))
+		if err != nil {
+			continue // the other side left the event
+		}
+		revealed, err := h.channels.Revealed(other.ID, p.ID)
+		if err != nil {
+			log.Printf("Recap channels revealed to %s by %s: %v", p.ID, other.ID, err)
+		}
+		connections = append(connections, connectionView{Other: other, Revealed: revealed})
+	}
+
+	mine, err := h.channels.Channels(p.ID)
+	if err != nil {
+		log.Printf("Recap contact channels for %s: %v", p.ID, err)
+	}
+
+	board, err := h.meetings.Leaderboard()
+	if err != nil {
+		log.Printf("Recap leaderboard for %s: %v", p.ID, err)
+	}
+	champion, err := h.meetings.Champion()
+	if err != nil {
+		log.Printf("Recap champion for %s: %v", p.ID, err)
+	}
+
+	return map[string]any{
+		"Me":              p,
+		"Match":           match,
+		"Dossier":         dossier,
+		"Connections":     connections,
+		"Shared":          shared(mine),
+		"ConnectionCount": h.meetings.Connections(p.ID),
+		"Rank":            rankOf(board, p.ID),
+		"Champion":        champion != nil && champion.ID == p.ID,
+	}
 }
 
 // ── /bigscreen ─────────────────────────────────────────────────────────────
@@ -930,6 +1123,18 @@ func (h *Handler) DataLeaderboard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, board)
 }
 
+// GET /data/channels — debug: per Participant, how many contact channels
+// they opted in to. Counts only, never values — no contact data is visible
+// without the completed meeting.
+func (h *Handler) DataChannels(w http.ResponseWriter, r *http.Request) {
+	counts, err := h.channels.Counts()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, counts)
+}
+
 // GET /data/missioncard/{id} — debug: the Participant's Mission card — tiles,
 // reasons and stamp state.
 func (h *Handler) DataMissionCard(w http.ResponseWriter, r *http.Request) {
@@ -1082,6 +1287,14 @@ func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.missions.RemoveParticipant(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := h.channels.RemoveParticipant(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := h.recaps.RemoveParticipant(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

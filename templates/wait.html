@@ -105,6 +105,13 @@
     {{/* Meet section — phase-gated, refreshed when the wait stream says so */}}
     {{template "fragment-meet-status.html" .MeetStatus}}
 
+    {{/* Settings — the Participant's contact channels, entered once */}}
+    {{template "fragment-settings.html" .Settings}}
+
+    {{/* Recap link — during closed, the recap page as a QR, refreshed when
+         the wait stream says so */}}
+    {{template "fragment-recap-link.html" .RecapLink}}
+
   </div>
   <script>
     function renderMd() {
@@ -126,9 +133,17 @@
     }
     document.addEventListener('DOMContentLoaded', renderMeetQr);
     document.addEventListener('htmx:afterSwap', renderMeetQr);
+    function renderRecapQr() {
+      const el = document.getElementById('recap-qr');
+      if (el) {
+        el.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.origin + el.dataset.recap);
+      }
+    }
+    document.addEventListener('DOMContentLoaded', renderRecapQr);
+    document.addEventListener('htmx:afterSwap', renderRecapQr);
     const _es = new EventSource('/user/wait-stream/{{$p.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
-    _es.addEventListener('refresh', () => { htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); });
+    _es.addEventListener('refresh', () => { htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); htmx.trigger('#recap', 'refresh'); });
     _es.onerror = () => _es.close();
   </script>
 </body>

@@ -209,6 +209,7 @@ type testDeps struct {
 	github      *fakeGitHub
 	onboarding  *Onboarding
 	matchmaking *Matchmaking
+	handler     *Handler
 }
 
 func newTestDB(t *testing.T) *DB {
@@ -225,13 +226,19 @@ func newTestDB(t *testing.T) *DB {
 
 func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testDeps) {
 	t.Helper()
+	return newTestServerOnDB(t, newTestDB(t), llm, gh)
+}
+
+// newTestServerOnDB wires the test server on an existing database — the
+// restart tests reopen the same file and serve it again.
+func newTestServerOnDB(t *testing.T, db *DB, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testDeps) {
+	t.Helper()
 	if llm == nil {
 		llm = newFakeLLM()
 	}
 	if gh == nil {
 		gh = newFakeGitHub()
 	}
-	db := newTestDB(t)
 	matcher := NewMatcher(db, gh, llm)
 	missions := NewMissions(db, matcher, llm)
 	interview := NewInterview(db, llm)
@@ -241,7 +248,7 @@ func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testD
 	srv := &testSrv{URL: "http://test", checks: map[string]int{}}
 	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, srv)
 	srv.h = buildMux(h)
-	return srv, &testDeps{db: db, events: NewEventStore(db), matcher: matcher, missions: missions, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
+	return srv, &testDeps{db: db, events: NewEventStore(db), matcher: matcher, missions: missions, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking, handler: h}
 }
 
 // forceStep puts a Participant at any Pipeline Step, bypassing the guarded

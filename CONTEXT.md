@@ -215,6 +215,12 @@ The Merge Trophy winner: the participant with the most completed meetings — th
 ### Mission Card
 A participant's personal 3×3 grid of personas to meet, live during the Social and Show & Tell. Cards are generated at the social transition for everyone ready — in a background worker pool, so the transition returns immediately — and straight away for latecomers reaching ready during those phases; never during onboarding or once closed. The center tile is the participant's Match, falling back to their top-affinity persona while unmatched; the eight surrounding tiles are four affinity picks (highest heuristic pair score) and four wildcards (deliberately different), excluding the Match, the participant, and everyone already met. Tiles snapshot the persona at generation, so a card is fixed once dealt. A **Stamp** marks a tile whose person the participant has a completed Meeting with — stamps derive from the meetings, never stored. The surrounding tiles' reasons come from the **Mission Agent**: one batched LLM call per card, with a generic fallback reason when the LLM fails, so a card always generates. Card generation never writes pairing data.
 
+### Contact Channel
+A contact detail a Participant can share with the people they met: github, email, linkedin, instagram, mastodon or other. Channels are entered once in the settings section of the personal page, off by default; the github channel is pre-filled from the Participant's GitHub profile. A channel's value leaves its owner's hands only under the **mutual rule** (`Revealed`, in `contact.go`): a channel is revealed to the other side only if the owner opted in to it AND the pair's Meeting is completed — a one-sided opt-in reveals nothing. After a completed meeting, both phones show an "Exchange contact details?" prompt with what each side shares. The `/data` debug endpoints show per-Participant opted-in channel counts only, never values.
+
+### Personal Recap
+A Participant's page of their evening, kept: `GET /user/recap/{token}`, gated by an unguessable UUID token stored in the `recaps` table, so the page persists across restarts. The recap shows the Participant's persona card, their match dossier (always unlocked there), every connection with the contact channels those connections shared, the channels the Participant shared themselves, and their personal stats (connections, leaderboard rank, champion). During `closed`, the personal page shows the recap link as a QR. A GitHub handle appears on the owner's own recap only as a revealed github contact channel — the owner opted in — and nowhere else outside stage.
+
 ## Subdomains
 
 ### Onboarding Subdomain
@@ -271,3 +277,5 @@ The **Relationship module** owns Relationship State and enforces the Key Invaria
 | Mission Agent | The LLM component that writes the reason for each of a Mission card's surrounding tiles in one batched call, with a generic fallback reason on failure |
 | Teaser | The matched Participant's wait-page hint during onboarding: the future Match's emoji and colour plus a disagreement hint |
 | Dossier | The Match's fun payload (reason, flags, icebreakers), locked on the Match page until the pair's Meeting is completed |
+| Contact Channel | A contact detail (github, email, linkedin, instagram, mastodon, other) a Participant enters once in their settings, off by default, revealed only under the mutual rule |
+| Personal Recap | The Participant's persistent recap page at `/user/recap/{token}` — persona card, unlocked dossier, connections with revealed channels, personal stats — gated by an unguessable UUID token |

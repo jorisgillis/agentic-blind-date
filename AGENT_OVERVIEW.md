@@ -141,6 +141,10 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/user/met/{id}` | Confirm a meeting (confirmer's id; target via `code` form value) |
 | GET | `/user/meet-status/{id}` | HTMX fragment: meet section (code, QR, "I met someone") |
 | GET | `/user/mission/{id}` | HTMX fragment: mission card section (3×3 grid, stamps, top connections) |
+| GET | `/user/settings/{id}` | HTMX fragment: contact-details settings section (channels off by default, github pre-filled) |
+| POST | `/user/settings/{id}` | Save the contact channels (entered once) |
+| GET | `/user/recap-link/{id}` | HTMX fragment: the recap link — the recap page as a QR during closed |
+| GET | `/user/recap/{token}` | Personal recap page (persona card, dossier, connections, stats) — unguessable UUID token |
 | GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel (phase, counts, transition buttons) |
@@ -149,6 +153,7 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/admin/reset` | Clear all data |
 | GET | `/data/meetings` | Debug: meetings (JSON) |
 | GET | `/data/leaderboard` | Debug: connection ranking derived from completed meetings (JSON) |
+| GET | `/data/channels` | Debug: per-participant opted-in contact-channel counts (JSON, counts only) |
 | GET | `/data/missioncard/{id}` | Debug: mission card (tiles, reasons, stamp state) |
 | GET | `/data/*` | Debug endpoints (JSON) |
 
@@ -183,6 +188,20 @@ completed_at, origin ('match' | 'mission' | 'other'), created_at
 ```sql
 participant_id (PRIMARY KEY), tiles (JSON: position, kind, person, reason), created_at
 -- one card per participant, fixed at generation; stamps derive from meetings
+```
+
+**contact_channels:**
+```sql
+participant_id, channel ('github'|'email'|'linkedin'|'instagram'|'mastodon'|'other'),
+value, enabled (0/1, off by default)
+-- PRIMARY KEY (participant_id, channel); entered once in the settings section,
+-- a value is revealed only under the mutual rule (opted in + completed meeting)
+```
+
+**recaps:**
+```sql
+participant_id (PRIMARY KEY), token (UUID, UNIQUE), created_at
+-- one unguessable recap token per participant; the recap page persists across restarts
 ```
 
 **activity_log:**

@@ -129,6 +129,20 @@ func NewDB(path string) (*DB, error) {
 			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
+		CREATE TABLE IF NOT EXISTS contact_channels (
+			participant_id TEXT NOT NULL REFERENCES participants(id),
+			channel        TEXT NOT NULL,
+			value          TEXT NOT NULL DEFAULT '',
+			enabled        INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (participant_id, channel)
+		);
+
+		CREATE TABLE IF NOT EXISTS recaps (
+			participant_id TEXT PRIMARY KEY REFERENCES participants(id),
+			token          TEXT NOT NULL UNIQUE,
+			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
 	`)
 	if err != nil {
 		return nil, err

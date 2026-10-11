@@ -201,14 +201,21 @@ func (s *EventStore) set(phase Phase) error {
 }
 
 // Reset starts the event over: no Participants, no meetings, no mission
-// cards, no activity, and back to onboarding — one transaction, so a failure
-// leaves everything as it was. Meetings expire silently: no message, no nag.
+// cards, no contact channels, no recap tokens, no activity, and back to
+// onboarding — one transaction, so a failure leaves everything as it was.
+// Meetings expire silently: no message, no nag.
 func (s *EventStore) Reset() error {
 	return s.db.inTx(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`DELETE FROM meetings`); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`DELETE FROM mission_cards`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM contact_channels`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM recaps`); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`DELETE FROM participants`); err != nil {

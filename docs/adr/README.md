@@ -31,6 +31,7 @@ Each ADR follows this structure:
 | [0010](0010-event-phase-machine.md) | Event Phase Machine | Accepted | 2026-10-10 |
 | [0011](0011-meeting-handshake.md) | Meeting Confirmation Handshake | Accepted | 2026-10-10 |
 | [0012](0012-reveal-ceremony-and-locked-dossier.md) | The Reveal Ceremony and the Locked Dossier | Accepted | 2026-10-10 |
+| [0013](0013-contact-exchange-and-personal-recap.md) | Contact Exchange and the Personal Recap | Accepted | 2026-10-10 |
 
 ## When to Create an ADR
 
