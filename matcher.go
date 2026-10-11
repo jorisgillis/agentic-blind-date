@@ -19,8 +19,9 @@ type matchResult struct {
 }
 
 // Matcher pairs Participants. It owns the heuristic Pair score, the LLM
-// compatibility assessment (prompt, parsing, validation) and the two-level
-// cache of assessments from ADR-0002.
+// compatibility assessment (prompt, parsing, validation), the two-level cache
+// of assessments from ADR-0002 and the in-memory cache of GitHub follow
+// relationships for the duration of the event.
 type Matcher struct {
 	db     *DB
 	github GitHubAPI
@@ -28,15 +29,19 @@ type Matcher struct {
 
 	mu    sync.Mutex
 	cache map[string]*matchResult // in-memory level; the llm_cache table is the persistent level
+
+	followMu sync.Mutex
+	follows  map[string]followCheck // in-memory follow relationships, keyed by unordered handle pair
 }
 
 // NewMatcher creates a new Matcher instance.
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher {
 	return &Matcher{
-		db:     db,
-		github: github,
-		llm:    llm,
-		cache:  make(map[string]*matchResult),
+		db:      db,
+		github:  github,
+		llm:     llm,
+		cache:   make(map[string]*matchResult),
+		follows: make(map[string]followCheck),
 	}
 }
 
@@ -77,11 +82,15 @@ func (m *Matcher) ScorePair(a, b *Participant) (*matchResult, error) {
 	return result, nil
 }
 
-// ClearCache forgets every cached assessment, in memory and in the database.
+// ClearCache forgets every cached assessment, in memory and in the database,
+// and every cached follow relationship, in memory.
 func (m *Matcher) ClearCache() {
 	m.mu.Lock()
 	m.cache = make(map[string]*matchResult)
 	m.mu.Unlock()
+	m.followMu.Lock()
+	m.follows = make(map[string]followCheck)
+	m.followMu.Unlock()
 	m.db.ClearLLMCache()
 }
 
@@ -151,11 +160,51 @@ func describeDeveloper(n int, p *Participant) string {
 	return s
 }
 
+// followCheck is a cached follow relationship between two handles, stored in
+// the cache key's order (first < second).
+type followCheck struct {
+	firstFollowsSecond bool
+	secondFollowsFirst bool
+}
+
+// mutualFollow reports whether a follows b and whether b follows a. Follow
+// relationships are cached in memory per unordered handle pair for the
+// duration of the event, so the heuristic PairScore and the LLM follow notes
+// share one CheckMutualFollow per pair — one GitHub API call per directed
+// follow pair per event. The lock is held across the API call so concurrent
+// scorers wait for one check instead of racing duplicate calls.
+func (m *Matcher) mutualFollow(a, b string) (aFollowsB, bFollowsA bool) {
+	first, second := a, b
+	if second < first {
+		first, second = second, first
+	}
+	key := first + ":" + second
+
+	m.followMu.Lock()
+	defer m.followMu.Unlock()
+	if m.follows == nil {
+		m.follows = make(map[string]followCheck)
+	}
+	if cached, ok := m.follows[key]; ok {
+		if first == a {
+			return cached.firstFollowsSecond, cached.secondFollowsFirst
+		}
+		return cached.secondFollowsFirst, cached.firstFollowsSecond
+	}
+	aFollowsB, bFollowsA = m.github.CheckMutualFollow(a, b)
+	cached := followCheck{firstFollowsSecond: aFollowsB, secondFollowsFirst: bFollowsA}
+	if first != a {
+		cached = followCheck{firstFollowsSecond: bFollowsA, secondFollowsFirst: aFollowsB}
+	}
+	m.follows[key] = cached
+	return aFollowsB, bFollowsA
+}
+
 func (m *Matcher) followNote(p1, p2 *Participant) string {
 	if !p1.HasGitHub || !p2.HasGitHub {
 		return ""
 	}
-	aFollowsB, bFollowsA := m.github.CheckMutualFollow(p1.GitHubHandle, p2.GitHubHandle)
+	aFollowsB, bFollowsA := m.mutualFollow(p1.GitHubHandle, p2.GitHubHandle)
 	switch {
 	case aFollowsB && bFollowsA:
 		return fmt.Sprintf("\n\nNote: %s and %s already follow each other on GitHub!", p1.PersonaName, p2.PersonaName)
@@ -265,7 +314,7 @@ func (m *Matcher) PairScore(a, b *Participant) int {
 
 	// Score the GitHub follow relationship: +5 if mutual, +3 if one-way
 	if a.HasGitHub && b.HasGitHub {
-		aFollowsB, bFollowsA := m.github.CheckMutualFollow(a.GitHubHandle, b.GitHubHandle)
+		aFollowsB, bFollowsA := m.mutualFollow(a.GitHubHandle, b.GitHubHandle)
 		switch {
 		case aFollowsB && bFollowsA:
 			score += 5

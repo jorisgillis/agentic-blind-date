@@ -182,6 +182,30 @@ func TestReset(t *testing.T) {
 	}
 }
 
+// TestReset_ClearsTheFollowCache is #112: the event reset clears the
+// Matcher's in-memory follow cache together with the LLM/match caches, so the
+// next scoring round asks GitHub again.
+func TestReset_ClearsTheFollowCache(t *testing.T) {
+	gh := newFakeGitHub().withFollow("a", "b")
+	srv, deps := newTestServer(t, nil, gh)
+	a := testParticipant("a", "The Gopher", []string{"Go"})
+	b := testParticipant("b", "The Crab", []string{"Rust"})
+
+	deps.matcher.PairScore(a, b)
+	if n := gh.followLookups(); n != 1 {
+		t.Fatalf("warming the follow cache: want 1 lookup, got %d", n)
+	}
+
+	if resp := post(t, srv, "/admin/reset", url.Values{}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /admin/reset: want 303, got %d", resp.StatusCode)
+	}
+
+	deps.matcher.PairScore(a, b)
+	if n := gh.followLookups(); n != 2 {
+		t.Errorf("after a reset the follow cache is cleared: want 2 lookups, got %d", n)
+	}
+}
+
 func TestGraphPayload_Top3Connections(t *testing.T) {
 	// This test verifies that buildGraphPayload includes top-3 connections per participant
 	// We can't easily test the full graph without setting up participants with proper data,

@@ -434,6 +434,39 @@ func TestMatcherScorePair_NoFollowLookupsForNonGitHubUsers(t *testing.T) {
 	}
 }
 
+// TestMatcher_FollowChecksAreCachedPerPairAcrossScoringAndFollowNotes is #112:
+// the counting GitHub fake proves one follow check per pair per event, in
+// either order, shared by the heuristic PairScore and the LLM follow notes.
+func TestMatcher_FollowChecksAreCachedPerPairAcrossScoringAndFollowNotes(t *testing.T) {
+	gh := newFakeGitHub().withFollow("a", "b")
+	llm := newFakeLLM().on("matchmaker", matchReply)
+	m := NewMatcher(newTestDB(t), gh, llm)
+	a := testParticipant("a", "The Gopher", []string{"Go"})
+	b := testParticipant("b", "The Crab", []string{"Rust"})
+
+	// A one-way follow, scored repeatedly in both orders: one check per pair.
+	for _, score := range []int{m.PairScore(b, a), m.PairScore(a, b), m.PairScore(b, a)} {
+		if score != 3 {
+			t.Errorf("PairScore with a one-way follow: want 3, got %d", score)
+		}
+	}
+	if n := gh.followLookups(); n != 1 {
+		t.Fatalf("repeated PairScore in either order: want 1 follow lookup per pair, got %d", n)
+	}
+
+	// The LLM follow notes reuse the same check.
+	if _, err := m.ScorePair(a, b); err != nil {
+		t.Fatal(err)
+	}
+	call, _ := llm.lastCallMatching("matchmaker")
+	if !strings.Contains(call.User, "The Gopher already follows The Crab on GitHub.") {
+		t.Errorf("follow note missing from the prompt:\n%s", call.User)
+	}
+	if n := gh.followLookups(); n != 1 {
+		t.Errorf("PairScore and the follow notes should share one lookup per pair, got %d", n)
+	}
+}
+
 func TestMatcherScorePair_AnUnreadableReplyIsAnError(t *testing.T) {
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), newFakeLLM().on("matchmaker", "I refuse to score humans"))
 
