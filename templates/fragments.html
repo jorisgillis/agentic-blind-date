@@ -398,3 +398,57 @@
 {{end}}
 </div>
 {{end}}
+
+
+{{/* The personal page's mission card — refreshed when the page's stream says
+     so: the card appearing (generation) and meeting completions (the stamps)
+     arrive by push. Stamps derive from completed meetings — there is no
+     stamped_at column; the meeting is the stamp. */}}
+{{define "fragment-mission-card.html"}}
+<div
+  id="mission-card"
+  hx-get="/user/mission/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+>
+{{if .Tiles}}
+<div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎯 Your mission — meet 8 personas</p>
+    <p class="text-gray-800 text-xs font-bold whitespace-nowrap">❤️ {{.Connections}} · #{{.Rank}}</p>
+  </div>
+
+  {{/* The 3×3 grid — the center is your match (or your best fit) */}}
+  <div class="grid grid-cols-3 gap-2">
+    {{range .Grid}}
+    <div class="relative rounded-xl {{if .}}{{.Color}}{{else}}bg-black/5{{end}} min-h-24 p-1.5 flex flex-col items-center justify-center text-center shadow-sm {{if .}}{{if .Stamped}}ring-2 ring-green-600{{end}}{{end}}">
+      {{if .}}
+      {{if .Stamped}}<span class="absolute top-1 right-1 text-xs stamp-in">✅</span>{{end}}
+      <div class="text-xl leading-none">{{.Symbol}}</div>
+      <div class="text-[10px] font-bold text-gray-900 leading-tight mt-0.5">{{.Name}}</div>
+      <div class="text-[9px] text-gray-800 leading-snug mt-0.5 line-clamp-2">{{.Reason}}</div>
+      {{if eq .Kind "match"}}<div class="text-[9px] mt-0.5">💘</div>{{end}}
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+
+  {{/* Live progress — connections and rank vs the top 5 */}}
+  {{if .Top}}
+  <div class="border-t border-black/10 pt-3 space-y-2">
+    <p class="text-gray-700 text-xs uppercase tracking-wide">Top connections</p>
+    <div class="flex flex-wrap gap-1.5">
+      {{range .Top}}
+      <span class="bg-black/20 text-gray-900 rounded-full px-2 py-0.5 text-xs">{{.Symbol}} {{.Name}} · {{.Connections}}</span>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else if .Preparing}}
+<div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
+  <p class="text-gray-700 text-sm">🃏 Your mission card is being prepared…</p>
+</div>
+{{end}}
+</div>
+{{end}}

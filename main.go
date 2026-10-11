@@ -59,14 +59,15 @@ func main() {
 	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
 
 	matcher := NewMatcher(db, github, llm)
+	missions := NewMissions(db, matcher, llm)
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
-	onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
+	onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking, missions)
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, nil)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, nil)
 
 	addr := "0.0.0.0:8080"
 	log.Println("Starting Agentic Blind Date on http://" + addr)
@@ -93,6 +94,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
 	mux.HandleFunc("GET /user/match/{id}", h.Match)
 	mux.HandleFunc("GET /user/dossier/{id}", h.Dossier)
+	mux.HandleFunc("GET /user/mission/{id}", h.MissionCard)
 	mux.HandleFunc("GET /user/m/{id}", h.Meet)
 	mux.HandleFunc("POST /user/met/{id}", h.ConfirmMeeting)
 	mux.HandleFunc("GET /user/meet-status/{id}", h.MeetStatus)
@@ -112,6 +114,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /data/activity", h.DataActivity)
 	mux.HandleFunc("GET /data/state", h.DataState)
 	mux.HandleFunc("GET /data/meetings", h.DataMeetings)
+	mux.HandleFunc("GET /data/missioncard/{id}", h.DataMissionCard)
 
 	mux.HandleFunc("GET /admin", h.Admin)
 	mux.HandleFunc("POST /admin/phase", h.AdvancePhase)

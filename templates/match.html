@@ -15,6 +15,12 @@
       100% { transform: scale(1); opacity: 1; }
     }
     .pop-in { animation: pop-in 0.5s ease-out forwards; }
+    @keyframes stamp-in {
+      0% { transform: scale(2); opacity: 0; }
+      60% { transform: scale(0.9); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .stamp-in { animation: stamp-in 0.4s ease-out; }
   </style>
 </head>
 <body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10" style="color-scheme: light;">
@@ -85,6 +91,9 @@
     </div>
     {{end}}
 
+    {{/* Mission card — refreshed when the match stream says so */}}
+    {{template "fragment-mission-card.html" .MissionCard}}
+
     {{/* Meet section — phase-gated, refreshed when the match stream says so */}}
     {{template "fragment-meet-status.html" .MeetStatus}}
 
@@ -114,6 +123,7 @@
       htmx.trigger('#meet-status', 'refresh');
       const dossier = document.getElementById('dossier');
       if (dossier) htmx.trigger(dossier, 'refresh');
+      htmx.trigger('#mission-card', 'refresh');
     });
     _mes.onerror = () => _mes.close();
   </script>

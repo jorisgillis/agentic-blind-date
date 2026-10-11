@@ -142,6 +142,11 @@ func (p Phase) AllowsMeetings() bool { return p == PhaseSocial || p == PhaseShow
 // never takes over an existing Match.
 func (p Phase) MatchingFrozen() bool { return p.AtLeast(PhaseSocial) }
 
+// MissionCardsLive reports whether Mission cards are live: from the social
+// (the Big Reveal) through show & tell — never during onboarding, and not
+// once the event is closed.
+func (p Phase) MissionCardsLive() bool { return p == PhaseSocial || p == PhaseShowTell }
+
 // EventStore owns the event_state table: the Phase is read by every page
 // that hides or shows Matches, and changed only by the host advancing the
 // event and by a Reset. It announces every phase change on DB's change feed
@@ -195,12 +200,15 @@ func (s *EventStore) set(phase Phase) error {
 	return err
 }
 
-// Reset starts the event over: no Participants, no meetings, no activity, and
-// back to onboarding — one transaction, so a failure leaves everything as it
-// was. Meetings expire silently: no message, no nag.
+// Reset starts the event over: no Participants, no meetings, no mission
+// cards, no activity, and back to onboarding — one transaction, so a failure
+// leaves everything as it was. Meetings expire silently: no message, no nag.
 func (s *EventStore) Reset() error {
 	return s.db.inTx(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`DELETE FROM meetings`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM mission_cards`); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`DELETE FROM participants`); err != nil {

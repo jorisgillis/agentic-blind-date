@@ -123,6 +123,12 @@ func NewDB(path string) (*DB, error) {
 			PRIMARY KEY (participant_a, participant_b)
 		);
 
+		CREATE TABLE IF NOT EXISTS mission_cards (
+			participant_id TEXT PRIMARY KEY REFERENCES participants(id),
+			tiles          TEXT NOT NULL DEFAULT '[]',
+			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
 	`)
 	if err != nil {
 		return nil, err

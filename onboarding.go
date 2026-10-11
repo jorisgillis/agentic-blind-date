@@ -18,13 +18,15 @@ type Onboarding struct {
 	interview   *Interview
 	personas    *Personas
 	matchmaking *Matchmaking
+	missions    *Missions
 }
 
 // NewOnboarding creates the Onboarding module.
-func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding {
+func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking, missions *Missions) *Onboarding {
 	return &Onboarding{
 		db: db, store: NewParticipantStore(db),
 		github: github, interview: interview, personas: personas, matchmaking: matchmaking,
+		missions: missions,
 	}
 }
 
@@ -152,6 +154,12 @@ func (o *Onboarding) becomeReady(p *Participant) {
 
 	if err := o.matchmaking.MatchNewcomer(p); err != nil {
 		log.Printf("Continuous matching for %s failed: %v", p.ID, err)
+	}
+	// A latecomer reaching ready during the social or show & tell gets their
+	// Mission card straight away; during onboarding the card comes at the
+	// social transition, and never once the event is closed.
+	if _, err := o.missions.GenerateFor(p.ID); err != nil {
+		log.Printf("Mission card for %s failed: %v", p.ID, err)
 	}
 }
 

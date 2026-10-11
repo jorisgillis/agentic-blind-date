@@ -73,6 +73,7 @@ type Handler struct {
 	store       *ParticipantStore
 	events      *EventStore
 	meetings    *Meetings
+	missions    *Missions
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -92,7 +93,7 @@ type StreamObserver interface {
 // NewHandler creates a new Handler with the given dependencies.
 // It initializes the templates and takes the modules the pages use.
 // streams may be nil: production observes nothing.
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, streams StreamObserver) *Handler {
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, missions *Missions, streams StreamObserver) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -105,7 +106,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	events := NewEventStore(db)
 	return &Handler{
-		db: db, store: NewParticipantStore(db), events: events, meetings: NewMeetings(db, events),
+		db: db, store: NewParticipantStore(db), events: events, meetings: NewMeetings(db, events), missions: missions,
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
 	}
@@ -275,6 +276,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	data["Profile"] = profile
 	data["QAPairs"] = qaPairs
 	data["MeetStatus"] = h.meetStatusData(p)
+	data["MissionCard"] = h.missionCardData(p)
 	h.render(w, "wait.html", data)
 }
 
@@ -342,11 +344,12 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 
 	dossier, match := h.dossierData(p)
 	h.render(w, "match.html", map[string]any{
-		"Me":         p,
-		"Match":      match,
-		"Score":      dossier["Score"],
-		"Dossier":    dossier,
-		"MeetStatus": h.meetStatusData(p),
+		"Me":          p,
+		"Match":       match,
+		"Score":       dossier["Score"],
+		"Dossier":     dossier,
+		"MeetStatus":  h.meetStatusData(p),
+		"MissionCard": h.missionCardData(p),
 	})
 }
 
@@ -394,6 +397,99 @@ func (h *Handler) Dossier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "fragment-dossier.html", data)
+}
+
+// ── mission cards ──────────────────────────────────────────────────────────
+
+// GET /user/mission/{id} — HTMX, the personal page's mission card section,
+// refreshed when the page's stream says so — the card appearing (generation)
+// and meeting completions (the stamps) arrive by push.
+func (h *Handler) MissionCard(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, "fragment-mission-card.html", h.missionCardData(p))
+}
+
+// missionTileView is a Mission tile as the personal page and the debug
+// endpoint show it: the tile plus its stamp state.
+type missionTileView struct {
+	MissionTile
+	Stamped bool `json:"stamped"`
+}
+
+// missionCardData is the personal page's mission card section: the card's
+// tiles with their stamp state (derived from completed meetings) and the
+// live progress — connections and rank vs the top 5. Without a card it is
+// the preparing placeholder while the event allows cards, and empty
+// otherwise.
+func (h *Handler) missionCardData(p *Participant) map[string]any {
+	data := map[string]any{
+		"Me":        p,
+		"Preparing": h.events.State().MissionCardsLive(),
+	}
+	card, err := h.missions.Get(p.ID)
+	if err != nil {
+		log.Printf("Mission card for %s: %v", p.ID, err)
+	}
+	if card == nil {
+		return data
+	}
+	tiles := h.stampedTiles(p, card)
+	data["Tiles"] = tiles
+	data["Grid"] = tileGrid(tiles)
+	data["Connections"] = h.meetings.Connections(p.ID)
+	board, err := h.meetings.Leaderboard()
+	if err != nil {
+		log.Printf("Connection leaderboard for %s: %v", p.ID, err)
+	}
+	data["Rank"] = rankOf(board, p.ID)
+	top := board
+	if len(top) > 5 {
+		top = top[:5]
+	}
+	data["Top"] = top
+	return data
+}
+
+// stampedTiles joins the card's tiles with the Participant's completed
+// meetings: a tile is stamped when a completed meeting exists with that
+// person. Stamps derive from the meetings — there is no stamped_at column.
+func (h *Handler) stampedTiles(p *Participant, card *MissionCard) []missionTileView {
+	stamped, err := h.missions.Stamped(p.ID)
+	if err != nil {
+		log.Printf("Mission card stamps for %s: %v", p.ID, err)
+	}
+	tiles := make([]missionTileView, 0, len(card.Tiles))
+	for _, t := range card.Tiles {
+		tiles = append(tiles, missionTileView{MissionTile: t, Stamped: stamped[t.PersonID]})
+	}
+	return tiles
+}
+
+// tileGrid lays the tiles out on the 3×3 grid by position; positions without
+// a tile stay empty, so the grid keeps its shape.
+func tileGrid(tiles []missionTileView) [9]*missionTileView {
+	var grid [9]*missionTileView
+	for i := range tiles {
+		if tiles[i].Position >= 0 && tiles[i].Position < len(grid) {
+			grid[tiles[i].Position] = &tiles[i]
+		}
+	}
+	return grid
+}
+
+// rankOf is the Participant's 1-based rank on the connection leaderboard,
+// or 0 when they are not on it.
+func rankOf(board []ConnectionStanding, id string) int {
+	for i, c := range board {
+		if c.ID == id {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // ── meetings: the confirm handshake ────────────────────────────────────────
@@ -546,12 +642,14 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// meetSignature is what the meet streams watch: the phase and the
-// Participant's meetings (their count and how many are completed).
+// meetSignature is what the meet streams watch: the phase, the Participant's
+// meetings (their count and how many are completed) and whether their
+// Mission card exists — a freshly generated card appears via push.
 type meetSignature struct {
 	phase     Phase
 	meetings  int
 	completed int
+	card      bool
 }
 
 func (h *Handler) meetSignature(p *Participant) meetSignature {
@@ -562,7 +660,7 @@ func (h *Handler) meetSignature(p *Participant) meetSignature {
 			completed++
 		}
 	}
-	return meetSignature{h.events.State(), len(ms), completed}
+	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID)}
 }
 
 // ── /bigscreen ─────────────────────────────────────────────────────────────
@@ -775,6 +873,32 @@ func (h *Handler) DataMeetings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, meetings)
 }
 
+// GET /data/missioncard/{id} — debug: the Participant's Mission card — tiles,
+// reasons and stamp state.
+func (h *Handler) DataMissionCard(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := h.store.Get(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	card, err := h.missions.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if card == nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"participant_id": p.ID,
+		"persona_name":   p.PersonaName,
+		"tiles":          h.stampedTiles(p, card),
+		"created_at":     card.CreatedAt,
+	})
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
@@ -825,6 +949,11 @@ func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
 	}
 	if after := h.events.State(); after != before {
 		h.db.LogActivity(after.Activity())
+		// Mission cards go live at the social: generated in a background
+		// worker pool, so the transition returns immediately.
+		if after.MissionCardsLive() {
+			h.missions.GenerateAll()
+		}
 	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
@@ -868,6 +997,10 @@ func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.meetings.RemoveParticipant(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := h.missions.RemoveParticipant(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

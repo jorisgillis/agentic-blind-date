@@ -209,6 +209,9 @@ A confirmed physical meeting between two participants. Stored as one canonical r
 ### Connection
 A participant's count of completed meetings — one connection per completed meeting. Derived from the meetings table, never stored.
 
+### Mission Card
+A participant's personal 3×3 grid of personas to meet, live during the Social and Show & Tell. Cards are generated at the social transition for everyone ready — in a background worker pool, so the transition returns immediately — and straight away for latecomers reaching ready during those phases; never during onboarding or once closed. The center tile is the participant's Match, falling back to their top-affinity persona while unmatched; the eight surrounding tiles are four affinity picks (highest heuristic pair score) and four wildcards (deliberately different), excluding the Match, the participant, and everyone already met. Tiles snapshot the persona at generation, so a card is fixed once dealt. A **Stamp** marks a tile whose person the participant has a completed Meeting with — stamps derive from the meetings, never stored. The surrounding tiles' reasons come from the **Mission Agent**: one batched LLM call per card, with a generic fallback reason when the LLM fails, so a card always generates. Card generation never writes pairing data.
+
 ## Subdomains
 
 ### Onboarding Subdomain
@@ -261,5 +264,7 @@ The **Relationship module** owns Relationship State and enforces the Key Invaria
 | Meet code | A participant's 6-character code for confirming a physical meeting |
 | Meeting | A physical meeting between two participants, completed when both sides confirm |
 | Connection | One completed meeting, counted per participant (derived, never stored) |
+| Mission Card | The participant's 3×3 grid of personas to meet: the Match in the center, four affinity and four wildcard tiles around it, stamped as meetings complete |
+| Mission Agent | The LLM component that writes the reason for each of a Mission card's surrounding tiles in one batched call, with a generic fallback reason on failure |
 | Teaser | The matched Participant's wait-page hint during onboarding: the future Match's emoji and colour plus a disagreement hint |
 | Dossier | The Match's fun payload (reason, flags, icebreakers), locked on the Match page until the pair's Meeting is completed |

@@ -8,6 +8,14 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    @keyframes stamp-in {
+      0% { transform: scale(2); opacity: 0; }
+      60% { transform: scale(0.9); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .stamp-in { animation: stamp-in 0.4s ease-out; }
+  </style>
 </head>
 <body class="{{.Participant.PersonaColor}} text-gray-900 min-h-screen px-4 py-8">
   <div class="max-w-md mx-auto space-y-5">
@@ -91,6 +99,9 @@
 
     {{template "fragment-wait-status.html" .}}
 
+    {{/* Mission card — refreshed when the wait stream says so */}}
+    {{template "fragment-mission-card.html" .MissionCard}}
+
     {{/* Meet section — phase-gated, refreshed when the wait stream says so */}}
     {{template "fragment-meet-status.html" .MeetStatus}}
 
@@ -117,7 +128,7 @@
     document.addEventListener('htmx:afterSwap', renderMeetQr);
     const _es = new EventSource('/user/wait-stream/{{$p.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
-    _es.addEventListener('refresh', () => { htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); });
+    _es.addEventListener('refresh', () => { htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); });
     _es.onerror = () => _es.close();
   </script>
 </body>

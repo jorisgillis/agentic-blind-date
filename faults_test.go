@@ -9,14 +9,17 @@ import (
 // two read tags, a temporary view — that make the targeted write or read
 // fail inside the database itself, so production code needs no hooks.
 //
-// Tags name what a write (or, for "persona_lookup", "activity_read" and
-// "meet_backfill_read", a read) is, not which SQL column it touches: "create",
-// "persona_lookup", "delete", "interests", "persona", "profile", "answers",
-// "pipeline_step", "start_interview", "pair", "unpair", "activity_read",
-// "meet_code", "meet_insert", "meet_update", "meet_complete", "meet_delete",
-// "meet_backfill_read", "meet_read", "reset_participants", "reset_activity",
-// "reset_event_state" and "reset_meetings". Each tag maps to exactly the
-// write it names, so a test can fail one write and leave the others alone.
+// Tags name what a write (or, for "persona_lookup", "activity_read",
+// "meet_backfill_read", "meet_read", "mission_read" and "connection_read", a
+// read) is, not which SQL column it touches: "create", "persona_lookup",
+// "delete", "interests", "persona", "profile", "answers", "pipeline_step",
+// "start_interview", "pair", "unpair", "activity_read", "meet_code",
+// "meet_insert", "meet_update", "meet_complete", "meet_delete",
+// "meet_backfill_read", "meet_read", "mission_insert", "mission_delete",
+// "mission_read", "connection_read", "reset_participants", "reset_activity",
+// "reset_event_state", "reset_meetings" and "reset_mission_cards". Each tag
+// maps to exactly the write it names, so a test can fail one write and leave
+// the others alone.
 
 // failWrites makes writes fail until the returned function is called (or
 // the test ends): every write, or, when tags are given, only the writes
@@ -95,25 +98,28 @@ func writeFaults(message string) map[string][2]string {
 		return [2]string{stmt, `DROP TRIGGER IF EXISTS fault_` + tag}
 	}
 	return map[string][2]string{
-		"create":             trigger("create", "INSERT", "participants", ""),
-		"delete":             trigger("delete", "DELETE", "participants", ""),
-		"interests":          trigger("interests", "UPDATE", "participants", "NEW.interests <> OLD.interests"),
-		"persona":            trigger("persona", "UPDATE", "participants", "NEW.persona_name <> OLD.persona_name OR NEW.persona_tagline <> OLD.persona_tagline"),
-		"profile":            trigger("profile", "UPDATE", "participants", "NEW.profile_json <> OLD.profile_json"),
-		"answers":            trigger("answers", "UPDATE", "participants", "NEW.answers_json <> OLD.answers_json"),
-		"pipeline_step":      trigger("pipeline_step", "UPDATE", "participants", "NEW.pipeline_step <> OLD.pipeline_step"),
-		"start_interview":    trigger("start_interview", "UPDATE", "participants", "NEW.questions <> OLD.questions OR NEW.profile_json <> OLD.profile_json"),
-		"pair":               trigger("pair", "UPDATE OF matched_with", "participants", "NEW.matched_with <> ''"),
-		"unpair":             trigger("unpair", "UPDATE OF matched_with", "participants", "NEW.matched_with = ''"),
-		"meet_code":          trigger("meet_code", "UPDATE", "participants", "NEW.meet_code IS NOT OLD.meet_code"),
-		"meet_insert":        trigger("meet_insert", "INSERT", "meetings", ""),
-		"meet_update":        trigger("meet_update", "UPDATE", "meetings", "NEW.a_confirmed_at IS NOT OLD.a_confirmed_at OR NEW.b_confirmed_at IS NOT OLD.b_confirmed_at"),
-		"meet_complete":      trigger("meet_complete", "UPDATE", "meetings", "NEW.completed_at IS NOT OLD.completed_at"),
-		"meet_delete":        trigger("meet_delete", "DELETE", "meetings", ""),
-		"reset_participants": trigger("reset_participants", "DELETE", "participants", ""),
-		"reset_activity":     trigger("reset_activity", "DELETE", "activity_log", ""),
-		"reset_event_state":  trigger("reset_event_state", "INSERT", "event_state", ""),
-		"reset_meetings":     trigger("reset_meetings", "DELETE", "meetings", ""),
+		"create":              trigger("create", "INSERT", "participants", ""),
+		"delete":              trigger("delete", "DELETE", "participants", ""),
+		"interests":           trigger("interests", "UPDATE", "participants", "NEW.interests <> OLD.interests"),
+		"persona":             trigger("persona", "UPDATE", "participants", "NEW.persona_name <> OLD.persona_name OR NEW.persona_tagline <> OLD.persona_tagline"),
+		"profile":             trigger("profile", "UPDATE", "participants", "NEW.profile_json <> OLD.profile_json"),
+		"answers":             trigger("answers", "UPDATE", "participants", "NEW.answers_json <> OLD.answers_json"),
+		"pipeline_step":       trigger("pipeline_step", "UPDATE", "participants", "NEW.pipeline_step <> OLD.pipeline_step"),
+		"start_interview":     trigger("start_interview", "UPDATE", "participants", "NEW.questions <> OLD.questions OR NEW.profile_json <> OLD.profile_json"),
+		"pair":                trigger("pair", "UPDATE OF matched_with", "participants", "NEW.matched_with <> ''"),
+		"unpair":              trigger("unpair", "UPDATE OF matched_with", "participants", "NEW.matched_with = ''"),
+		"meet_code":           trigger("meet_code", "UPDATE", "participants", "NEW.meet_code IS NOT OLD.meet_code"),
+		"meet_insert":         trigger("meet_insert", "INSERT", "meetings", ""),
+		"meet_update":         trigger("meet_update", "UPDATE", "meetings", "NEW.a_confirmed_at IS NOT OLD.a_confirmed_at OR NEW.b_confirmed_at IS NOT OLD.b_confirmed_at"),
+		"meet_complete":       trigger("meet_complete", "UPDATE", "meetings", "NEW.completed_at IS NOT OLD.completed_at"),
+		"meet_delete":         trigger("meet_delete", "DELETE", "meetings", ""),
+		"mission_insert":      trigger("mission_insert", "INSERT", "mission_cards", ""),
+		"mission_delete":      trigger("mission_delete", "DELETE", "mission_cards", ""),
+		"reset_participants":  trigger("reset_participants", "DELETE", "participants", ""),
+		"reset_activity":      trigger("reset_activity", "DELETE", "activity_log", ""),
+		"reset_event_state":   trigger("reset_event_state", "INSERT", "event_state", ""),
+		"reset_meetings":      trigger("reset_meetings", "DELETE", "meetings", ""),
+		"reset_mission_cards": trigger("reset_mission_cards", "DELETE", "mission_cards", ""),
 		"persona_lookup": {
 			`CREATE TEMP VIEW participants AS SELECT json(persona_color) AS persona_color, persona_symbol FROM main.participants`,
 			`DROP VIEW IF EXISTS temp.participants`,
@@ -131,6 +137,17 @@ func writeFaults(message string) map[string][2]string {
 		"meet_read": {
 			`CREATE TEMP VIEW meetings AS SELECT participant_a, participant_b, a_confirmed_at, b_confirmed_at, completed_at, NULL AS origin, NULL AS created_at FROM main.meetings`,
 			`DROP VIEW IF EXISTS temp.meetings`,
+		},
+		// The card's row still matches, but NULLs created_at, so scanning it fails.
+		"mission_read": {
+			`CREATE TEMP VIEW mission_cards AS SELECT participant_id, tiles, NULL AS created_at FROM main.mission_cards`,
+			`DROP VIEW IF EXISTS temp.mission_cards`,
+		},
+		// The leaderboard's query still prepares, but NULLs persona_color, so
+		// scanning a row fails.
+		"connection_read": {
+			`CREATE TEMP VIEW participants AS SELECT id, persona_name, persona_symbol, NULL AS persona_color FROM main.participants`,
+			`DROP VIEW IF EXISTS temp.participants`,
 		},
 	}
 }
@@ -168,6 +185,8 @@ func allWriteFaults(message string) [][2]string {
 		trigger("fault_insert_meetings", "INSERT", "meetings"),
 		trigger("fault_update_meetings", "UPDATE", "meetings"),
 		trigger("fault_delete_meetings", "DELETE", "meetings"),
+		trigger("fault_insert_mission_cards", "INSERT", "mission_cards"),
+		trigger("fault_delete_mission_cards", "DELETE", "mission_cards"),
 	}
 }
 

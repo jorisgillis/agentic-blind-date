@@ -279,6 +279,44 @@ func (ms *Meetings) Connections(id string) int {
 	return n
 }
 
+// ConnectionStanding is one Participant's place on the connection
+// leaderboard: their derived connection count and their Persona.
+type ConnectionStanding struct {
+	ID          string `json:"id"`
+	Name        string `json:"persona_name"`
+	Symbol      string `json:"persona_symbol"`
+	Color       string `json:"persona_color"`
+	Connections int    `json:"connections"`
+}
+
+// Leaderboard ranks every Participant by their derived connection count —
+// one per completed meeting — ties broken by id so the order is
+// deterministic. Derived from the meetings table, never stored.
+func (ms *Meetings) Leaderboard() ([]ConnectionStanding, error) {
+	rows, err := ms.db.db.Query(`
+		SELECT p.id, p.persona_name, p.persona_symbol, p.persona_color,
+		       COUNT(m.completed_at) AS connections
+		FROM participants p
+		LEFT JOIN meetings m
+		  ON m.completed_at IS NOT NULL AND (m.participant_a = p.id OR m.participant_b = p.id)
+		GROUP BY p.id
+		ORDER BY connections DESC, p.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var board []ConnectionStanding
+	for rows.Next() {
+		var c ConnectionStanding
+		if err := rows.Scan(&c.ID, &c.Name, &c.Symbol, &c.Color, &c.Connections); err != nil {
+			return nil, err
+		}
+		board = append(board, c)
+	}
+	return board, rows.Err()
+}
+
 // RemoveParticipant deletes a Participant's Meetings when they leave the event.
 func (ms *Meetings) RemoveParticipant(id string) error {
 	_, err := ms.db.db.Exec(`DELETE FROM meetings WHERE participant_a = ? OR participant_b = ?`, id, id)
