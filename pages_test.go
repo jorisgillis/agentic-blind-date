@@ -343,6 +343,44 @@ func TestAdminRematch_PairsTheReadyParticipants(t *testing.T) {
 	})
 }
 
+// TestAdminRematch_IsRejectedOnceMatchingIsFrozen covers #115: from the social
+// onward the endpoint rejects the rematch with a clear message — no matching
+// runs and the frozen pairs are left exactly as they were.
+func TestAdminRematch_IsRejectedOnceMatchingIsFrozen(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 70, "reason": "fine"}`)
+	srv, deps := newTestServer(t, llm, nil)
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+	seed(t, deps.db, "c", "C", "ready")
+	seed(t, deps.db, "d", "D", "ready")
+	pair(t, deps.db, "a", "b")
+	pair(t, deps.db, "c", "d")
+	if err := deps.events.Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := post(t, srv, "/admin/rematch", nil)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("from the social onward: want 400, got %d", resp.StatusCode)
+	}
+	if body := readBody(t, resp); !strings.Contains(body, "Matching is frozen") {
+		t.Errorf("the rejection should say why, got %q", body)
+	}
+	// No matching ran: the pairs are final and nothing was logged.
+	if n := llm.callsMatching("matchmaker"); n != 0 {
+		t.Errorf("a rejected rematch must not assess any pair, got %d calls", n)
+	}
+	for id, want := range map[string]string{"a": "b", "b": "a", "c": "d", "d": "c"} {
+		if got := reload(t, deps.db, id).MatchedWith; got != want {
+			t.Errorf("%s matched with %q, want %q", id, got, want)
+		}
+	}
+	if msgs, _ := deps.db.GetRecentActivity(10); strings.Contains(strings.Join(msgs, "\n"), "ematch") {
+		t.Errorf("a rejected rematch should log nothing about rematching, got %v", msgs)
+	}
+}
+
 func TestRematch_NeedsTwoReadyParticipants(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")

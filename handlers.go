@@ -789,8 +789,13 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
-// POST /admin/rematch
+// POST /admin/rematch — rejected from the social onward: matching is frozen,
+// pairs are final.
 func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
+	if phase := h.events.State(); phase.MatchingFrozen() {
+		http.Error(w, "Matching is frozen from the social onward — pairs are final.", http.StatusBadRequest)
+		return
+	}
 	h.db.LogActivity("🔄 Admin triggered full rematch")
 	go func() {
 		if err := h.matchmaking.Rematch(); err != nil {

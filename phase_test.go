@@ -100,6 +100,23 @@ func TestPhase_AtLeast(t *testing.T) {
 	}
 }
 
+func TestPhase_MatchingFrozenFromTheSocialOnward(t *testing.T) {
+	for _, tc := range []struct {
+		phase Phase
+		want  bool
+	}{
+		{PhaseOnboarding, false},
+		{PhaseSocial, true},
+		{PhaseShowTell, true},
+		{PhaseClosed, true},
+		{Phase("banquet"), false}, // an unknown phase never counts as reached
+	} {
+		if got := tc.phase.MatchingFrozen(); got != tc.want {
+			t.Errorf("%s.MatchingFrozen(): want %v, got %v", tc.phase, tc.want, got)
+		}
+	}
+}
+
 func TestPhase_NextListsTheReachableForwardPhases(t *testing.T) {
 	for _, tc := range []struct {
 		phase Phase
@@ -330,6 +347,36 @@ func TestPhase_TheHostConsoleShowsThePhaseCountsAndTransitionButtons(t *testing.
 				if to.rank() <= tc.phase.rank() && strings.Contains(body, `value="`+string(to)+`"`) {
 					t.Errorf("the console in %s should not offer advancing to %s", tc.phase, to)
 				}
+			}
+		})
+	}
+}
+
+// TestPhase_TheHostConsoleHidesRematchOnceMatchingIsFrozen covers #115's UI
+// gating: the console offers Rematch during onboarding only; from the social
+// onward pairs are final and the console says so instead.
+func TestPhase_TheHostConsoleHidesRematchOnceMatchingIsFrozen(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+	pair(t, deps.db, "a", "b")
+
+	if body := readBody(t, get(t, srv, "/admin")); !strings.Contains(body, `action="/admin/rematch"`) {
+		t.Error("during onboarding the console should offer Rematch")
+	}
+
+	for _, phase := range []Phase{PhaseSocial, PhaseShowTell, PhaseClosed} {
+		t.Run(string(phase), func(t *testing.T) {
+			if err := deps.events.Advance(phase); err != nil {
+				t.Fatal(err)
+			}
+
+			body := readBody(t, get(t, srv, "/admin"))
+			if strings.Contains(body, `action="/admin/rematch"`) {
+				t.Errorf("in %s the console should not offer Rematch: matching is frozen", phase)
+			}
+			if !strings.Contains(body, "Matching is frozen") {
+				t.Errorf("in %s the console should say matching is frozen", phase)
 			}
 		})
 	}

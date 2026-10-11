@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -12,11 +13,18 @@ import (
 // holding the matching lock. Restored by #48.
 const defaultMaxChain = 100
 
+// ErrMatchingFrozen is returned when the admin's Rematch is attempted from the
+// social phase onward: matching freezes at the social, pairs are final.
+var ErrMatchingFrozen = errors.New("matching is frozen")
+
 // Matchmaking runs matching operations against the Pool one at a time: the
 // admin's Rematch, and Continuous Matching for a Participant who just became
 // ready. The Matcher decides who fits; the Relationship module records it.
+// Matching freezes at the social: Rematch is rejected with ErrMatchingFrozen
+// and Continuous Matching never takes over an existing Match from then on.
 type Matchmaking struct {
 	db           *DB
+	events       *EventStore
 	participants *ParticipantStore
 	matcher      *Matcher
 	relations    *Relationships
@@ -27,14 +35,19 @@ type Matchmaking struct {
 // NewMatchmaking creates the Matchmaking module.
 func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships, maxChain int) *Matchmaking {
 	return &Matchmaking{
-		db: db, participants: NewParticipantStore(db),
+		db: db, events: NewEventStore(db), participants: NewParticipantStore(db),
 		matcher: matcher, relations: relations, maxChain: maxChain,
 	}
 }
 
 // Rematch breaks every Match and pairs all ready Participants again, as one
-// matching operation: Continuous Matching cannot interleave with it.
+// matching operation: Continuous Matching cannot interleave with it. From the
+// social onward matching is frozen and Rematch is rejected: pairs are final.
 func (mm *Matchmaking) Rematch() error {
+	if phase := mm.events.State(); phase.MatchingFrozen() {
+		return fmt.Errorf("%w: the event is in the %s phase, pairs are final", ErrMatchingFrozen, phase)
+	}
+
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
@@ -64,6 +77,8 @@ func (mm *Matchmaking) Rematch() error {
 // they are matched against the other ready Participants, taking over a weaker
 // Match when needed. A partner displaced by a take-over is matched straight
 // away in the same way, but never with the pair that just displaced them.
+// From the social onward matching is frozen: the newcomer is paired only with
+// other unmatched ready Participants and never displaces a Match.
 func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
@@ -92,11 +107,14 @@ func (mm *Matchmaking) MatchNewcomer(newcomer *Participant) error {
 
 // matchOne finds a partner for one Participant among the ready Participants
 // not excluded, stores the Match, and returns it with whoever it displaced.
+// Once matching is frozen (from the social onward) matched Participants are
+// not candidates: a latecomer pairs only with unmatched ready Participants.
 func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []string, error) {
 	all, err := mm.participants.All()
 	if err != nil {
 		return nil, nil, fmt.Errorf("ParticipantStore.All: %w", err)
 	}
+	frozen := mm.events.State().MatchingFrozen()
 	var newcomer *Participant
 	var others []*Participant
 	for _, p := range all {
@@ -104,7 +122,7 @@ func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []s
 		case p.ID == id:
 			newcomer = p
 		case exclude[p.ID]:
-		case p.PipelineStep == StepReady:
+		case p.PipelineStep == StepReady && (!frozen || !p.IsMatched()):
 			others = append(others, p)
 		}
 	}

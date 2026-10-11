@@ -137,6 +137,11 @@ func (p Phase) IsClosed() bool     { return p == PhaseClosed }
 // social and show & tell phases, and not before them or once closed.
 func (p Phase) AllowsMeetings() bool { return p == PhaseSocial || p == PhaseShowTell }
 
+// MatchingFrozen reports whether matching has frozen: from the social onward
+// pairs are final — the admin's Rematch is disabled and Continuous Matching
+// never takes over an existing Match.
+func (p Phase) MatchingFrozen() bool { return p.AtLeast(PhaseSocial) }
+
 // EventStore owns the event_state table: the Phase is read by every page
 // that hides or shows Matches, and changed only by the host advancing the
 // event and by a Reset. It announces every phase change on DB's change feed

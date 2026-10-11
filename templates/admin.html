@@ -69,6 +69,7 @@
       </button>
     </form>
 
+    {{if .Phase.IsOnboarding}}
     <form action="/admin/rematch" method="POST">
       <button
         type="submit"
@@ -78,6 +79,9 @@
         🔄 Rematch
       </button>
     </form>
+    {{else}}
+    <p class="text-center text-gray-600 text-xs">🔒 Matching is frozen — pairs are final</p>
+    {{end}}
 
     <div class="text-center space-y-1">
       <a href="/bigscreen" target="_blank" class="block text-indigo-400 hover:text-indigo-300 text-sm">Open big screen →</a>

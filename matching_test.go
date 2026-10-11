@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -357,6 +358,120 @@ func TestMatchNewcomer_APathologicalChainStopsAtTheBound(t *testing.T) {
 		t.Fatalf("want a chain-too-long error, got %v", err)
 	}
 	assertInvariant(t, db)
+}
+
+// TestMatchNewcomer_TakeOverIsPhaseGated covers #115's two sides of the
+// matching freeze: during onboarding a newcomer can still take over a weaker
+// Match; from the social onward pairs are final and the newcomer waits in the
+// Pool instead of displacing anyone.
+func TestMatchNewcomer_TakeOverIsPhaseGated(t *testing.T) {
+	for _, tc := range []struct {
+		phase Phase
+		want  map[string]string // each Participant's partner after matching
+	}{
+		{PhaseOnboarding, map[string]string{"N": "A", "A": "N", "B": ""}},
+		{PhaseSocial, map[string]string{"N": "", "A": "B", "B": "A"}},
+		{PhaseShowTell, map[string]string{"N": "", "A": "B", "B": "A"}},
+		{PhaseClosed, map[string]string{"N": "", "A": "B", "B": "A"}},
+	} {
+		t.Run(string(tc.phase), func(t *testing.T) {
+			db := newTestDB(t)
+			// N's assessment with A (70) beats A's current Match (40): a take-over during onboarding.
+			llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 70}))
+			rel := NewRelationships(db)
+			mm := NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), rel, defaultMaxChain)
+			for _, id := range []string{"A", "B", "N"} {
+				seed(t, db, id, id, "ready")
+			}
+			rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
+			if err := NewEventStore(db).Advance(tc.phase); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := mm.MatchNewcomer(reload(t, db, "N")); err != nil {
+				t.Fatal(err)
+			}
+
+			for id, want := range tc.want {
+				if got := reload(t, db, id).MatchedWith; got != want {
+					t.Errorf("%s matched with %q, want %q", id, got, want)
+				}
+			}
+			assertInvariant(t, db)
+		})
+	}
+}
+
+// TestMatchNewcomer_FromTheSocialOnwardPairsOnlyWithUnmatchedReadyParticipants
+// covers #115: once matching is frozen a latecomer is paired only with other
+// unmatched ready Participants — never with a matched one, however well they
+// would score together.
+func TestMatchNewcomer_FromTheSocialOnwardPairsOnlyWithUnmatchedReadyParticipants(t *testing.T) {
+	db := newTestDB(t)
+	// N scores 99 with A — a take-over before the social — and 80 with C, the
+	// only unmatched ready Participant.
+	llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{{"N", "A"}: 99, {"N", "C"}: 80}))
+	rel := NewRelationships(db)
+	mm := NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), rel, defaultMaxChain)
+	for _, id := range []string{"A", "B", "C", "N"} {
+		seed(t, db, id, id, "ready")
+	}
+	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
+	if err := NewEventStore(db).Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mm.MatchNewcomer(reload(t, db, "N")); err != nil {
+		t.Fatal(err)
+	}
+
+	for id, want := range map[string]string{"N": "C", "C": "N", "A": "B", "B": "A"} {
+		if got := reload(t, db, id).MatchedWith; got != want {
+			t.Errorf("%s matched with %q, want %q", id, got, want)
+		}
+	}
+	if n := reload(t, db, "N"); n.Assessment == nil || n.Assessment.Score != 80 {
+		t.Errorf("N's assessment should be the 80 with C, got %+v", n.Assessment)
+	}
+	assertInvariant(t, db)
+}
+
+// TestMatchmaking_RematchIsRejectedOnceMatchingIsFrozen covers #115: from the
+// social onward pairs are final — the admin's Rematch is rejected with
+// ErrMatchingFrozen and the existing Matches are left exactly as they were.
+func TestMatchmaking_RematchIsRejectedOnceMatchingIsFrozen(t *testing.T) {
+	for _, phase := range []Phase{PhaseSocial, PhaseShowTell, PhaseClosed} {
+		t.Run(string(phase), func(t *testing.T) {
+			db := newTestDB(t)
+			// A rematch would re-pair the pool as A-C and B-D...
+			llm := newFakeLLM().onFunc("matchmaker", scoreTable(map[[2]string]int{
+				{"A", "C"}: 95, {"A", "B"}: 90, {"C", "D"}: 80, {"B", "D"}: 10,
+			}))
+			rel := NewRelationships(db)
+			mm := NewMatchmaking(db, NewMatcher(db, newFakeGitHub(), llm), rel, defaultMaxChain)
+			for _, id := range []string{"a", "b", "c", "d"} {
+				seed(t, db, id, strings.ToUpper(id), "ready")
+			}
+			pair(t, db, "a", "b")
+			pair(t, db, "c", "d")
+			if err := NewEventStore(db).Advance(phase); err != nil {
+				t.Fatal(err)
+			}
+
+			err := mm.Rematch()
+
+			if !errors.Is(err, ErrMatchingFrozen) {
+				t.Fatalf("want ErrMatchingFrozen, got %v", err)
+			}
+			// ...but the frozen pairs are final: A-B and C-D stay as they were.
+			for id, want := range map[string]string{"a": "b", "b": "a", "c": "d", "d": "c"} {
+				if got := reload(t, db, id).MatchedWith; got != want {
+					t.Errorf("%s matched with %q, want %q", id, got, want)
+				}
+			}
+			assertInvariant(t, db)
+		})
+	}
 }
 
 func matchmakingWithPool(t *testing.T) (*Matchmaking, *DB, *fakeLLM) {

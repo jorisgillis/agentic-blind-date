@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -71,6 +72,9 @@ func TestReveal_NewcomerAfterTheRevealIsNeverToldTheyMissedIt(t *testing.T) {
 	}
 }
 
+// TestRematch_KeepsThePhase pins that Rematching never changes the Phase:
+// during onboarding it runs, and from the social onward matching is frozen, so
+// the endpoint rejects it (#115). Either way the Phase stays put.
 func TestRematch_KeepsThePhase(t *testing.T) {
 	for _, phase := range phases {
 		t.Run(string(phase), func(t *testing.T) {
@@ -82,8 +86,17 @@ func TestRematch_KeepsThePhase(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			post(t, srv, "/admin/rematch", nil)
-			eventually(t, "both matched", func() bool { return reload(t, deps.db, "a").MatchedWith == "b" })
+			resp := post(t, srv, "/admin/rematch", nil)
+			if phase.MatchingFrozen() {
+				if resp.StatusCode != http.StatusBadRequest {
+					t.Errorf("from the social onward the endpoint rejects the rematch: want 400, got %d", resp.StatusCode)
+				}
+			} else {
+				if resp.StatusCode != http.StatusSeeOther {
+					t.Errorf("during onboarding: want 303, got %d", resp.StatusCode)
+				}
+				eventually(t, "both matched", func() bool { return reload(t, deps.db, "a").MatchedWith == "b" })
+			}
 
 			if got := deps.events.State(); got != phase {
 				t.Errorf("Phase after rematch: want %q, got %q", phase, got)

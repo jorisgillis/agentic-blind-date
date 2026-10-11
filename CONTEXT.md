@@ -71,7 +71,8 @@ The LLM returns a JSON response with score, reason, flags, and icebreakers.
 ### Continuous Matching
 The process of automatically matching participants as they become ready. Unlike batch matching, continuous matching:
 - Runs as each participant reaches `ready` state, i.e. once they have completed every pipeline step (Interview answered, Persona created), in any event phase including onboarding
-- Can break existing matches if a better candidate arrives; the partner left behind is matched again straight away, but never with the pair that just displaced them
+- During onboarding, can break existing matches if a better candidate arrives; the partner left behind is matched again straight away, but never with the pair that just displaced them
+- Freezes at the social: from `social` onward pairs are final — a latecomer is paired only with other *unmatched* ready participants, never displacing a matched one, and the admin's Rematch is disabled
 - Maintains a dynamic pool of ready participants
 
 The **Matchmaking module** runs matching operations one at a time: the admin's Rematch and Continuous Matching for a newcomer. The Matcher decides who fits; the Relationship module records it.
@@ -180,7 +181,7 @@ Social connection between participants on GitHub:
 ### Event State
 Global state of the event — its **Phase** — changed only by the host from the host console. Phases only move forward: the host may jump ahead (e.g. `social` → `closed` for a short evening), advancing to the current phase is a no-op, and backward transitions are rejected.
 - **Onboarding** (`onboarding`): the default after a Reset. Participants register and Continuous Matching runs, but Matches stay hidden. Matched Participants wait on the wait page and see a teaser, and the Big Screen shows persona names only.
-- **Social** (`social`): the Big Reveal at the break. Matches are revealed and every Match page opens; newcomers see their Match as soon as they are matched. Mission cards go live and meeting confirmation opens.
+- **Social** (`social`): the Big Reveal at the break. Matches are revealed and every Match page opens; newcomers see their Match as soon as they are matched. Matching freezes: pairs are final. Mission cards go live and meeting confirmation opens.
 - **Show & Tell** (`showtell`): everything in the Social stays; show & tell sign-up and the question queue go live, and the Big Screen gains presenter mode.
 - **Closed** (`closed`): meeting confirmation is disabled; the closing view shows a recap QR, and personal recap pages persist.
 
