@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -66,9 +65,11 @@ func (m *Matcher) ScorePair(a, b *Participant) (*matchResult, error) {
 	cached, ok := m.cache[key]
 	m.mu.Unlock()
 	if ok {
+		logger("matcher").Debug("assessment cache hit", "pair", key)
 		return cached, nil
 	}
 	if cached, ok := m.db.GetLLMCache(key); ok {
+		logger("matcher").Debug("assessment cache hit, persistent", "pair", key)
 		m.remember(key, cached)
 		return cached, nil
 	}
@@ -186,6 +187,7 @@ func (m *Matcher) mutualFollow(a, b string) (aFollowsB, bFollowsA bool) {
 		m.follows = make(map[string]followCheck)
 	}
 	if cached, ok := m.follows[key]; ok {
+		logger("matcher").Debug("follow cache hit", "pair", key)
 		if first == a {
 			return cached.firstFollowsSecond, cached.secondFollowsFirst
 		}
@@ -435,7 +437,7 @@ func (m *Matcher) assessAll(pairs [][2]*Participant) []Match {
 func (m *Matcher) assessOrDefault(a, b *Participant) *matchResult {
 	result, err := m.ScorePair(a, b)
 	if err != nil {
-		log.Printf("Match scoring error for %s/%s: %v", a.GitHubHandle, b.GitHubHandle, err)
+		logger("matcher").Warn("scoring the pair", "a", a.GitHubHandle, "b", b.GitHubHandle, "err", err)
 		return defaultMatchResult()
 	}
 	return result

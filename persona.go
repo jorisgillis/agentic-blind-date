@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"sort"
 	"strings"
@@ -33,7 +32,7 @@ func NewPersonas(llm LLM) *Personas {
 func (ps *Personas) Create(p *Participant) Persona {
 	persona, err := ps.generate(p)
 	if err != nil {
-		log.Printf("Persona generation error for %s: %v", p.ID, err)
+		logger("persona").Warn("generating the persona, falling back", "participant", p.ID, "err", err)
 		return fallbackPersona(p)
 	}
 	return persona

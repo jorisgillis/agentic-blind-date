@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -36,14 +36,16 @@ func loadDotEnv(path string) {
 
 func main() {
 	loadDotEnv(".env")
+	setupLogging(os.Getenv, os.Stderr)
 
 	if os.Getenv("GITHUB_TOKEN") == "" {
-		log.Println("WARNING: GITHUB_TOKEN not set — GitHub API limited to 60 req/hr")
+		logger("main").Warn("GITHUB_TOKEN not set — GitHub API limited to 60 req/hr")
 	}
 
 	llm, err := SelectLLM(os.Getenv)
 	if err != nil {
-		log.Fatal("LLM provider: ", err)
+		logger("main").Error("selecting the LLM provider", "err", err)
+		os.Exit(1)
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -52,7 +54,8 @@ func main() {
 	}
 	db, err := NewDB(dbPath)
 	if err != nil {
-		log.Fatal("DB init:", err)
+		logger("main").Error("DB init", "err", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -71,8 +74,17 @@ func main() {
 	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, nil)
 
 	addr := "0.0.0.0:8080"
-	log.Println("Starting Agentic Blind Date on http://" + addr)
-	log.Fatal(http.ListenAndServe(addr, buildMux(h)))
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: buildMux(h),
+		// Handler panics and other server errors arrive as leveled slog lines.
+		ErrorLog: slog.NewLogLogger(logger("server").Handler(), slog.LevelError),
+	}
+	logger("main").Info("starting server", "addr", addr)
+	if err := srv.ListenAndServe(); err != nil {
+		logger("main").Error("server", "err", err)
+		os.Exit(1)
+	}
 }
 
 func buildMux(h *Handler) http.Handler {

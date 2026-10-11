@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -125,7 +124,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("template %s error: %v", name, err)
+		logger("handler").Error("rendering the template", "template", name, "err", err)
 		http.Error(w, "render error", 500)
 	}
 }
@@ -179,7 +178,7 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 
 	id, err := h.onboarding.Register(name, handle, !noGitHub)
 	if err != nil {
-		log.Printf("Registration failed for handle=%s, name=%s: %v", handle, name, err)
+		logger("handler").Error("registration failed", "handle", handle, "name", name, "err", err)
 		http.Error(w, "registration failed: "+err.Error(), 500)
 		return
 	}
@@ -338,7 +337,7 @@ func (h *Handler) waitStatusData(p *Participant) map[string]any {
 	}
 	partner, _, err := h.relations.PartnerOf(p.ID)
 	if err != nil {
-		log.Printf("Wait status for %s: %v", p.ID, err)
+		logger("handler").Warn("wait status", "participant", p.ID, "err", err)
 	}
 	if partner != nil {
 		data["Partner"] = partner
@@ -395,7 +394,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) dossierData(p *Participant) (map[string]any, *Participant) {
 	match, result, err := h.relations.PartnerOf(p.ID)
 	if err != nil {
-		log.Printf("Dossier for %s: %v", p.ID, err)
+		logger("handler").Warn("dossier", "participant", p.ID, "err", err)
 	}
 	if result == nil {
 		result = &matchResult{RedFlags: []string{}, GreenFlags: []string{}, Icebreakers: []string{}}
@@ -466,7 +465,7 @@ func (h *Handler) missionCardData(p *Participant) map[string]any {
 	}
 	card, err := h.missions.Get(p.ID)
 	if err != nil {
-		log.Printf("Mission card for %s: %v", p.ID, err)
+		logger("handler").Warn("mission card", "participant", p.ID, "err", err)
 	}
 	if card == nil {
 		return data
@@ -477,7 +476,7 @@ func (h *Handler) missionCardData(p *Participant) map[string]any {
 	data["Connections"] = h.meetings.Connections(p.ID)
 	board, err := h.meetings.Leaderboard()
 	if err != nil {
-		log.Printf("Connection leaderboard for %s: %v", p.ID, err)
+		logger("handler").Warn("connection leaderboard", "participant", p.ID, "err", err)
 	}
 	data["Rank"] = rankOf(board, p.ID)
 	top := board
@@ -494,7 +493,7 @@ func (h *Handler) missionCardData(p *Participant) map[string]any {
 func (h *Handler) stampedTiles(p *Participant, card *MissionCard) []missionTileView {
 	stamped, err := h.missions.Stamped(p.ID)
 	if err != nil {
-		log.Printf("Mission card stamps for %s: %v", p.ID, err)
+		logger("handler").Warn("mission card stamps", "participant", p.ID, "err", err)
 	}
 	tiles := make([]missionTileView, 0, len(card.Tiles))
 	for _, t := range card.Tiles {
@@ -644,11 +643,11 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 			view := meetingView{Other: other, Status: m.StatusFor(p.ID)}
 			revealed, err := h.channels.Revealed(other.ID, p.ID)
 			if err != nil {
-				log.Printf("Channels revealed to %s by %s: %v", p.ID, other.ID, err)
+				logger("handler").Warn("channels revealed", "participant", p.ID, "by", other.ID, "err", err)
 			}
 			shared, err := h.channels.Revealed(p.ID, other.ID)
 			if err != nil {
-				log.Printf("Channels shared by %s with %s: %v", p.ID, other.ID, err)
+				logger("handler").Warn("channels shared", "participant", p.ID, "with", other.ID, "err", err)
 			}
 			view.Revealed = revealed
 			view.Shared = shared
@@ -757,7 +756,7 @@ func (h *Handler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) settingsData(p *Participant) map[string]any {
 	channels, err := h.channels.Channels(p.ID)
 	if err != nil {
-		log.Printf("Contact channels for %s: %v", p.ID, err)
+		logger("handler").Warn("contact channels", "participant", p.ID, "err", err)
 	}
 	for i := range channels {
 		if channels[i].Channel == "github" && channels[i].Value == "" {
@@ -800,7 +799,7 @@ func (h *Handler) recapLinkData(p *Participant) map[string]any {
 	if h.events.State() == PhaseClosed {
 		token, err := h.recaps.TokenFor(p.ID)
 		if err != nil {
-			log.Printf("Recap token for %s: %v", p.ID, err)
+			logger("handler").Warn("recap token", "participant", p.ID, "err", err)
 		} else {
 			data["Token"] = token
 		}
@@ -843,7 +842,7 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 	var connections []connectionView
 	ms, err := h.meetings.ForParticipant(p.ID)
 	if err != nil {
-		log.Printf("Recap meetings for %s: %v", p.ID, err)
+		logger("handler").Warn("recap meetings", "participant", p.ID, "err", err)
 	}
 	for _, m := range ms {
 		if !m.Completed() {
@@ -855,34 +854,34 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 		}
 		revealed, err := h.channels.Revealed(other.ID, p.ID)
 		if err != nil {
-			log.Printf("Recap channels revealed to %s by %s: %v", p.ID, other.ID, err)
+			logger("handler").Warn("recap channels revealed", "participant", p.ID, "by", other.ID, "err", err)
 		}
 		connections = append(connections, connectionView{Other: other, Revealed: revealed})
 	}
 
 	mine, err := h.channels.Channels(p.ID)
 	if err != nil {
-		log.Printf("Recap contact channels for %s: %v", p.ID, err)
+		logger("handler").Warn("recap contact channels", "participant", p.ID, "err", err)
 	}
 
 	// The Participant's show & tell items: their sign-up and the questions
 	// they asked, with how each ended up.
 	signup, err := h.showtell.ForParticipant(p.ID)
 	if err != nil {
-		log.Printf("Recap show & tell sign-up for %s: %v", p.ID, err)
+		logger("handler").Warn("recap show & tell sign-up", "participant", p.ID, "err", err)
 	}
 	questions, err := h.showtell.QuestionsForParticipant(p.ID)
 	if err != nil {
-		log.Printf("Recap show & tell questions for %s: %v", p.ID, err)
+		logger("handler").Warn("recap show & tell questions", "participant", p.ID, "err", err)
 	}
 
 	board, err := h.meetings.Leaderboard()
 	if err != nil {
-		log.Printf("Recap leaderboard for %s: %v", p.ID, err)
+		logger("handler").Warn("recap leaderboard", "participant", p.ID, "err", err)
 	}
 	champion, err := h.meetings.Champion()
 	if err != nil {
-		log.Printf("Recap champion for %s: %v", p.ID, err)
+		logger("handler").Warn("recap champion", "participant", p.ID, "err", err)
 	}
 
 	return map[string]any{
@@ -981,7 +980,7 @@ func (h *Handler) showtellData(p *Participant) map[string]any {
 	}
 	signup, err := h.showtell.ForParticipant(p.ID)
 	if err != nil {
-		log.Printf("Show & tell sign-up for %s: %v", p.ID, err)
+		logger("handler").Warn("show & tell sign-up", "participant", p.ID, "err", err)
 	}
 	if signup != nil {
 		data["Signup"] = signup
@@ -991,14 +990,14 @@ func (h *Handler) showtellData(p *Participant) map[string]any {
 	// while the stage is empty.
 	presenter, err := h.showtell.OnStage()
 	if err != nil {
-		log.Printf("On-stage presenter: %v", err)
+		logger("handler").Warn("on-stage presenter", "err", err)
 	}
 	if presenter != nil {
 		data["Presenter"] = presenter
 	}
 	questions, err := h.showtell.QuestionsForParticipant(p.ID)
 	if err != nil {
-		log.Printf("Show & tell questions for %s: %v", p.ID, err)
+		logger("handler").Warn("show & tell questions", "participant", p.ID, "err", err)
 	}
 	if len(questions) > 0 {
 		data["MyQuestions"] = questions
@@ -1146,7 +1145,7 @@ func (h *Handler) ShowTellQueue(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) showtellQueueData() map[string]any {
 	queue, err := h.showtell.Queue()
 	if err != nil {
-		log.Printf("Show & tell queue: %v", err)
+		logger("handler").Warn("show & tell queue", "err", err)
 	}
 	return map[string]any{
 		"Open":  h.events.State().AllowsShowTell(),
@@ -1201,7 +1200,7 @@ func (h *Handler) ShowTellQuestions(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) showtellQuestionsData() map[string]any {
 	questions, err := h.showtell.Questions()
 	if err != nil {
-		log.Printf("Show & tell questions: %v", err)
+		logger("handler").Warn("show & tell questions", "err", err)
 	}
 	return map[string]any{
 		"Open":      h.events.State().IsShowTell(),
@@ -1350,7 +1349,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 	if phase.AtLeast(PhaseSocial) {
 		board, err := h.meetings.Leaderboard()
 		if err != nil {
-			log.Printf("Connection leaderboard: %v", err)
+			logger("handler").Warn("connection leaderboard", "err", err)
 		} else {
 			top := board
 			if len(top) > 5 {
@@ -1392,7 +1391,7 @@ func (h *Handler) buildGraphPayload() map[string]any {
 func (h *Handler) presenterPayload() map[string]any {
 	signup, err := h.showtell.OnStage()
 	if err != nil {
-		log.Printf("On-stage presenter: %v", err)
+		logger("handler").Warn("on-stage presenter", "err", err)
 		return nil
 	}
 	if signup == nil {
@@ -1413,7 +1412,7 @@ func (h *Handler) presenterPayload() map[string]any {
 	if signup.IdentityRevealed {
 		p, err := h.store.Get(signup.ParticipantID)
 		if err != nil {
-			log.Printf("Revealed presenter %s: %v", signup.ParticipantID, err)
+			logger("handler").Warn("revealed presenter", "participant", signup.ParticipantID, "err", err)
 			return payload
 		}
 		payload["handle"] = p.DisplayHandle()
@@ -1423,7 +1422,7 @@ func (h *Handler) presenterPayload() map[string]any {
 	// extension of presenter mode. The asker's persona and the text only:
 	// personas, never identities.
 	if question, err := h.showtell.CurrentQuestion(); err != nil {
-		log.Printf("Current show & tell question: %v", err)
+		logger("handler").Warn("current show & tell question", "err", err)
 	} else if question != nil {
 		payload["question"] = map[string]any{
 			"text":           question.Text,
@@ -1646,6 +1645,7 @@ func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
 		return
 	}
 	if after := h.events.State(); after != before {
+		logger("handler").Info("phase advanced", "from", before, "to", after)
 		h.db.LogActivity(after.Activity())
 		// Mission cards go live at the social: generated in a background
 		// worker pool, so the transition returns immediately.
@@ -1666,7 +1666,7 @@ func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
 func (h *Handler) announceChampion() {
 	champion, err := h.meetings.Champion()
 	if err != nil {
-		log.Printf("Champion at the close: %v", err)
+		logger("handler").Warn("champion at the close", "err", err)
 		return
 	}
 	if champion == nil {
@@ -1687,6 +1687,7 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 	}
 	// Clear LLM cache when resetting event
 	h.matcher.ClearCache()
+	logger("handler").Info("event reset")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -1700,7 +1701,7 @@ func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 	h.db.LogActivity("🔄 Admin triggered full rematch")
 	go func() {
 		if err := h.matchmaking.Rematch(); err != nil {
-			log.Printf("Rematch error: %v", err)
+			logger("handler").Error("rematch", "err", err)
 			h.db.LogActivity("⚠️ Rematch failed: " + err.Error())
 		}
 	}()

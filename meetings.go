@@ -224,6 +224,7 @@ func (ms *Meetings) Confirm(confirmer, target *Participant, origin MeetingOrigin
 	if err != nil {
 		return nil, false, err
 	}
+	logger("meetings").Debug("meeting confirmation", "a", a, "b", b, "origin", meeting.Origin, "completed", completed, "already", already)
 	if completed {
 		// The announcement names the pair in canonical order.
 		x, y := confirmer, target

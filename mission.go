@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -111,6 +110,7 @@ func (m *Missions) GenerateFor(id string) (*MissionCard, error) {
 	if err := m.save(card); err != nil {
 		return nil, err
 	}
+	logger("mission").Debug("mission card generated", "participant", id, "tiles", len(card.Tiles))
 	m.db.LogActivity(fmt.Sprintf("🃏 %s got a mission card", me.PersonaName))
 	return card, nil
 }
@@ -129,7 +129,7 @@ func (m *Missions) GenerateAll() {
 func (m *Missions) generateAll() {
 	ready, err := m.store.AllByStep(StepReady)
 	if err != nil {
-		log.Printf("Mission cards: %v", err)
+		logger("mission").Error("generating mission cards", "err", err)
 		return
 	}
 	var wg sync.WaitGroup
@@ -141,7 +141,7 @@ func (m *Missions) generateAll() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			if _, err := m.GenerateFor(p.ID); err != nil {
-				log.Printf("Mission card for %s: %v", p.ID, err)
+				logger("mission").Warn("mission card", "participant", p.ID, "err", err)
 			}
 		}(p)
 	}
@@ -422,7 +422,7 @@ type missionReasonsReply struct {
 func (a *MissionAgent) Reasons(me *Participant, tiles []MissionTile, others []*Participant) []string {
 	reasons, err := a.ask(me, tiles, others)
 	if err != nil {
-		log.Printf("Mission Agent reasons for %s: %v", me.ID, err)
+		logger("mission").Warn("mission agent reasons, using the generic reason", "participant", me.ID, "err", err)
 		return genericReasons(len(tiles))
 	}
 	return reasons

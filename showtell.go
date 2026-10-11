@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -440,7 +439,7 @@ type hypeReply struct {
 func (a *HypeAgent) Hype(signup *ShowTellSignup) string {
 	hype, err := a.ask(signup)
 	if err != nil {
-		log.Printf("Hype intro for sign-up %d: %v", signup.ID, err)
+		logger("showtell").Warn("hype intro, falling back", "signup", signup.ID, "err", err)
 		return genericHype
 	}
 	return hype

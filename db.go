@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -202,7 +201,7 @@ func NewDB(path string) (*DB, error) {
 	db := &DB{db: sqlDB, changes: newChangeFeed()}
 	// Participants who registered before meet codes existed get them backfilled.
 	if err := backfillMeetCodes(db); err != nil {
-		log.Printf("meet code backfill: %v", err)
+		logger("db").Error("backfilling meet codes", "err", err)
 	}
 	return db, nil
 }
@@ -377,7 +376,7 @@ func (db *DB) queryParticipants(clause string, args ...any) ([]*Participant, err
 
 func (db *DB) LogActivity(message string) {
 	if _, err := db.db.Exec(`INSERT INTO activity_log (message) VALUES (?)`, message); err != nil {
-		log.Printf("LogActivity: %v", err)
+		logger("db").Warn("activity log", "err", err)
 		return
 	}
 	db.changed()
@@ -433,7 +432,7 @@ func (db *DB) GetLLMCache(pairKey string) (*matchResult, bool) {
 	).Scan(&score, &reason, &red, &green, &ice)
 	if err != nil {
 		if err != sql.ErrNoRows {
-			log.Printf("LLM cache read error for %s: %v", pairKey, err)
+			logger("db").Warn("LLM cache read", "pair", pairKey, "err", err)
 		}
 		return nil, false
 	}
@@ -452,13 +451,13 @@ func (db *DB) SetLLMCache(pairKey string, r *matchResult) {
 		pairKey, r.Score, r.Reason, red, green, ice,
 	)
 	if err != nil {
-		log.Printf("LLM cache write error for %s: %v", pairKey, err)
+		logger("db").Warn("LLM cache write", "pair", pairKey, "err", err)
 	}
 }
 
 func (db *DB) ClearLLMCache() {
 	_, err := db.db.Exec(`DELETE FROM llm_cache`)
 	if err != nil {
-		log.Printf("LLM cache clear error: %v", err)
+		logger("db").Warn("LLM cache clear", "err", err)
 	}
 }

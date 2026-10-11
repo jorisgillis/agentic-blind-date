@@ -76,8 +76,10 @@ go build -o agentic-blind-date .
 
 ```bash
 ./agentic-blind-date
-# → Starting Agentic Blind Date on http://localhost:8080
+# → time=... level=INFO msg="starting server" addr=0.0.0.0:8080 component=main
 ```
+
+Server logs are leveled and structured (see ADR-0017): `LOG_LEVEL` and `LOG_FORMAT` tune them — see the environment table below. They go to stderr, so redirect them to keep them: `./agentic-blind-date >> app.log 2>&1`.
 
 The server loads `.env` automatically — no `export` step needed. Real environment variables set before launch take precedence over `.env` values.
 
@@ -95,6 +97,8 @@ The database (`blind_date.db`) is created automatically on first run.
 | `LLM_JSON_MODE` | No | `true` (default) or `false` |
 | `MISTRAL_API_KEY` | Legacy | Still honoured as the key when `LLM_PROVIDER` is mistral (or unset) and `LLM_API_KEY` is unset |
 | `GITHUB_TOKEN` | No | GitHub PAT — increases rate limit from 60 to 5000 req/hr |
+| `LOG_LEVEL` | No | Minimum server log level: `debug`, `info` (default), `warn` or `error` |
+| `LOG_FORMAT` | No | Server log format: `text` (default, for terminals) or `json` (for log collectors) |
 
 ### Choosing an LLM provider
 

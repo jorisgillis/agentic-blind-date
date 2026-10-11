@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 )
@@ -45,7 +44,7 @@ func (c *Closing) Stats() EventStats {
 	s.Matched = c.db.MatchedCount()
 	meetings, err := c.meetings.All()
 	if err != nil {
-		log.Printf("Closing stats, meetings: %v", err)
+		logger("closing").Warn("closing stats, meetings", "err", err)
 	} else {
 		for _, m := range meetings {
 			if !m.Completed() {
@@ -58,7 +57,7 @@ func (c *Closing) Stats() EventStats {
 			for _, side := range []string{m.A, m.B} {
 				channels, err := c.channels.Channels(side)
 				if err != nil {
-					log.Printf("Closing stats, channels of %s: %v", side, err)
+					logger("closing").Warn("closing stats, channels", "participant", side, "err", err)
 				} else {
 					s.ContactExchanges += len(shared(channels))
 				}
@@ -67,7 +66,7 @@ func (c *Closing) Stats() EventStats {
 	}
 	questions, err := c.showtell.Questions()
 	if err != nil {
-		log.Printf("Closing stats, questions: %v", err)
+		logger("closing").Warn("closing stats, questions", "err", err)
 	} else {
 		s.Questions = len(questions)
 		for _, q := range questions {
@@ -154,7 +153,7 @@ func standings(board []ConnectionStanding) []ExportStanding {
 func (c *Closing) Leaderboard() []ExportStanding {
 	board, err := c.meetings.Leaderboard()
 	if err != nil {
-		log.Printf("Closing leaderboard: %v", err)
+		logger("closing").Warn("closing leaderboard", "err", err)
 		return nil
 	}
 	return standings(board)
@@ -165,7 +164,7 @@ func (c *Closing) Leaderboard() []ExportStanding {
 func (c *Closing) Gallery() []ExportPersona {
 	participants, err := c.store.All()
 	if err != nil {
-		log.Printf("Closing gallery: %v", err)
+		logger("closing").Warn("closing gallery", "err", err)
 		return nil
 	}
 	out := make([]ExportPersona, 0, len(participants))
@@ -189,7 +188,7 @@ type ExportTalk struct {
 func (c *Closing) Talks() []ExportTalk {
 	queue, err := c.showtell.Queue()
 	if err != nil {
-		log.Printf("Closing show & tell: %v", err)
+		logger("closing").Warn("closing show & tell", "err", err)
 		return nil
 	}
 	out := make([]ExportTalk, 0, len(queue))
@@ -226,7 +225,7 @@ const bestMatchesLimit = 3
 func (c *Closing) BestMatches() []ExportMatch {
 	participants, err := c.store.All()
 	if err != nil {
-		log.Printf("Closing best matches: %v", err)
+		logger("closing").Warn("closing best matches", "err", err)
 		return nil
 	}
 	byID := make(map[string]*Participant, len(participants))
@@ -291,7 +290,7 @@ func (c *Closing) Pack() ExportPack {
 	stats := c.Stats()
 	board, err := c.meetings.Leaderboard()
 	if err != nil {
-		log.Printf("Closing pack, leaderboard: %v", err)
+		logger("closing").Warn("closing pack, leaderboard", "err", err)
 	}
 	ranked := standings(board)
 	pack := ExportPack{
@@ -306,7 +305,7 @@ func (c *Closing) Pack() ExportPack {
 	// keeps personas only.
 	taglines := map[string]string{}
 	if participants, err := c.store.All(); err != nil {
-		log.Printf("Closing pack, participants: %v", err)
+		logger("closing").Warn("closing pack, participants", "err", err)
 	} else {
 		for _, p := range participants {
 			taglines[p.ID] = p.PersonaTagline

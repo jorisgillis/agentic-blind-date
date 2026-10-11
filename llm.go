@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -147,7 +146,7 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		text := errorText(respBody)
 		if resp.StatusCode == http.StatusNotFound {
-			log.Printf("LLM model %q not found (try pulling it first): %s", c.model, text)
+			logger("llm").Warn("model not found — try pulling it first", "model", c.model, "detail", text)
 		}
 		msg := fmt.Sprintf("LLM HTTP %d: %s", resp.StatusCode, text)
 		if resp.StatusCode == http.StatusTooManyRequests {
