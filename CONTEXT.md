@@ -46,7 +46,7 @@ A pairing between two participants based on compatibility. Contains:
 - **Icebreakers**: Conversation starter questions
 
 ### Teaser
-What a matched Participant sees on the wait page during onboarding: their future Match's **emoji and colour** and a hint at the first question the pair answered differently ("You disagreed on the Friday-deploy question — reveal at the break"). The Teaser is the curiosity gap before the Reveal: it carries no identity, score, reason, flags or icebreakers.
+What a matched Participant sees on the wait page during onboarding: their future Match's **emoji and colour** and a hint at the first question the pair answered differently ("You disagreed on the Friday-deploy question — reveal at the break"). The Teaser is the curiosity gap ahead of the Big Reveal: it carries no identity, score, reason, flags or icebreakers.
 
 ### Dossier
 The Match's fun payload — the **reason**, the **red/green flags** and the **icebreakers** — shown on the Match page as locked cards (playful blurred placeholders, the payload itself never in the page) until the pair's dossier unlocks. The dossier unlocks once the pair's Meeting is **completed** (or the event is closed, after which the recap takes over) and arrives by push, without a manual refresh. The compatibility score is not part of the dossier: it is revealed with the Match itself.
@@ -77,8 +77,8 @@ The LLM returns a JSON response with score, reason, flags, and icebreakers.
 ### Continuous Matching
 The process of automatically matching participants as they become ready. Unlike batch matching, continuous matching:
 - Runs as each participant reaches `ready` state, i.e. once they have completed every pipeline step (Interview answered, Persona created), in any event phase including onboarding
-- During onboarding, can break existing matches if a better candidate arrives; the partner left behind is matched again straight away, but never with the pair that just displaced them
-- Freezes at the social: from `social` onward pairs are final — a latecomer is paired only with other *unmatched* ready participants, never displacing a matched one, and the admin's Rematch is disabled
+- During onboarding, a better candidate takes over an existing Match; the partner left behind is matched again straight away, but never with the pair that just displaced them
+- Freezes at the Social: from `social` onward pairs are final — a latecomer is paired only with other *unmatched* ready participants, never displacing a matched one, and the admin's Rematch is disabled
 - Maintains a dynamic pool of ready participants
 
 The **Matchmaking module** runs matching operations one at a time: the admin's Rematch and Continuous Matching for a newcomer. The Matcher decides who fits; the Relationship module records it.
@@ -94,36 +94,21 @@ A potential match between two participants that has passed the heuristic filter 
 
 ### Graph
 The network visualization shown on the big screen, consisting of:
-- **Nodes**: Participants represented as colored circles with emoji symbols
+- **Nodes**: Participants represented as colored circles with emoji symbols and their persona names — personas only, in every phase
 - **Edges**: Connections between participants
-  - Matched edges: Actual matches (solid lines)
-  - Potential edges: Top-3 heuristic connections (dashed lines)
-
-### Theme
-A named look for the application: colours, typography, shape, motion and sound. Each Participant chooses a Theme for their own phone, and the choice stays with that device. The admin chooses the Theme of the Big Screen. Persona colours are the same in every Theme, because they identify Participants in the room.
-
-### Event Format
-How the event runs, chosen by the admin before the event starts:
-- **Classic flow**: each Participant goes through the Interview on their own phone, and Continuous Matching pairs them as they become ready.
-- **Game Show**: the Big Screen is the stage and phones are controllers. A Host runs the show in Rounds, and everyone is paired at once in the matchmaking segment.
-
-Both formats share registration, Personas, matching, Themes and the Reveal.
+  - **Match edges**: Actual matches (solid lines, carrying the compatibility score)
+  - **Meeting edges**: Completed meetings (solid lines) — the strongest fact on the graph: a pair that are matched and met keeps one edge, flagged as both
+  - **Potential edges**: Top-3 heuristic connections (dashed lines)
 
 ### Host
-The admin running a Game Show from the host console: starting the show, opening and closing Rounds, starting the matchmaking segment, and the Reveal.
-
-### Show Segment
-A stage of a Game Show, in order: the **Lobby** (Participants answer their personalised questions on their own), the Rounds, the matchmaking segment (everyone ready is paired at once), the Reveal (pair by pair), and the **Afterparty** (arrivals after the Reveal are matched by Continuous Matching).
-
-### Round
-In a Game Show, one Fixed Question answered by every Participant at the same moment on their phone, with a countdown, while the Big Screen shows the room's answers live.
+The admin running the evening from the host console (`/admin`): advancing the Phase — the console's Reveal route stays as an alias for advancing to the Social — running the Show & Tell queue (staging the presenter, the Identity Reveal, marking talks done) and the audience question queue, plus the evening's other controls: the Rematch (onboarding only, disabled once matching freezes), the Host Export Pack and the Reset.
 
 ### Big Screen
-The public display for the event, showing:
-- All participants as a graph
-- Match announcements
-- Activity ticker
-- Event statistics
+The public display for the event — the Graph, the activity ticker and the join QR — showing persona names only, in every phase. It is phase-aware:
+- During **onboarding**: the graph and the ticker
+- From the **Social**: the connection leaderboard (the top 5 by connections) alongside the graph's match and meeting edges
+- During **Show & Tell**: presenter mode — the on-stage presenter's card with the Hype Agent's intro line and the current audience question
+- Once **closed**: the Closing Ceremony's view — the final leaderboard naming the Champion, the evening's stats, and the recap QR in place of the join QR
 
 ### Interview
 The question-and-answer process where participants provide information about themselves. Consists of:
@@ -181,12 +166,12 @@ Social connection between participants on GitHub:
 - **One-way Follow**: One participant follows the other
 - **No Follow**: No follow relationship
 
-### Event State
-Global state of the event — its **Phase** — changed only by the host from the host console. Phases only move forward: the host may jump ahead (e.g. `social` → `closed` for a short evening), advancing to the current phase is a no-op, and backward transitions are rejected.
-- **Onboarding** (`onboarding`): the default after a Reset. Participants register and Continuous Matching runs, but Matches stay hidden. Matched Participants wait on the wait page and see a teaser, and the Big Screen shows persona names only.
-- **Social** (`social`): the Big Reveal at the break. Matches are revealed and every Match page opens — the full persona card, no handles — while the Dossier stays locked; newcomers see their Match as soon as they are matched. Matching freezes: pairs are final. Mission cards go live and meeting confirmation opens.
-- **Show & Tell** (`showtell`): everything in the Social stays; show & tell sign-up and the audience question queue go live, and the Big Screen gains presenter mode.
-- **Closed** (`closed`): meeting confirmation is disabled; the closing view shows the final leaderboard naming the champion, the graph with all meeting edges, the evening's stats and the recap QR, and the public event recap opens at `/recap`; personal recap pages persist. The dossiers unlock: the assessment is visible again, on the page and in the JSON debug endpoints.
+### Phase
+How far the evening has progressed: `onboarding` | `social` | `showtell` | `closed`. The Phase is changed only by the host from the host console — the **Event State store** (`eventstate.go`) owns it — and it only moves forward: the host may jump ahead (e.g. `social` → `closed` for a short evening), advancing to the current phase is a no-op, and backward transitions are rejected. The console's Reveal route stays as an alias for advancing to the Social.
+- **Onboarding** (`onboarding`): the default after a Reset. Participants register and Continuous Matching runs, but Matches stay hidden. Matched Participants wait on the wait page and see a Teaser, and the Big Screen shows persona names only.
+- **Social** (`social`): the Big Reveal at the break. Matches are revealed and every Match page opens — the full persona card, no handles — while the Dossier stays locked; newcomers see their Match as soon as they are matched. Matching freezes: pairs are final. Mission Cards go live and meeting confirmation opens.
+- **Show & Tell** (`showtell`): everything in the Social stays; Show & Tell sign-up and the audience question queue go live, and the Big Screen gains presenter mode.
+- **Closed** (`closed`): meeting confirmation is disabled; the Closing Ceremony's view shows the final leaderboard naming the Champion, the graph with all meeting edges, the evening's stats and the recap QR, and the Public Event Recap opens at `/recap`; personal recap pages persist. The dossiers unlock: the assessment is visible again, on the page and in the JSON debug endpoints.
 
 Rematching does not change the Phase; Reset returns it to `onboarding`. A database holding the legacy value `revealed` is migrated to `social` at startup. The Big Screen shows persona names only, in every phase.
 
@@ -222,7 +207,7 @@ A contact detail a Participant can share with the people they met: github, email
 A Participant's page of their evening, kept: `GET /user/recap/{token}`, gated by an unguessable UUID token stored in the `recaps` table, so the page persists across restarts. The recap shows the Participant's persona card, their match dossier (always unlocked there), every connection with the contact channels those connections shared, the channels the Participant shared themselves, and their personal stats (connections, leaderboard rank, champion). During `closed`, the personal page shows the recap link as a QR. A GitHub handle appears on the owner's own recap only as a revealed github contact channel — the owner opted in — and nowhere else outside stage.
 
 ### Show & Tell
-The stage of the `showtell` phase: Participants volunteer a talk, the Host runs the queue, the Big Screen presents the current speaker. A **Sign-up** is one row per Participant in `showtell_signups` — a title (required), a one-line description, an optional repo link — live during the Social and Show & Tell phases only; late sign-ups join the tail of the queue, and re-signing up updates the talk in place. A sign-up's **Status** is `queued` → `on_stage` → `presented`. The Host's queue (in `/admin`) reorders queued talks up/down and removes any of them. **Presenter mode** is a show & tell gain: the Host puts one queued sign-up on stage — the Big Screen shows their persona card with the **Hype Agent's** intro line (a generic fallback when the LLM fails) — and marks the talk done to free the stage. The **Identity Reveal** is the Host's explicit action and the only one: it flips the presenter's card to their GitHub handle/name. Personas only, everywhere, otherwise; the reveal is the single place a handle reaches the Big Screen besides the owner's own recap. Everything arrives by push — the personal pages' streams watch the Participant's sign-up state, the host console's queue stream watches the queue, the Big Screen's stream pushes the presenter card and the reveal.
+The stage of the `showtell` phase: Participants volunteer a talk, the Host runs the queue, the Big Screen presents the current speaker. A **Sign-up** is one row per Participant in `showtell_signups` — a title (required), a one-line description, an optional repo link — live during the Social and Show & Tell phases only; late sign-ups join the tail of the queue, and re-signing up updates the talk in place. A sign-up's **Status** is `queued` → `on_stage` → `presented`. The Host's queue (in `/admin`) reorders queued talks up/down and removes any of them. **Presenter mode** opens with the phase: the Host puts one queued sign-up on stage — the Big Screen shows their persona card with the **Hype Agent's** intro line (a generic fallback when the LLM fails) — and marks the talk done to free the stage. The **Identity Reveal** is the Host's explicit action and the only one: it flips the presenter's card to their GitHub handle/name. Personas only, everywhere, otherwise; the reveal is the single place a handle reaches the Big Screen besides the owner's own recap. Everything arrives by push — the personal pages' streams watch the Participant's sign-up state, the host console's queue stream watches the queue, the Big Screen's stream pushes the presenter card and the reveal.
 
 A **Question** is one row per audience question in `showtell_questions` — the text (1–300 characters), the asker, and the Sign-up on stage when it was submitted. Asking is live during Show & Tell only and only while someone is on stage (the submit button is disabled while the stage is empty); it needs no meeting and earns nothing — no connection, no raffle — answered questions count toward the audience-participation success metric. A question's **Status** is `queued` → `asked` → `answered`, or `dismissed` from queued or asked; answered and dismissed are final. The Host's question queue (in `/admin`) marks a question asked — the Big Screen shows the current question with the asker's persona only ("🐯 The Crab asks: …"), one at a time — answered, or dismissed. The personal page's section carries the form and the asker's questions with their status, and the recap shows the Participant's show & tell items. Personas only, everywhere — there is no reveal for askers.
 
@@ -280,20 +265,30 @@ The **Relationship module** owns Relationship State and enforces the Key Invaria
 
 | Term | Definition |
 |------|------------|
-| Agent | An AI-powered component that performs a specific task (e.g., persona generation, matching) |
+| Agent | An AI-powered component that performs a specific task (e.g., the Mission Agent, the Hype Agent, persona generation, matching) |
 | Handle | GitHub username |
 | Profile | Collection of data about a participant (GitHub data + answers) |
 | Summary | Textual representation of a profile for LLM consumption |
 | Score | Numeric compatibility rating (0-100) |
 | Pair | Two participants being evaluated for matching |
 | Pool | Collection of ready, unmatched participants available for matching |
+| Phase | How far the evening has progressed: `onboarding` → `social` → `showtell` → `closed` — forward-only, driven by the host from the host console |
 | Meet code | A participant's 6-character code for confirming a physical meeting |
+| Meet Link | `{base}/user/m/{id}` — the participant's meet page, rendered as a QR on their personal page: the target's persona card with a confirm button |
 | Meeting | A physical meeting between two participants, completed when both sides confirm |
 | Connection | One completed meeting, counted per participant (derived, never stored) |
+| Champion | The Merge Trophy winner: the participant with the most connections, ties broken by persona name |
 | Mission Card | The participant's 3×3 grid of personas to meet: the Match in the center, four affinity and four wildcard tiles around it, stamped as meetings complete |
 | Mission Agent | The LLM component that writes the reason for each of a Mission card's surrounding tiles in one batched call, with a generic fallback reason on failure |
+| Stamp | A mark on a Mission Card tile whose person the participant has a completed Meeting with — derived from the meetings, never stored |
 | Teaser | The matched Participant's wait-page hint during onboarding: the future Match's emoji and colour plus a disagreement hint |
-| Dossier | The Match's fun payload (reason, flags, icebreakers), locked on the Match page until the pair's Meeting is completed |
+| Dossier | The Match's fun payload (reason, flags, icebreakers), locked on the Match page until the pair's Meeting is completed or the event closes |
+| Show & Tell | The stage of the `showtell` phase: sign-up, the host queue, presenter mode with the identity reveal, and audience questions through personas |
+| Sign-up | One Participant's show & tell talk in `showtell_signups` — a title, a one-line description, an optional repo link; status `queued` → `on_stage` → `presented` |
+| Presenter Mode | The Big Screen's show & tell card: the on-stage Sign-up's persona card with the Hype Agent's intro line, personas only until the reveal |
+| Identity Reveal | The host's explicit action — the only one — flipping the presenter's card to their GitHub handle/name on the Big Screen |
+| Question | One audience question in `showtell_questions` — text, asker, the on-stage Sign-up; status `queued` → `asked` → `answered` or `dismissed`; personas only, earns nothing |
+| Closing Ceremony | The close of the event: the Big Screen's closing view — the final leaderboard naming the Champion, all meeting edges, the evening's stats, the recap QR |
 | Contact Channel | A contact detail (github, email, linkedin, instagram, mastodon, other) a Participant enters once in their settings, off by default, revealed only under the mutual rule |
 | Personal Recap | The Participant's persistent recap page at `/user/recap/{token}` — persona card, unlocked dossier, connections with revealed channels, personal stats — gated by an unguessable UUID token |
 | Public Event Recap | The evening's public page at `/recap`, available only once closed — stats, top connectors, the persona gallery, the show & tell list. Personas only |
