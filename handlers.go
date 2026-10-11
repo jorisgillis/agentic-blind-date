@@ -124,6 +124,9 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Pages are revalidated on every load: the app can be updated while an
+	// event is running, and a cached page would keep running its old scripts.
+	w.Header().Set("Cache-Control", "no-cache")
 	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
 		logger("handler").Error("rendering the template", "template", name, "err", err)
 		http.Error(w, "render error", 500)

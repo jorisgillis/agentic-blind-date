@@ -7,6 +7,22 @@
   <title>Agentic Blind Date — Big Screen</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script>
+    // A dead big-screen script must be visible, never silent: any error
+    // shows as a banner, so a broken screen says why instead of showing
+    // nothing. Installed in its own block so it survives a parse error in
+    // the main script below.
+    window.addEventListener('error', function (e) {
+      var el = document.getElementById('script-error');
+      if (!el && document.body) {
+        el = document.createElement('div');
+        el.id = 'script-error';
+        el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;background:#7f1d1d;color:#fee2e2;padding:8px 16px;font:14px monospace;white-space:pre-wrap';
+        document.body.insertBefore(el, document.body.firstChild);
+      }
+      if (el) el.textContent = 'Big screen script error: ' + (e.message || e.type);
+    });
+  </script>
   <style>
     html, body { height: 100%; overflow: hidden; }
     .node { cursor: grab; }
@@ -280,9 +296,9 @@ function updateGraph(data) {
   // The social scoreboard: top 5 by connections, sent from the social on.
   // Persona names only, in every phase.
   const board = data.leaderboard;
-  const panel = document.getElementById('leaderboard');
+  const leaderboardPanel = document.getElementById('leaderboard');
   if (board && board.length > 0) {
-    panel.classList.remove('hidden');
+    leaderboardPanel.classList.remove('hidden');
     const list = document.getElementById('leaderboard-list');
     list.textContent = '';
     board.forEach((c, i) => {
@@ -303,7 +319,7 @@ function updateGraph(data) {
       list.appendChild(li);
     });
   } else {
-    panel.classList.add('hidden');
+    leaderboardPanel.classList.add('hidden');
   }
 
   // The closing view: the evening's stats, sent from closed on.
@@ -352,10 +368,10 @@ function updateGraph(data) {
   // personas only, until the host's explicit identity reveal flips the card
   // to the GitHub handle/name.
   const presenter = data.presenter;
-  const panel = document.getElementById('presenter');
+  const presenterPanel = document.getElementById('presenter');
   if (presenter) {
-    panel.classList.remove('hidden');
-    panel.classList.add('flex');
+    presenterPanel.classList.remove('hidden');
+    presenterPanel.classList.add('flex');
     document.getElementById('presenter-hype').textContent = presenter.hype || '';
     document.getElementById('presenter-symbol').textContent = presenter.persona_symbol || '🎤';
     const nameEl = document.getElementById('presenter-name');
@@ -398,8 +414,8 @@ function updateGraph(data) {
       questionPanel.classList.add('hidden');
     }
   } else {
-    panel.classList.add('hidden');
-    panel.classList.remove('flex');
+    presenterPanel.classList.add('hidden');
+    presenterPanel.classList.remove('flex');
   }
 }
 
