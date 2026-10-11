@@ -417,8 +417,8 @@ func TestReset_IsOneTransaction(t *testing.T) {
 	if msgs, _ := db.GetRecentActivity(10); len(msgs) != 1 {
 		t.Errorf("activity should be untouched, got %v", msgs)
 	}
-	if events.State() != Revealed {
-		t.Errorf("Event State should be untouched, got %s", events.State())
+	if events.State() != PhaseSocial {
+		t.Errorf("Phase should be untouched, got %s", events.State())
 	}
 }
 

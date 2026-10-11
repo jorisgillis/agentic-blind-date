@@ -124,6 +124,7 @@ func NewDB(path string) (*DB, error) {
 		`UPDATE participants SET questions = custom_questions WHERE custom_questions IS NOT NULL`,
 		`ALTER TABLE participants DROP COLUMN extra_answers`,                              // ExtraAnswers live in profile_json
 		`UPDATE participants SET pipeline_step = 'ready' WHERE pipeline_step = 'matched'`, // Relationship State is not a Pipeline Step
+		`UPDATE event_state SET value = 'social' WHERE value = 'revealed'`,                // the Reveal became the Social phase
 	} {
 		sqlDB.Exec(m)
 	}
@@ -326,6 +327,13 @@ func (db *DB) ParticipantCount() int {
 func (db *DB) ReadyCount() int {
 	var n int
 	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step = ?`, StepReady).Scan(&n)
+	return n
+}
+
+// MatchedCount counts the Participants with a partner.
+func (db *DB) MatchedCount() int {
+	var n int
+	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE COALESCE(matched_with, '') <> ''`).Scan(&n)
 	return n
 }
 

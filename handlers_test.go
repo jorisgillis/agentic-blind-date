@@ -276,9 +276,9 @@ func TestComputeBadges(t *testing.T) {
 	// Test multiple badges
 	p = GitHubProfile{
 		AccountAgeDays: 3650,
-		TotalStars:    100,
-		PublicRepos:   50,
-		Languages:     []string{"Go", "Python", "JavaScript", "TypeScript", "Java"},
+		TotalStars:     100,
+		PublicRepos:    50,
+		Languages:      []string{"Go", "Python", "JavaScript", "TypeScript", "Java"},
 	}
 	badges = computeBadges(p)
 	if len(badges) != 4 {
@@ -441,12 +441,12 @@ func (f *flusherRecorder) Flush() {
 
 func TestSseHeaders(t *testing.T) {
 	w := &flusherRecorder{httptest.NewRecorder()}
-	
+
 	result := sseHeaders(w)
 	if !result {
 		t.Error("expected sseHeaders to return true for Flusher")
 	}
-	
+
 	if w.Header().Get("Content-Type") != "text/event-stream" {
 		t.Error("expected Content-Type to be text/event-stream")
 	}
@@ -460,9 +460,9 @@ func TestSseHeaders(t *testing.T) {
 
 func TestSseRedirect(t *testing.T) {
 	w := &flusherRecorder{httptest.NewRecorder()}
-	
+
 	sseRedirect(w, "http://example.com")
-	
+
 	body := w.Body.String()
 	if !strings.Contains(body, "event: redirect") {
 		t.Error("expected event: redirect in body")

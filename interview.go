@@ -31,7 +31,7 @@ type QuestionData struct {
 }
 
 // ErrInterviewOver is returned when an answer is submitted after the last question.
-var ErrInterviewOver = errors.New("No more questions to answer")
+var ErrInterviewOver = errors.New("no more questions to answer")
 
 // InvalidAnswerError reports an answer that does not fit the current question.
 // Its message is safe to show to the Participant.

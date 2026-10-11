@@ -187,9 +187,9 @@ func TestInterviewStart_FallsBackWhenCustomQuestionsAreUnusable(t *testing.T) {
 func TestInterview_CompletingWithoutAProfileAndWithAFreeTextLanguage(t *testing.T) {
 	db := newTestDB(t)
 	iv := NewInterview(db, newFakeLLM())
-	p := participantInInterview(t, db, []Question{{ID: "extra_0", Text: "Top languages?"}})
+	participantInInterview(t, db, []Question{{ID: "extra_0", Text: "Top languages?"}})
 	withoutProfile(db, "p-1")
-	p = reload(t, db, "p-1")
+	p := reload(t, db, "p-1")
 
 	if done, err := iv.Submit(p, "Zig"); !done || err != nil {
 		t.Fatalf("want completion, got %v %v", done, err)

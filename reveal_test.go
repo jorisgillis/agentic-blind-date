@@ -45,8 +45,8 @@ func TestReveal_OpensEveryMatchPage(t *testing.T) {
 		t.Errorf("reveal: want redirect to admin, got %q", loc)
 	}
 
-	if phase := deps.events.State(); phase != Revealed {
-		t.Errorf("Event State after the Reveal: want revealed, got %q", phase)
+	if phase := deps.events.State(); phase != PhaseSocial {
+		t.Errorf("Phase after the Reveal: want social, got %q", phase)
 	}
 	if loc := get(t, srv, "/user/wait/a").Header.Get("Location"); loc != "/user/match/a" {
 		t.Errorf("wait page after the Reveal: want match page, got %q", loc)
@@ -71,28 +71,31 @@ func TestReveal_NewcomerAfterTheRevealIsNeverToldTheyMissedIt(t *testing.T) {
 	}
 }
 
-func TestRematch_KeepsTheEventState(t *testing.T) {
-	for _, phase := range []EventState{BeforeReveal, Revealed} {
+func TestRematch_KeepsThePhase(t *testing.T) {
+	for _, phase := range phases {
 		t.Run(string(phase), func(t *testing.T) {
 			llm := newFakeLLM().on("matchmaker", `{"score": 70, "reason": "fine"}`)
 			srv, deps := newTestServer(t, llm, nil)
 			seed(t, deps.db, "a", "A", "ready")
 			seed(t, deps.db, "b", "B", "ready")
-			if phase.IsRevealed() {
-				deps.events.Reveal()
+			if err := deps.events.Advance(phase); err != nil {
+				t.Fatal(err)
 			}
 
 			post(t, srv, "/admin/rematch", nil)
 			eventually(t, "both matched", func() bool { return reload(t, deps.db, "a").MatchedWith == "b" })
 
 			if got := deps.events.State(); got != phase {
-				t.Errorf("Event State after rematch: want %q, got %q", phase, got)
+				t.Errorf("Phase after rematch: want %q, got %q", phase, got)
 			}
 		})
 	}
 }
 
-func TestReveal_TheBigScreenSendsNoIdentitiesBeforeTheReveal(t *testing.T) {
+// TestBigScreen_ShowsPersonasOnlyInEveryPhase locks in #113's privacy
+// baseline: the Big Screen shows persona names only, in every phase — the
+// graph payload never carries GitHub handles or real names.
+func TestBigScreen_ShowsPersonasOnlyInEveryPhase(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.db.CreateParticipant("g1", "octocat", "Octo Cat", true)
 	setPersona(t, deps.db, "g1", "The Gopher", "")
@@ -101,18 +104,47 @@ func TestReveal_TheBigScreenSendsNoIdentitiesBeforeTheReveal(t *testing.T) {
 	setPersona(t, deps.db, "ada", "The Analyst", "")
 	forceStep(deps.db, "ada", StepReady)
 
-	for _, path := range []string{"/bigscreen/graph-data"} {
-		body := readBody(t, get(t, srv, path))
-		if strings.Contains(body, "octocat") || strings.Contains(body, "Ada Lovelace") {
-			t.Errorf("%s reveals identities before the Reveal", path)
-		}
-	}
-	if body := readBody(t, open(t, srv, "/bigscreen/stream").waitForAny(t)); strings.Contains(body, "octocat") {
-		t.Errorf("the Big Screen stream reveals identities before the Reveal")
+	identities := []string{"octocat", "Octo Cat", "Ada Lovelace", "no-github-1234abcd"}
+	personas := []string{"The Gopher", "The Analyst"}
+
+	stream := open(t, srv, "/bigscreen/stream")
+	waitFor(t, stream, "The Gopher")
+
+	for _, phase := range phases {
+		t.Run(string(phase), func(t *testing.T) {
+			if err := deps.events.Advance(phase); err != nil {
+				t.Fatal(err)
+			}
+
+			body := readBody(t, get(t, srv, "/bigscreen/graph-data"))
+			for _, identity := range identities {
+				if strings.Contains(body, identity) {
+					t.Errorf("the graph payload leaks the identity %q in the %s phase", identity, phase)
+				}
+			}
+			for _, persona := range personas {
+				if !strings.Contains(body, persona) {
+					t.Errorf("the graph payload should show the persona %q in the %s phase", persona, phase)
+				}
+			}
+			if !strings.Contains(body, `"phase": "`+string(phase)+`"`) {
+				t.Errorf("the graph payload should report the %s phase", phase)
+			}
+		})
 	}
 
-	post(t, srv, "/admin/reveal", nil)
-	if body := readBody(t, get(t, srv, "/bigscreen/graph-data")); !strings.Contains(body, "@octocat") || !strings.Contains(body, "Ada Lovelace") {
-		t.Errorf("after the Reveal the Big Screen identifies everyone")
+	// Every payload the stream ever pushed is personas-only too.
+	eventually(t, "the stream to push the closed phase", func() bool {
+		return strings.Contains(stream.String(), `"phase":"closed"`)
+	})
+	for _, identity := range identities {
+		if strings.Contains(stream.String(), identity) {
+			t.Errorf("the Big Screen stream leaks the identity %q", identity)
+		}
+	}
+	for _, persona := range personas {
+		if !strings.Contains(stream.String(), persona) {
+			t.Errorf("the Big Screen stream should show the persona %q", persona)
+		}
 	}
 }

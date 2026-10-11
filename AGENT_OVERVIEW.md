@@ -68,8 +68,9 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 5. **Match Reveal** (`/user/match/{id}`) → See partner, score, flags, icebreakers
 
 ### Admin Actions
-- **Trigger Reveal** (`POST /admin/reveal`) → Runs matching algorithm
-- **Reset Event** (`POST /admin/reset`) → Clears all data for new session
+- **Advance Phase** (`POST /admin/phase`) → Moves the event forward: `social` (the Big Reveal), `showtell`, `closed`
+- **Trigger Reveal** (`POST /admin/reveal`) → Alias for advancing to the social phase
+- **Reset Event** (`POST /admin/reset`) → Clears all data and returns to `onboarding`
 
 ### Big Screen
 - **Projector View** (`/bigscreen`) → D3.js force-directed graph
@@ -135,8 +136,9 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | GET | `/user/match/{id}` | Match results |
 | GET | `/bigscreen` | Projector view with D3 graph |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
-| GET | `/admin` | Host control panel |
-| POST | `/admin/reveal` | Start matching |
+| GET | `/admin` | Host control panel (phase, counts, transition buttons) |
+| POST | `/admin/phase` | Advance the event to a later phase |
+| POST | `/admin/reveal` | Reveal matches (alias for the social phase) |
 | POST | `/admin/reset` | Clear all data |
 | GET | `/data/*` | Debug endpoints (JSON) |
 
@@ -156,7 +158,7 @@ red_flags, green_flags, icebreakers, created_at
 
 **event_state:**
 ```sql
-key ('phase'), value ('onboarding' | 'matching' | 'revealed')
+key ('phase'), value ('onboarding' | 'social' | 'showtell' | 'closed')
 ```
 
 **activity_log:**

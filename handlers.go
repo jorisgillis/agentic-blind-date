@@ -58,7 +58,6 @@ type graphNode struct {
 	Step        string `json:"step"`
 	Ready       bool   `json:"ready"`
 	Matched     bool   `json:"matched"`
-	Handle      string `json:"handle,omitempty"`
 }
 
 type graphEdge struct {
@@ -385,17 +384,14 @@ func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) buildGraphPayload() map[string]any {
-	event := h.events.State()
+	phase := h.events.State()
 	participants, _ := h.store.All()
 	activity, _ := h.db.GetRecentActivity(3)
 
 	nodes := make([]graphNode, 0, len(participants))
 	for _, p := range participants {
-		// Identities leave the server only after the Reveal.
-		handle := ""
-		if event.IsRevealed() {
-			handle = p.DisplayHandle()
-		}
+		// The Big Screen shows persona names only, in every phase — identities
+		// never leave the server in the graph payload.
 		nodes = append(nodes, graphNode{
 			ID:          p.ID,
 			PersonaName: p.PersonaName,
@@ -404,7 +400,6 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			Step:        string(p.PipelineStep),
 			Ready:       p.PipelineStep.IsReady(),
 			Matched:     p.IsMatched(),
-			Handle:      handle,
 		})
 	}
 
@@ -472,9 +467,9 @@ func (h *Handler) buildGraphPayload() map[string]any {
 	}
 
 	return map[string]any{
-		"phase":       event,
-		"phase_label": event.Label(),
-		"revealed":    event.IsRevealed(),
+		"phase":       phase,
+		"phase_label": phase.Label(),
+		"revealed":    phase.AtLeast(PhaseSocial),
 		"nodes":       nodes,
 		"edges":       edges,
 		"activity":    activity,
@@ -490,11 +485,11 @@ func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
 
 // GET /data
 func (h *Handler) DataIndex(w http.ResponseWriter, r *http.Request) {
-	event := h.events.State()
+	phase := h.events.State()
 	participants, _ := h.store.All()
 	activity, _ := h.db.GetRecentActivity(20)
 	h.render(w, "data.html", map[string]any{
-		"Event":        event,
+		"Phase":        phase,
 		"Participants": participants,
 		"Activity":     activity,
 		"Count":        len(participants),
@@ -539,9 +534,9 @@ func (h *Handler) DataActivity(w http.ResponseWriter, r *http.Request) {
 
 // GET /data/state
 func (h *Handler) DataState(w http.ResponseWriter, r *http.Request) {
-	event := h.events.State()
+	phase := h.events.State()
 	writeJSON(w, map[string]any{
-		"phase": event,
+		"phase": phase,
 		"count": h.db.ParticipantCount(),
 		"ready": h.db.ReadyCount(),
 	})
@@ -556,23 +551,48 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 // ── /admin ─────────────────────────────────────────────────────────────────
 
-// GET /admin
+// GET /admin: the host console — the current Phase with its label and the
+// participant counts, plus one transition button per reachable forward phase.
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
-	event := h.events.State()
+	phase := h.events.State()
 	h.render(w, "admin.html", map[string]any{
-		"Event": event,
-		"Count": h.db.ParticipantCount(),
-		"Ready": h.db.ReadyCount(),
+		"Phase":   phase,
+		"Count":   h.db.ParticipantCount(),
+		"Ready":   h.db.ReadyCount(),
+		"Matched": h.db.MatchedCount(),
+		"Next":    phase.Next(),
 	})
 }
 
-// POST /admin/reveal: the admin reveals every Match once everybody is seated.
+// POST /admin/phase: the host advances the event to a later phase (the "to"
+// form value).
+func (h *Handler) AdvancePhase(w http.ResponseWriter, r *http.Request) {
+	h.advanceTo(w, r, Phase(r.FormValue("to")))
+}
+
+// POST /admin/reveal: the admin reveals every Match once everybody is seated —
+// an alias for advancing to the Social phase.
 func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
-	if err := h.events.Reveal(); err != nil {
-		http.Error(w, "reveal failed: "+err.Error(), 500)
+	h.advanceTo(w, r, PhaseSocial)
+}
+
+// advanceTo advances the event to the given phase. A rejected transition — an
+// unknown phase or one before the current one — is a client error; a database
+// failure is not. Advancing to the current phase is a no-op: nothing is
+// written or logged.
+func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
+	before := h.events.State()
+	if err := h.events.Advance(to); err != nil {
+		if errors.Is(err, ErrIllegalPhaseTransition) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "phase change failed: "+err.Error(), 500)
 		return
 	}
-	h.db.LogActivity("🎉 The matches are revealed!")
+	if after := h.events.State(); after != before {
+		h.db.LogActivity(after.Activity())
+	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 

@@ -109,6 +109,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /data/state", h.DataState)
 
 	mux.HandleFunc("GET /admin", h.Admin)
+	mux.HandleFunc("POST /admin/phase", h.AdvancePhase)
 	mux.HandleFunc("POST /admin/reveal", h.TriggerReveal)
 	mux.HandleFunc("POST /admin/reset", h.Reset)
 	mux.HandleFunc("POST /admin/rematch", h.Rematch)

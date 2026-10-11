@@ -177,9 +177,8 @@ function updateGraph(data) {
       return null;
     });
   nodeAll.select('.sym').text(d => d.symbol || '🎭');
-  nodeAll.select('.lbl').text(d =>
-    revealed ? d.handle : (d.persona_name || '')
-  );
+  // Persona names only, in every phase — identities never reach the Big Screen.
+  nodeAll.select('.lbl').text(d => d.persona_name || '');
 
   if (hasNew) simulation.alpha(0.4).restart();
 

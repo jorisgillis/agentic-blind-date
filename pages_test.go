@@ -1,13 +1,10 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 // seed creates a Participant with a persona, profile and answers in the given pipeline step.
@@ -373,17 +370,6 @@ func TestAdminRevealAndDelete(t *testing.T) {
 	}
 }
 
-// stream runs an SSE handler until it returns or the timeout passes, and returns what it wrote.
-func stream(t *testing.T, srv *testSrv, path string, timeout time.Duration) string {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	req := httptest.NewRequest("GET", path, nil).WithContext(ctx)
-	w := &flusherRecorder{httptest.NewRecorder()}
-	srv.h.ServeHTTP(w, req)
-	return w.Body.String()
-}
-
 func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal()
@@ -433,7 +419,9 @@ func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 			t.Errorf("%s shows the generated handle", path)
 		}
 	}
-	if body := readBody(t, get(t, srv, "/bigscreen/graph-data")); !strings.Contains(body, `"handle": "Ada Lovelace"`) {
-		t.Errorf("after the Reveal, the Big Screen identifies a Non-GitHub User by name:\n%s", body)
+	// The Big Screen shows persona names only, in every phase — never the
+	// Non-GitHub User's real name or generated handle (#113's privacy baseline).
+	if body := readBody(t, get(t, srv, "/bigscreen/graph-data")); strings.Contains(body, "Ada Lovelace") || !strings.Contains(body, "The Analyst") {
+		t.Errorf("the Big Screen should show the persona, not the name:\n%s", body)
 	}
 }

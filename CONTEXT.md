@@ -178,10 +178,13 @@ Social connection between participants on GitHub:
 - **No Follow**: No follow relationship
 
 ### Event State
-Global state of the event, changed only by the admin:
-- **Before the Reveal** (`onboarding`): Participants register and Continuous Matching runs, but Matches stay hidden. Matched Participants wait on the wait page, and the Big Screen shows persona names only.
-- **Revealed** (`revealed`): the admin presses **Reveal** once everybody is seated. Every Match page opens and the Big Screen shows handles. Newcomers after the Reveal see their Match as soon as they are matched.
-- Rematching does not change the Event State; Reset returns it to before the Reveal.
+Global state of the event — its **Phase** — changed only by the host from the host console. Phases only move forward: the host may jump ahead (e.g. `social` → `closed` for a short evening), advancing to the current phase is a no-op, and backward transitions are rejected.
+- **Onboarding** (`onboarding`): the default after a Reset. Participants register and Continuous Matching runs, but Matches stay hidden. Matched Participants wait on the wait page and see a teaser, and the Big Screen shows persona names only.
+- **Social** (`social`): the Big Reveal at the break. Matches are revealed and every Match page opens; newcomers see their Match as soon as they are matched. Mission cards go live and meeting confirmation opens.
+- **Show & Tell** (`showtell`): everything in the Social stays; show & tell sign-up and the question queue go live, and the Big Screen gains presenter mode.
+- **Closed** (`closed`): meeting confirmation is disabled; the closing view shows a recap QR, and personal recap pages persist.
+
+Rematching does not change the Phase; Reset returns it to `onboarding`. A database holding the legacy value `revealed` is migrated to `social` at startup. The Big Screen shows persona names only, in every phase.
 
 ### Relationship State
 The matching status of a participant:
