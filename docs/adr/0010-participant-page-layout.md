@@ -21,7 +21,7 @@ The research in #133 compared four layout options on glanceability during a live
 
 1. **Phase header (persistent).** A server-rendered `fragment-phase-header` at the top of every personal page: a progress strip of the evening's steps (onboarding → social → showtell → closed) plus a one-line "Tonight: …" summary, with the participant's own status woven in — onboarding shows interview progress ("X of N answered"), social shows mission progress, showtell shows the participant's queue number (decided in #133: the queue number belongs on the persona screen; the queue itself is on the Big Screen), closed points at the recap. Late joiners need no special handling: the header renders from the phase machine's *current* state, so prior steps simply appear as done.
 2. **Phase content (the main region).** Below the header, the page shows only what the current phase calls for. During the social, that is — in order — the **mission card first** (decided in #133: the mission card is the primary thing during the social), then the meet section with its QR, then the match reveal and dossier. Show & tell tooling appears when the showtell phase is active; the recap and export belong to closed.
-3. **"More" drawer (evergreen content).** Settings, share-profile QR, GitHub summary, and the recap link live behind a single bottom "More" toggle — server-rendered, always reachable, never competing with the phase content above.
+3. **"More" drawer (evergreen content).** Settings, share-profile QR, GitHub summary, the recap link, and the **dossier** live behind a single bottom "More" toggle — server-rendered, always reachable, never competing with the phase content above. The dossier is out of the phase content (it never leads) but stays reachable at any time from the drawer, so a participant can peek mid-phase.
 4. **Push mechanism.** The header and the phase content are ordinary anchored fragments refreshed by the page's existing SSE stream, exactly like `#wait-status` today. A phase transition additionally emits a distinct `phase` event so the client can swap the main region and animate the header in one beat. No new stream, no polling, no client-side state.
 
 ## Consequences
@@ -29,7 +29,7 @@ The research in #133 compared four layout options on glanceability during a live
 - **Glanceability:** the mission card and meet QR are above the fold during the social by construction, not by scroll position. The phase header answers "where are we tonight?" on every page.
 - **One source of truth:** the page is a pure function of (phase, participant state); the server decides what is on screen, the same discipline the Big Screen follows.
 - **Lowest mechanical risk:** no per-slide state, no carousel ARIA, no tab-routing of fragment events. The existing SSE → fragment-swap model survives unchanged.
-- **Content is hidden by design:** dossier and show & tell tooling are invisible outside their phase. Peek-ability was considered and rejected in #133 — hiding other phases' content is acceptable.
+- **Phase tooling is hidden by design:** show & tell tooling is invisible outside its phase. The dossier is the exception — it stays reachable from the "More" drawer in any phase (decided in #133), it just never leads.
 - **Tabs may return locally:** if a single phase's content ever grows too long (the social is the candidate), a tab row *within* that phase is the sanctioned escape hatch — not tabs as the page's organizing principle.
 
 ## Alternatives Considered
