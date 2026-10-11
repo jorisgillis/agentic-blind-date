@@ -271,13 +271,11 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.render(w, "wait.html", map[string]any{
-		"Participant": p,
-		"Profile":     profile,
-		"QAPairs":     qaPairs,
-		"Count":       h.db.ReadyCount(),
-		"MeetStatus":  h.meetStatusData(p),
-	})
+	data := h.waitStatusData(p)
+	data["Profile"] = profile
+	data["QAPairs"] = qaPairs
+	data["MeetStatus"] = h.meetStatusData(p)
+	h.render(w, "wait.html", data)
 }
 
 // GET /user/wait-status/{id}  — HTMX, refreshed when the wait stream says so
@@ -291,10 +289,43 @@ func (h *Handler) WaitStatus(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("HX-Redirect", dest)
 		return
 	}
-	h.render(w, "fragment-wait-status.html", map[string]any{
+	h.render(w, "fragment-wait-status.html", h.waitStatusData(p))
+}
+
+// waitStatusData is the wait page's status section. A matched Participant
+// sees the teaser — their future Match's emoji and colour and a hint at what
+// the pair disagreed on, never the partner's identity, score or dossier. An
+// unmatched Participant sees the ready count while the event is still
+// onboarding, and a clear no-match state once the Social has begun.
+func (h *Handler) waitStatusData(p *Participant) map[string]any {
+	data := map[string]any{
 		"Participant": p,
 		"Count":       h.db.ReadyCount(),
-	})
+		"Revealed":    h.events.State().AtLeast(PhaseSocial),
+	}
+	partner, _, err := h.relations.PartnerOf(p.ID)
+	if err != nil {
+		log.Printf("Wait status for %s: %v", p.ID, err)
+	}
+	if partner != nil {
+		data["Partner"] = partner
+		data["Hint"] = teaserHint(p, partner)
+	}
+	return data
+}
+
+// teaserHint is the curiosity gap on the wait page: the first question the
+// pair answered differently, phrased as a promise of the Reveal. It carries no
+// identity, score or dossier content.
+func teaserHint(me, partner *Participant) string {
+	for _, q := range me.Questions {
+		if ans, ok := me.Answers[q.ID]; ok {
+			if other, ok := partner.Answers[q.ID]; ok && other != ans {
+				return fmt.Sprintf("You disagreed on %q — reveal at the break", q.Text)
+			}
+		}
+	}
+	return "You seem to think alike — reveal at the break"
 }
 
 // GET /user/match/{id}
@@ -309,23 +340,34 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dossier, match := h.dossierData(p)
+	h.render(w, "match.html", map[string]any{
+		"Me":         p,
+		"Match":      match,
+		"Score":      dossier["Score"],
+		"Dossier":    dossier,
+		"MeetStatus": h.meetStatusData(p),
+	})
+}
+
+// dossierData is the Match page's dossier: the fun payload of the Match — the
+// reason, the flags and the icebreakers — locked until the pair's dossier
+// unlocks (their Meeting completed, or the event closed). The score is not
+// part of the dossier: it is revealed with the Match itself. The second
+// return value is the partner, nil without a Match.
+func (h *Handler) dossierData(p *Participant) (map[string]any, *Participant) {
 	match, result, err := h.relations.PartnerOf(p.ID)
 	if err != nil {
-		log.Printf("Match page for %s: %v", p.ID, err)
+		log.Printf("Dossier for %s: %v", p.ID, err)
 	}
 	if result == nil {
 		result = &matchResult{RedFlags: []string{}, GreenFlags: []string{}, Icebreakers: []string{}}
 	}
-
-	all, _ := h.store.All()
-	var others []*Participant
-	for _, op := range all {
-		if op.ID != p.ID && op.ID != p.MatchedWith {
-			others = append(others, op)
-		}
+	unlocked := false
+	if match != nil {
+		unlocked = h.dossierUnlocked(p)
 	}
-
-	h.render(w, "match.html", map[string]any{
+	return map[string]any{
 		"Me":          p,
 		"Match":       match,
 		"Score":       result.Score,
@@ -333,51 +375,25 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		"RedFlags":    result.RedFlags,
 		"GreenFlags":  result.GreenFlags,
 		"Icebreakers": result.Icebreakers,
-		"Others":      others,
-		"MeetStatus":  h.meetStatusData(p),
-	})
+		"Unlocked":    unlocked,
+	}, match
 }
 
-// GET /user/explore/{myId}/{otherId}
-//
-// Explore is between two different ready Participants only (see CONTEXT.md):
-// an unknown Participant is 404, and exploring yourself or a Participant who
-// isn't ready is 400 — neither calls the LLM or GitHub.
-func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
-	me, err := h.store.Get(r.PathValue("myId"))
+// GET /user/dossier/{id} — HTMX, the Match page's dossier section, refreshed
+// when the match stream says so — the pair's Meeting completing unlocks it.
+// Without a Match there is no dossier.
+func (h *Handler) Dossier(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	other, err := h.store.Get(r.PathValue("otherId"))
-	if err != nil {
+	data, match := h.dossierData(p)
+	if match == nil {
 		http.NotFound(w, r)
 		return
 	}
-	if me.ID == other.ID {
-		http.Error(w, "cannot explore yourself", 400)
-		return
-	}
-	if me.PipelineStep != StepReady || other.PipelineStep != StepReady {
-		http.Error(w, "both participants must be ready", 400)
-		return
-	}
-
-	result, err := h.matcher.ScorePair(me, other)
-	if err != nil {
-		http.Error(w, "compatibility analysis failed: "+err.Error(), 500)
-		return
-	}
-
-	h.render(w, "explore.html", map[string]any{
-		"Me":          me,
-		"Other":       other,
-		"Score":       result.Score,
-		"Reason":      result.Reason,
-		"GreenFlags":  result.GreenFlags,
-		"RedFlags":    result.RedFlags,
-		"Icebreakers": result.Icebreakers,
-	})
+	h.render(w, "fragment-dossier.html", data)
 }
 
 // ── meetings: the confirm handshake ────────────────────────────────────────
@@ -503,8 +519,9 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 }
 
 // GET /user/match-stream/{id}
-// Tells the match page to refresh its meet section when the Participant's
-// meetings or the phase change.
+// Tells the match page to refresh its meet section and its dossier when the
+// Participant's meetings or the phase change — the pair's Meeting completing
+// unlocks the dossier.
 func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -676,7 +693,7 @@ func (h *Handler) DataParticipants(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	writeJSON(w, participants)
+	writeJSON(w, h.scrubbedAll(participants))
 }
 
 // GET /data/participant/{id}
@@ -691,7 +708,41 @@ func (h *Handler) DataParticipant(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, p)
+	writeJSON(w, h.scrubbed(p))
+}
+
+// scrubbedAll scrubs the locked dossier from every Participant the JSON debug
+// endpoints may show.
+func (h *Handler) scrubbedAll(participants []*Participant) []*Participant {
+	var out []*Participant
+	for _, p := range participants {
+		out = append(out, h.scrubbed(p))
+	}
+	return out
+}
+
+// scrubbed returns the Participant as a JSON endpoint may show them: the Match
+// assessment — reason, flags, icebreakers — is scrubbed until the pair's
+// dossier unlocks.
+func (h *Handler) scrubbed(p *Participant) *Participant {
+	if p.Assessment == nil || h.dossierUnlocked(p) {
+		return p
+	}
+	cp := *p
+	cp.Assessment = nil
+	return &cp
+}
+
+// dossierUnlocked reports whether p's Match dossier may be shown — on the
+// Match page and in the JSON debug endpoints: once the pair's Meeting is
+// completed, or once the event is closed, after which the evening is over
+// and the recap takes over.
+func (h *Handler) dossierUnlocked(p *Participant) bool {
+	if h.events.State() == PhaseClosed {
+		return true
+	}
+	m, _ := h.meetings.Between(p.ID, p.MatchedWith)
+	return m != nil && m.Completed()
 }
 
 // GET /data/activity

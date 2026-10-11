@@ -171,7 +171,12 @@ func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 	}
 }
 
-func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
+// TestMatchPage_ShowsThePartnerAndTheLockedDossier covers the Reveal: the
+// Match page shows the partner's full persona card and the "find them in the
+// room" panel — personas only, never the partner's handle — while the
+// dossier (reason, flags, icebreakers) starts out locked, and Explore's
+// "Others at the event" section is gone.
+func TestMatchPage_ShowsThePartnerAndTheLockedDossier(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "a", "The Gopher", "ready")
@@ -180,9 +185,14 @@ func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
 	pair(t, deps.db, "a", "b")
 
 	body := readBody(t, get(t, srv, "/user/match/a"))
-	for _, want := range []string{"The Crab", "Both love tabs", "hogs the whiteboard", "Why tabs?", "The Snake"} {
+	for _, want := range []string{"The Crab", "Ships things", "91%", "Find them in the room", "🔒", "to unlock"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("match page should contain %q", want)
+		}
+	}
+	for _, absent := range []string{"@b", "Both love tabs", "hogs the whiteboard", "Why tabs?", "The Snake", "Others at the event", "/user/explore"} {
+		if strings.Contains(body, absent) {
+			t.Errorf("match page must not contain %q while the dossier is locked", absent)
 		}
 	}
 	if loc := get(t, srv, "/user/match/c").Header.Get("Location"); loc != "/user/wait/c" {
@@ -190,103 +200,6 @@ func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
 	}
 	if resp := get(t, srv, "/user/match/nobody"); resp.StatusCode != 404 {
 		t.Errorf("unknown: want 404, got %d", resp.StatusCode)
-	}
-}
-
-func TestExplore_UnknownParticipantsAndFailedAssessments(t *testing.T) {
-	llm := newFakeLLM().onErr("matchmaker", fakeError("mistral HTTP 500"))
-	srv, deps := newTestServer(t, llm, nil)
-	seed(t, deps.db, "a", "A", "ready")
-	seed(t, deps.db, "b", "B", "ready")
-
-	if resp := get(t, srv, "/user/explore/nobody/b"); resp.StatusCode != 404 {
-		t.Errorf("unknown me: want 404, got %d", resp.StatusCode)
-	}
-	if resp := get(t, srv, "/user/explore/a/nobody"); resp.StatusCode != 404 {
-		t.Errorf("unknown other: want 404, got %d", resp.StatusCode)
-	}
-	if resp := get(t, srv, "/user/explore/a/b"); resp.StatusCode != 500 {
-		t.Errorf("failed assessment: want 500, got %d", resp.StatusCode)
-	}
-}
-
-// TestExplore_OnlyBetweenTwoReadyParticipants covers #47: Explore works
-// between any two different ready Participants, but exploring yourself or a
-// Participant who isn't ready is refused without ever calling the LLM or GitHub.
-func TestExplore_OnlyBetweenTwoReadyParticipants(t *testing.T) {
-	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
-	gh := newFakeGitHub()
-	srv, deps := newTestServer(t, llm, gh)
-	seed(t, deps.db, "a", "A", "ready")
-	seed(t, deps.db, "b", "B", "ready")
-	seed(t, deps.db, "c", "C", "interviewing")
-
-	if resp := get(t, srv, "/user/explore/a/a"); resp.StatusCode != 400 {
-		t.Errorf("exploring yourself: want 400, got %d", resp.StatusCode)
-	}
-	if resp := get(t, srv, "/user/explore/a/c"); resp.StatusCode != 400 {
-		t.Errorf("other not ready: want 400, got %d", resp.StatusCode)
-	}
-	if resp := get(t, srv, "/user/explore/c/a"); resp.StatusCode != 400 {
-		t.Errorf("me not ready: want 400, got %d", resp.StatusCode)
-	}
-	if calls := llm.callsMatching("matchmaker"); calls != 0 {
-		t.Errorf("refused explores should not call the LLM, got %d calls", calls)
-	}
-	if lookups := gh.followLookups(); lookups != 0 {
-		t.Errorf("refused explores should not call GitHub, got %d lookups", lookups)
-	}
-
-	body := readBody(t, get(t, srv, "/user/explore/a/b"))
-	if !strings.Contains(body, "80%") {
-		t.Errorf("explore page: want the score, got %q", body)
-	}
-}
-
-// TestExplore_ShowsPersonasOnlyNotHandlesOrNames locks in #47's identity
-// rule: the Explore page never reveals a handle or real name, before or
-// after the Reveal, even though it always renders the same template.
-func TestExplore_ShowsPersonasOnlyNotHandlesOrNames(t *testing.T) {
-	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
-	srv, deps := newTestServer(t, llm, nil)
-	deps.db.CreateParticipant("p1", "octocat-handle", "Real Name One", true)
-	setPersona(t, deps.db, "p1", "The Gopher", "Ships things")
-	forceStep(deps.db, "p1", StepReady)
-	deps.db.CreateParticipant("p2", "ferris-handle", "Real Name Two", true)
-	setPersona(t, deps.db, "p2", "The Crab", "Loves Rust")
-	forceStep(deps.db, "p2", StepReady)
-
-	body := readBody(t, get(t, srv, "/user/explore/p1/p2"))
-
-	for _, leak := range []string{"octocat-handle", "ferris-handle", "Real Name One", "Real Name Two"} {
-		if strings.Contains(body, leak) {
-			t.Errorf("explore page leaked identity %q:\n%s", leak, body)
-		}
-	}
-	if !strings.Contains(body, "The Crab") {
-		t.Errorf("explore page should show the other Participant's persona: %s", body)
-	}
-}
-
-// TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal covers
-// #47's acceptance criterion: after the Reveal, two ready Participants can
-// Explore each other, in either direction.
-func TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal(t *testing.T) {
-	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
-	srv, deps := newTestServer(t, llm, nil)
-	deps.events.Reveal()
-	seed(t, deps.db, "a", "A", "ready")
-	seed(t, deps.db, "b", "B", "ready")
-
-	for _, path := range []string{"/user/explore/a/b", "/user/explore/b/a"} {
-		resp := get(t, srv, path)
-		if resp.StatusCode != 200 {
-			t.Errorf("%s: want 200, got %d", path, resp.StatusCode)
-			continue
-		}
-		if body := readBody(t, resp); !strings.Contains(body, "80%") {
-			t.Errorf("%s: explore page: want the score, got %q", path, body)
-		}
 	}
 }
 

@@ -250,10 +250,14 @@
 {{end}}
 
 
-{{/* Wait page status — refreshed when the wait stream says so */}}
+{{/* Wait page status — refreshed when the wait stream says so. A matched
+     Participant sees the teaser: their future Match's emoji and colour and a
+     hint at what the pair disagreed on — never the partner's identity, score
+     or dossier. Once the Social has begun, an unmatched Participant sees a
+     clear no-match state instead of the ready count. */}}
 {{define "fragment-wait-status.html"}}
 {{$p := .Participant}}
-{{if $p.MatchedWith}}
+{{if .Partner}}
 <div
   id="wait-status"
   hx-get="/user/wait-status/{{$p.ID}}"
@@ -261,9 +265,23 @@
   hx-swap="outerHTML"
   class="text-center space-y-4 py-4"
 >
-  <p class="text-4xl">❤️</p>
+  <div class="w-20 h-20 mx-auto rounded-2xl {{.Partner.PersonaColor}} flex items-center justify-center text-4xl shadow-lg ring-4 ring-black/10">
+    {{.Partner.PersonaSymbol}}
+  </div>
   <p class="text-gray-900 font-bold">You've been matched!</p>
-  <p class="text-gray-700 text-sm">Your match is waiting for the Reveal. Keep an eye on the big screen!</p>
+  <p class="text-gray-700 text-sm">{{.Hint}}</p>
+</div>
+{{else if .Revealed}}
+<div
+  id="wait-status"
+  hx-get="/user/wait-status/{{$p.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="text-center space-y-4 py-4"
+>
+  <p class="text-4xl">🤷</p>
+  <p class="text-gray-900 font-bold">No match for you this time</p>
+  <p class="text-gray-700 text-sm">The evening goes on — go meet people in the room!</p>
 </div>
 {{else}}
 <div
@@ -286,4 +304,97 @@
   <p class="text-gray-600 text-xs">Watch the big screen!</p>
 </div>
 {{end}}
+{{end}}
+
+
+{{/* The Match page's dossier — the Match's fun payload: the reason, the
+     flags and the icebreakers. Locked (blurred placeholders, the payload
+     itself never in the page) until the pair's dossier unlocks; refreshed
+     when the match stream says so — the pair's Meeting completing unlocks
+     it, without a manual refresh. */}}
+{{define "fragment-dossier.html"}}
+<div
+  id="dossier"
+  hx-get="/user/dossier/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="space-y-4 mb-4"
+>
+{{if .Unlocked}}
+
+  {{/* Why you two */}}
+  {{if .Reason}}
+  <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in" style="animation-delay:0.15s">
+    <p class="text-gray-800 italic text-sm text-center" data-md>"{{.Reason}}"</p>
+  </div>
+  {{end}}
+
+  {{/* Flags */}}
+  {{if or .GreenFlags .RedFlags}}
+  <div class="grid grid-cols-2 gap-3 pop-in" style="animation-delay:0.25s">
+    {{if .GreenFlags}}
+    <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+      <p class="text-green-800 font-bold text-sm mb-2">✅ Green flags</p>
+      {{range .GreenFlags}}
+      <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
+      {{end}}
+    </div>
+    {{end}}
+    {{if .RedFlags}}
+    <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+      <p class="text-red-800 font-bold text-sm mb-2">🚩 Red flags</p>
+      {{range .RedFlags}}
+      <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{/* Icebreakers */}}
+  {{if .Icebreakers}}
+  <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in" style="animation-delay:0.35s">
+    <p class="text-indigo-800 font-bold text-sm mb-3">💬 Ask them</p>
+    {{range .Icebreakers}}
+    <p class="text-gray-800 text-sm mb-2" data-md>→ {{.}}</p>
+    {{end}}
+  </div>
+  {{end}}
+
+{{else}}
+
+  <div class="relative">
+    <div class="blur-sm select-none pointer-events-none space-y-4" aria-hidden="true">
+      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+        <div class="h-3 bg-black/20 rounded-full w-2/3 mx-auto"></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
+          <div class="h-2.5 bg-black/20 rounded-full w-1/2"></div>
+          <div class="h-2.5 bg-black/20 rounded-full"></div>
+          <div class="h-2.5 bg-black/20 rounded-full w-5/6"></div>
+        </div>
+        <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
+          <div class="h-2.5 bg-black/20 rounded-full w-1/2"></div>
+          <div class="h-2.5 bg-black/20 rounded-full"></div>
+          <div class="h-2.5 bg-black/20 rounded-full w-4/6"></div>
+        </div>
+      </div>
+      <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
+        <div class="h-2.5 bg-black/20 rounded-full w-1/3"></div>
+        <div class="h-2.5 bg-black/20 rounded-full"></div>
+        <div class="h-2.5 bg-black/20 rounded-full w-2/3"></div>
+      </div>
+    </div>
+    <div class="absolute inset-0 flex items-center justify-center">
+      <div class="bg-white/80 border border-black/10 rounded-2xl px-6 py-4 text-center shadow-lg space-y-1">
+        <p class="text-3xl">🔒</p>
+        <p class="text-gray-900 font-bold text-sm">Your dossier is locked</p>
+        <p class="text-gray-700 text-xs">Meet {{.Match.PersonaSymbol}} in the room to unlock it — confirm each other with your meet codes.</p>
+      </div>
+    </div>
+  </div>
+
+{{end}}
+</div>
 {{end}}

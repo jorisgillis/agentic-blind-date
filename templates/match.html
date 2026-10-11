@@ -43,7 +43,7 @@
       </div>
     </div>
 
-    {{/* Match card + Find them merged */}}
+    {{/* Match card + Find them merged — personas only, never the partner's handle */}}
     <div class="bg-black/15 border border-black/10 rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
       <div class="flex items-center gap-4">
         <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
@@ -51,12 +51,11 @@
         </div>
         <div>
           <p class="font-bold text-lg text-gray-900">{{$m.PersonaName}}</p>
-          <p class="text-gray-700 text-sm">{{$m.DisplayHandle}}</p>
+          {{if $m.PersonaTagline}}
+          <p class="text-gray-700 text-sm italic" data-md>"{{$m.PersonaTagline}}"</p>
+          {{end}}
         </div>
       </div>
-      {{if .Reason}}
-      <p class="mt-4 text-gray-800 italic text-sm" data-md>"{{.Reason}}"</p>
-      {{end}}
       <div class="mt-4 pt-4 border-t border-black/10 flex items-center gap-3">
         <div class="w-12 h-12 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow">
           {{$m.PersonaSymbol}}
@@ -68,53 +67,9 @@
       </div>
     </div>
 
-    {{/* Flags */}}
-    {{if or .GreenFlags .RedFlags}}
-    <div class="grid grid-cols-2 gap-3 mb-4">
-      {{if .GreenFlags}}
-      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
-        <p class="text-green-800 font-bold text-sm mb-2">✅ Green flags</p>
-        {{range .GreenFlags}}
-        <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
-        {{end}}
-      </div>
-      {{end}}
-      {{if .RedFlags}}
-      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
-        <p class="text-red-800 font-bold text-sm mb-2">🚩 Red flags</p>
-        {{range .RedFlags}}
-        <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
-        {{end}}
-      </div>
-      {{end}}
-    </div>
-    {{end}}
-
-    {{/* Icebreakers */}}
-    {{if .Icebreakers}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mb-4" style="animation-delay:0.3s">
-      <p class="text-indigo-800 font-bold text-sm mb-3">💬 Ask them</p>
-      {{range .Icebreakers}}
-      <p class="text-gray-800 text-sm mb-2" data-md>→ {{.}}</p>
-      {{end}}
-    </div>
-    {{end}}
-
-    {{/* Others at the event */}}
-    {{if .Others}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mt-4" style="animation-delay:0.45s">
-      <p class="text-gray-700 font-bold text-sm mb-3">👥 Others at the event</p>
-      <div class="grid grid-cols-3 gap-3">
-        {{range .Others}}
-        <a href="/user/explore/{{$.Me.ID}}/{{.ID}}" class="flex flex-col items-center text-center hover:opacity-75 active:scale-95 transition-all">
-          <div class="w-12 h-12 rounded-xl {{.PersonaColor}} flex items-center justify-center text-xl mb-1 shadow-sm">{{.PersonaSymbol}}</div>
-          <p class="text-xs font-bold leading-tight text-gray-900">{{if .PersonaName}}{{.PersonaName}}{{else}}{{.DisplayHandle}}{{end}}</p>
-          <p class="text-gray-600 text-xs">{{.DisplayHandle}}</p>
-        </a>
-        {{end}}
-      </div>
-    </div>
-    {{end}}
+    {{/* Dossier — locked until the pair's Meeting completes, refreshed when
+         the match stream says so */}}
+    {{template "fragment-dossier.html" .Dossier}}
 
     {{/* QR code */}}
     <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
@@ -124,8 +79,9 @@
 
     {{else}}
     <div class="text-center text-gray-700 py-12">
-      <p>Hmm, we couldn't find your match yet.</p>
-      <p class="text-sm mt-2">Refresh in a moment.</p>
+      <p class="text-4xl mb-3">🤷</p>
+      <p class="font-bold text-gray-900">You don't have a match (yet)</p>
+      <p class="text-sm mt-2">Hang tight — you can still meet people below.</p>
     </div>
     {{end}}
 
@@ -154,7 +110,11 @@
     document.addEventListener('DOMContentLoaded', renderMeetQr);
     document.addEventListener('htmx:afterSwap', renderMeetQr);
     const _mes = new EventSource('/user/match-stream/{{.Me.ID}}');
-    _mes.addEventListener('refresh', () => htmx.trigger('#meet-status', 'refresh'));
+    _mes.addEventListener('refresh', () => {
+      htmx.trigger('#meet-status', 'refresh');
+      const dossier = document.getElementById('dossier');
+      if (dossier) htmx.trigger(dossier, 'refresh');
+    });
     _mes.onerror = () => _mes.close();
   </script>
 </body>

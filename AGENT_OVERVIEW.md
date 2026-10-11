@@ -64,9 +64,9 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 1. **Landing** (`/user`) → Enter name + GitHub handle
 2. **Onboarding** (`/user/onboard/{id}`) → Async AI pipeline runs in background
 3. **Interview** → Answer 8 questions (5 fixed + 3 custom) via HTMX forms
-4. **Waiting Room** (`/user/wait/{id}`) → See persona, profile summary, poll for reveal
-5. **Match Reveal** (`/user/match/{id}`) → See partner, score, flags, icebreakers
-6. **Social** (`/user/match/{id}` or `/user/wait/{id}`) → Meet people: your meet code + QR and "I met someone" during the social/show & tell; two-sided confirm completes a meeting
+4. **Waiting Room** (`/user/wait/{id}`) → See persona, profile summary, and a teaser of your future match (their emoji + colour + a disagreement hint)
+5. **Match Reveal** (`/user/match/{id}`) → See your match's persona card (no handle) and score; the dossier (reason, flags, icebreakers) stays locked until you meet
+6. **Social** (`/user/match/{id}` or `/user/wait/{id}`) → Meet people: your meet code + QR and "I met someone" during the social/show & tell; two-sided confirm completes a meeting and unlocks your dossier via push
 
 ### Admin Actions
 - **Advance Phase** (`POST /admin/phase`) → Moves the event forward: `social` (the Big Reveal), `showtell`, `closed`
@@ -134,7 +134,8 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/user/answer/{id}` | Store answer, next question |
 | GET | `/user/wait/{id}` | Waiting room |
 | GET | `/user/wait-status/{id}` | HTMX fragment (polled 3s) |
-| GET | `/user/match/{id}` | Match results |
+| GET | `/user/match/{id}` | Match reveal: persona card + locked dossier |
+| GET | `/user/dossier/{id}` | HTMX fragment: the dossier (locked until the pair's meeting completes) |
 | GET | `/user/match-stream/{id}` | SSE stream for the match page |
 | GET | `/user/m/{id}` | Meet page (target's persona card + confirm) |
 | POST | `/user/met/{id}` | Confirm a meeting (confirmer's id; target via `code` form value) |
@@ -253,8 +254,8 @@ agentic_blind_date/
 └── templates/
     ├── landing.html      # Registration form
     ├── onboard.html      # Pipeline progress container
-    ├── wait.html         # Waiting room with persona preview
-    ├── match.html        # Match results with flags/icebreakers
+    ├── wait.html         # Waiting room with persona preview and match teaser
+    ├── match.html        # Match reveal: persona card + locked dossier (unlocks on meeting)
     ├── screen.html       # D3.js big screen visualization
     ├── admin.html        # Host controls
     ├── data.html         # Debug dashboard

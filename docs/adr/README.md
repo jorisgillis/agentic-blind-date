@@ -30,6 +30,7 @@ Each ADR follows this structure:
 | [0009](0009-self-hosted-front-end-assets.md) | Self-Hosted Front-End Assets and In-Browser Tailwind v4 | Accepted | 2026-09-24 |
 | [0010](0010-event-phase-machine.md) | Event Phase Machine | Accepted | 2026-10-10 |
 | [0011](0011-meeting-handshake.md) | Meeting Confirmation Handshake | Accepted | 2026-10-10 |
+| [0012](0012-reveal-ceremony-and-locked-dossier.md) | The Reveal Ceremony and the Locked Dossier | Accepted | 2026-10-10 |
 
 ## When to Create an ADR
 

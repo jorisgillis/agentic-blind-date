@@ -16,8 +16,8 @@ func TestReveal_MatchedParticipantWaitsForTheReveal(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("wait page before the Reveal: want 200, got %d (%s)", resp.StatusCode, resp.Header.Get("Location"))
 	}
-	if body := readBody(t, resp); !strings.Contains(body, "waiting for the Reveal") {
-		t.Errorf("wait page should say the Match is waiting for the Reveal")
+	if body := readBody(t, resp); !strings.Contains(body, "reveal at the break") {
+		t.Errorf("wait page should tease the Reveal")
 	}
 	if loc := get(t, srv, "/user/match/a").Header.Get("Location"); loc != "/user/wait/a" {
 		t.Errorf("match page before the Reveal: want redirect to wait, got %q", loc)
