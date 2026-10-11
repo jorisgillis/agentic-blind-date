@@ -1055,6 +1055,30 @@ func TestShowTellQueueSignature(t *testing.T) {
 	}
 }
 
+// TestShowTellFragments_ExplainTheirActions covers #131: the host console's
+// queue and question fragments say what their buttons do — the host should
+// never have to guess what "Reveal identity" or "Ask" does.
+func TestShowTellFragments_ExplainTheirActions(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "A", "ready")
+	if err := deps.events.Advance(PhaseShowTell); err != nil {
+		t.Fatal(err)
+	}
+
+	queue := readBody(t, get(t, srv, "/admin/showtell-queue"))
+	for _, want := range []string{"On stage puts the talk up", "Reveal identity flips the presenter's card", "Done ends the talk"} {
+		if !strings.Contains(queue, want) {
+			t.Errorf("the queue fragment should explain %q, got: %s", want, queue)
+		}
+	}
+	questions := readBody(t, get(t, srv, "/admin/showtell-questions"))
+	for _, want := range []string{"Ask puts the question on the big screen", "Answered marks it done", "Dismiss drops it"} {
+		if !strings.Contains(questions, want) {
+			t.Errorf("the questions fragment should explain %q, got: %s", want, questions)
+		}
+	}
+}
+
 // TestShowTellFlow_SignUpQueueOnStageIdentityReveal is the acceptance flow
 // end to end, through the routes: sign-up → host queue (reorder/remove) → on
 // stage → identity reveal.
