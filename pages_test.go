@@ -78,6 +78,40 @@ func TestLanding_UnknownCookieIsClearedAndTheFormShown(t *testing.T) {
 	}
 }
 
+func TestLanding_RendersTheAnimatedWalkthrough(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	body := readBody(t, get(t, srv, "/user"))
+
+	// The walkthrough: the heading, all six steps, one scene per step, and the
+	// reduced-motion static fallback.
+	for _, want := range []string{
+		"How the evening flows",
+		"1 · Join", "2 · Interview", "3 · Match",
+		"4 · Social", "5 · Show &amp; tell", "6 · Recap",
+		"prefers-reduced-motion",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page: want %q in the walkthrough", want)
+		}
+	}
+	if n := strings.Count(body, `class="lw-scene"`); n != 6 {
+		t.Errorf("want 6 walkthrough scenes, got %d", n)
+	}
+
+	// The join form stays immediately usable, and no prototype chrome ships.
+	for _, want := range []string{`id="joinForm"`, `action="/user/join"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page: want %q", want)
+		}
+	}
+	for _, unwanted := range []string{"lw-switcher", "PROTOTYPE", "variant="} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("landing page: prototype chrome %q must not ship", unwanted)
+		}
+	}
+}
+
 func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal() // after the Reveal, matched Participants see their Match
