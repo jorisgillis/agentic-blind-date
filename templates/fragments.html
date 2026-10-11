@@ -144,6 +144,112 @@
 {{end}}
 
 
+{{/* The personal page's meet section — refreshed when the page's stream says so */}}
+{{define "fragment-meet-status.html"}}
+<div
+  id="meet-status"
+  hx-get="/user/meet-status/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="space-y-4"
+>
+  {{if .Allowed}}
+
+  {{/* Your meet code + meet-link QR */}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide mb-2">🤝 Your meet code</p>
+    <p class="font-mono text-3xl font-black tracking-widest text-gray-900">{{.Me.MeetCode}}</p>
+    <img id="meet-qr" data-meet="/user/m/{{.Me.ID}}" alt="Your meet link QR code" class="mx-auto rounded-lg mt-3 shadow-sm" width="150" height="150" />
+    <p class="text-gray-600 text-xs mt-2">Show this QR — the camera opens your meet page — or share your code.</p>
+  </div>
+
+  {{/* I met someone */}}
+  <form
+    hx-post="/user/met/{{.Me.ID}}"
+    hx-target="#meet-result"
+    hx-swap="outerHTML"
+    class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3"
+  >
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">I met someone</p>
+    <div class="flex gap-2">
+      <input
+        type="text"
+        name="code"
+        maxlength="6"
+        placeholder="Their code"
+        class="flex-1 bg-white/60 border border-black/10 rounded-xl px-4 py-3 text-sm font-mono uppercase tracking-widest text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <button
+        type="submit"
+        class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-4 py-3 text-sm transition-colors"
+      >
+        Meet
+      </button>
+    </div>
+    <p class="text-gray-600 text-xs">Scan their QR with your camera, or type their 6-character code.</p>
+  </form>
+  <div id="meet-result"></div>
+
+  {{/* Your meetings */}}
+  {{if .Meetings}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">Your meetings</p>
+    {{range .Meetings}}
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl {{.Other.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Other.PersonaSymbol}}</div>
+        <div>
+          <p class="font-bold text-sm text-gray-900">{{.Other.PersonaName}}</p>
+          <p class="text-xs text-gray-700">
+            {{if eq .Status "completed"}}🎉 You met!
+            {{else if eq .Status "pending"}}⏳ Pending — waiting for them to confirm
+            {{else}}They confirmed — confirm back!{{end}}
+          </p>
+        </div>
+      </div>
+      {{if eq .Status "awaiting"}}
+      <form hx-post="/user/met/{{$.Me.ID}}" hx-target="#meet-result" hx-swap="outerHTML">
+        <input type="hidden" name="code" value="{{.Other.MeetCode}}" />
+        <button
+          type="submit"
+          class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-3 py-2 text-xs transition-colors"
+        >
+          Confirm
+        </button>
+      </form>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  <p class="text-center text-gray-700 text-sm">❤️ {{.Connections}} connection{{if gt .Connections 1}}s{{end}}</p>
+
+  {{end}}
+</div>
+{{end}}
+
+
+{{/* The result of a meeting confirmation — swapped into the meet section or the meet page */}}
+{{define "fragment-meet-result.html"}}
+<div id="meet-result" class="bg-black/15 border border-black/10 rounded-2xl p-5">
+  <div class="flex items-center gap-3">
+    <div class="w-12 h-12 rounded-xl {{.Target.PersonaColor}} flex items-center justify-center text-xl flex-shrink-0 shadow-sm">{{.Target.PersonaSymbol}}</div>
+    <div>
+      <p class="font-bold text-gray-900">You found {{.Target.PersonaSymbol}} {{.Target.PersonaName}}!</p>
+      {{if .Already}}
+      <p class="text-sm text-gray-700">You already met {{.Target.PersonaSymbol}}!</p>
+      {{else if .Completed}}
+      <p class="text-sm text-gray-700">🎉 You both met — {{.Target.PersonaName}} confirmed too!</p>
+      {{else}}
+      <p class="text-sm text-gray-700">⏳ Recorded — {{.Target.PersonaName}} still has to confirm.</p>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
+
 {{/* Wait page status — refreshed when the wait stream says so */}}
 {{define "fragment-wait-status.html"}}
 {{$p := .Participant}}

@@ -73,6 +73,15 @@ func (s *ParticipantStore) GetByHandle(handle string) (*Participant, error) {
 	return p, nil
 }
 
+// GetByMeetCode reads one Participant by their meet code.
+func (s *ParticipantStore) GetByMeetCode(code string) (*Participant, error) {
+	p, err := s.db.GetParticipantByMeetCode(code)
+	if err != nil {
+		return nil, notFoundOr(err, code)
+	}
+	return p, nil
+}
+
 // Create registers a new Participant, picking a Persona colour and symbol
 // not yet overused.
 func (s *ParticipantStore) Create(id, handle, name string, hasGitHub bool) error {

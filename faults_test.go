@@ -9,11 +9,13 @@ import (
 // two read tags, a temporary view — that make the targeted write or read
 // fail inside the database itself, so production code needs no hooks.
 //
-// Tags name what a write (or, for "persona_lookup" and "activity_read", a
-// read) is, not which SQL column it touches: "create", "persona_lookup",
-// "delete", "interests", "persona", "profile", "answers", "pipeline_step",
-// "start_interview", "pair", "unpair", "activity_read", "reset_participants",
-// "reset_activity" and "reset_event_state". Each tag maps to exactly the
+// Tags name what a write (or, for "persona_lookup", "activity_read" and
+// "meet_backfill_read", a read) is, not which SQL column it touches: "create",
+// "persona_lookup", "delete", "interests", "persona", "profile", "answers",
+// "pipeline_step", "start_interview", "pair", "unpair", "activity_read",
+// "meet_code", "meet_insert", "meet_update", "meet_complete", "meet_delete",
+// "meet_backfill_read", "meet_read", "reset_participants", "reset_activity",
+// "reset_event_state" and "reset_meetings". Each tag maps to exactly the
 // write it names, so a test can fail one write and leave the others alone.
 
 // failWrites makes writes fail until the returned function is called (or
@@ -103,9 +105,15 @@ func writeFaults(message string) map[string][2]string {
 		"start_interview":    trigger("start_interview", "UPDATE", "participants", "NEW.questions <> OLD.questions OR NEW.profile_json <> OLD.profile_json"),
 		"pair":               trigger("pair", "UPDATE OF matched_with", "participants", "NEW.matched_with <> ''"),
 		"unpair":             trigger("unpair", "UPDATE OF matched_with", "participants", "NEW.matched_with = ''"),
+		"meet_code":          trigger("meet_code", "UPDATE", "participants", "NEW.meet_code IS NOT OLD.meet_code"),
+		"meet_insert":        trigger("meet_insert", "INSERT", "meetings", ""),
+		"meet_update":        trigger("meet_update", "UPDATE", "meetings", "NEW.a_confirmed_at IS NOT OLD.a_confirmed_at OR NEW.b_confirmed_at IS NOT OLD.b_confirmed_at"),
+		"meet_complete":      trigger("meet_complete", "UPDATE", "meetings", "NEW.completed_at IS NOT OLD.completed_at"),
+		"meet_delete":        trigger("meet_delete", "DELETE", "meetings", ""),
 		"reset_participants": trigger("reset_participants", "DELETE", "participants", ""),
 		"reset_activity":     trigger("reset_activity", "DELETE", "activity_log", ""),
 		"reset_event_state":  trigger("reset_event_state", "INSERT", "event_state", ""),
+		"reset_meetings":     trigger("reset_meetings", "DELETE", "meetings", ""),
 		"persona_lookup": {
 			`CREATE TEMP VIEW participants AS SELECT json(persona_color) AS persona_color, persona_symbol FROM main.participants`,
 			`DROP VIEW IF EXISTS temp.participants`,
@@ -114,6 +122,29 @@ func writeFaults(message string) map[string][2]string {
 			`CREATE TEMP VIEW activity_log AS SELECT json(message) AS message, created_at FROM main.activity_log`,
 			`DROP VIEW IF EXISTS temp.activity_log`,
 		},
+		"meet_backfill_read": {
+			`CREATE TEMP VIEW participants AS SELECT id, json(name) AS meet_code FROM main.participants`,
+			`DROP VIEW IF EXISTS temp.participants`,
+		},
+		// The view keeps the key columns, so the pair's WHERE clause still
+		// matches, but NULLs a scanned column, so scanning the row fails.
+		"meet_read": {
+			`CREATE TEMP VIEW meetings AS SELECT participant_a, participant_b, a_confirmed_at, b_confirmed_at, completed_at, NULL AS origin, NULL AS created_at FROM main.meetings`,
+			`DROP VIEW IF EXISTS temp.meetings`,
+		},
+	}
+}
+
+// persistMeetCodeFault installs a trigger that fails meet-code writes and
+// leaves it installed — unlike installFault's triggers, which a reopen would
+// not see (temp views do not survive a new connection, and installFault drops
+// its triggers at cleanup). The backfill runs inside NewDB, on a fresh
+// connection, so its failure has to come from a persistent trigger.
+func persistMeetCodeFault(t *testing.T, db *DB) {
+	t.Helper()
+	_, err := db.db.Exec(`CREATE TRIGGER fault_meet_code BEFORE UPDATE ON participants WHEN NEW.meet_code IS NOT OLD.meet_code BEGIN SELECT RAISE(ABORT, 'injected write failure'); END`)
+	if err != nil {
+		t.Fatalf("installing fault: %v", err)
 	}
 }
 
@@ -134,6 +165,9 @@ func allWriteFaults(message string) [][2]string {
 		trigger("fault_insert_event_state", "INSERT", "event_state"),
 		trigger("fault_insert_cache", "INSERT", "llm_cache"),
 		trigger("fault_delete_cache", "DELETE", "llm_cache"),
+		trigger("fault_insert_meetings", "INSERT", "meetings"),
+		trigger("fault_update_meetings", "UPDATE", "meetings"),
+		trigger("fault_delete_meetings", "DELETE", "meetings"),
 	}
 }
 

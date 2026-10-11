@@ -72,6 +72,7 @@ type Handler struct {
 	db          *DB
 	store       *ParticipantStore
 	events      *EventStore
+	meetings    *Meetings
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -102,8 +103,9 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		"textColor": paletteText,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
+	events := NewEventStore(db)
 	return &Handler{
-		db: db, store: NewParticipantStore(db), events: NewEventStore(db),
+		db: db, store: NewParticipantStore(db), events: events, meetings: NewMeetings(db, events),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
 	}
@@ -274,6 +276,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		"Profile":     profile,
 		"QAPairs":     qaPairs,
 		"Count":       h.db.ReadyCount(),
+		"MeetStatus":  h.meetStatusData(p),
 	})
 }
 
@@ -331,6 +334,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		"GreenFlags":  result.GreenFlags,
 		"Icebreakers": result.Icebreakers,
 		"Others":      others,
+		"MeetStatus":  h.meetStatusData(p),
 	})
 }
 
@@ -374,6 +378,174 @@ func (h *Handler) Explore(w http.ResponseWriter, r *http.Request) {
 		"RedFlags":    result.RedFlags,
 		"Icebreakers": result.Icebreakers,
 	})
+}
+
+// ── meetings: the confirm handshake ────────────────────────────────────────
+
+// GET /user/m/{id} — the meet page: the target's persona card and the confirm
+// button. With ?me={code} the confirmer is resolved from their own meet code
+// and the participant cookie is set — the same trust level as the code-based
+// confirm itself.
+func (h *Handler) Meet(w http.ResponseWriter, r *http.Request) {
+	target, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if code := normalizeMeetCode(r.URL.Query().Get("me")); code != "" {
+		me, err := h.store.GetByMeetCode(code)
+		if err != nil {
+			http.Error(w, "Hmm, that meet code doesn't belong to anyone at this event.", 400)
+			return
+		}
+		setParticipantCookie(w, me.ID)
+		http.Redirect(w, r, "/user/m/"+target.ID, http.StatusSeeOther)
+		return
+	}
+
+	var me *Participant
+	if c, err := r.Cookie(cookieName); err == nil {
+		if p, err := h.store.Get(c.Value); err == nil {
+			me = p
+		}
+	}
+	allowed := h.events.State().AllowsMeetings()
+
+	var already, completed bool
+	if me != nil && me.ID != target.ID {
+		if m, err := h.meetings.Between(me.ID, target.ID); err == nil && m != nil {
+			already = m.ConfirmedBy(me.ID)
+			completed = m.Completed()
+		}
+	}
+
+	h.render(w, "meet.html", map[string]any{
+		"Target":    target,
+		"Me":        me,
+		"Allowed":   allowed,
+		"Already":   already,
+		"Completed": completed,
+	})
+}
+
+// POST /user/met/{id} — confirm the meeting with the target named by the
+// "code" form value. {id} is the confirmer's own id; the confirmer is
+// identified by the participant cookie.
+func (h *Handler) ConfirmMeeting(w http.ResponseWriter, r *http.Request) {
+	confirmerID := r.PathValue("id")
+	target, err := h.store.GetByMeetCode(normalizeMeetCode(r.FormValue("code")))
+	if err != nil {
+		http.Error(w, "Hmm, that meet code doesn't belong to anyone at this event.", 400)
+		return
+	}
+	confirmer, err := h.store.Get(confirmerID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if c, err := r.Cookie(cookieName); err != nil || c.Value != confirmerID {
+		http.Error(w, "We don't know who you are — open your meet page and enter your meet code.", 400)
+		return
+	}
+	meeting, already, err := h.meetings.Confirm(confirmer, target, OriginOther)
+	switch {
+	case errors.Is(err, ErrSelfMeeting):
+		http.Error(w, "You can't meet yourself — go find someone else!", 400)
+	case errors.Is(err, ErrMeetingsClosed):
+		http.Error(w, "Meeting confirmation is only open during the social and show & tell.", 400)
+	case err != nil:
+		http.Error(w, "confirming the meeting failed: "+err.Error(), 500)
+	default:
+		h.render(w, "fragment-meet-result.html", map[string]any{
+			"Target":    target,
+			"Already":   already,
+			"Completed": meeting.Completed(),
+		})
+	}
+}
+
+// GET /user/meet-status/{id} — HTMX, the personal page's meet section,
+// refreshed when the page's stream says so.
+func (h *Handler) MeetStatus(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	h.render(w, "fragment-meet-status.html", h.meetStatusData(p))
+}
+
+// meetStatusData is the personal page's meet section: the Participant's meet
+// code and meet-link QR, the "I met someone" entry point and their meetings —
+// phase-gated to the social and show & tell.
+func (h *Handler) meetStatusData(p *Participant) map[string]any {
+	type meetingView struct {
+		Other  *Participant
+		Status MeetingStatus
+	}
+	var meetings []meetingView
+	if h.events.State().AllowsMeetings() {
+		ms, _ := h.meetings.ForParticipant(p.ID)
+		for _, m := range ms {
+			other, err := h.store.Get(m.Other(p.ID))
+			if err != nil {
+				continue // the other side left the event; the row is debug-only
+			}
+			meetings = append(meetings, meetingView{Other: other, Status: m.StatusFor(p.ID)})
+		}
+	}
+	return map[string]any{
+		"Me":          p,
+		"Allowed":     h.events.State().AllowsMeetings(),
+		"Meetings":    meetings,
+		"Connections": h.meetings.Connections(p.ID),
+	}
+}
+
+// GET /user/match-stream/{id}
+// Tells the match page to refresh its meet section when the Participant's
+// meetings or the phase change.
+func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	first, err := h.store.Get(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !sseHeaders(w) {
+		return
+	}
+	last := h.meetSignature(first)
+	h.watch(w, r, func() bool {
+		p, err := h.store.Get(id)
+		if err != nil {
+			return true
+		}
+		if now := h.meetSignature(p); now != last {
+			last = now
+			sseEvent(w, "refresh")
+		}
+		return false
+	})
+}
+
+// meetSignature is what the meet streams watch: the phase and the
+// Participant's meetings (their count and how many are completed).
+type meetSignature struct {
+	phase     Phase
+	meetings  int
+	completed int
+}
+
+func (h *Handler) meetSignature(p *Participant) meetSignature {
+	ms, _ := h.meetings.ForParticipant(p.ID)
+	completed := 0
+	for _, m := range ms {
+		if m.Completed() {
+			completed++
+		}
+	}
+	return meetSignature{h.events.State(), len(ms), completed}
 }
 
 // ── /bigscreen ─────────────────────────────────────────────────────────────
@@ -542,6 +714,16 @@ func (h *Handler) DataState(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GET /data/meetings
+func (h *Handler) DataMeetings(w http.ResponseWriter, r *http.Request) {
+	meetings, err := h.meetings.All()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, meetings)
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
@@ -626,6 +808,10 @@ func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	} else if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := h.meetings.RemoveParticipant(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -717,7 +903,8 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 
 // GET /user/wait-stream/{id}
 // Tells the wait page to refresh when what it shows changes (the ready count,
-// being matched) and redirects once the Participant belongs elsewhere.
+// being matched, the meet section) and redirects once the Participant belongs
+// elsewhere.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -731,8 +918,9 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	type shown struct {
 		ready   int
 		matched bool
+		meet    meetSignature
 	}
-	last := shown{h.db.ReadyCount(), first.IsMatched()}
+	last := shown{h.db.ReadyCount(), first.IsMatched(), h.meetSignature(first)}
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
@@ -742,7 +930,7 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 			sseRedirect(w, dest)
 			return true
 		}
-		if now := (shown{h.db.ReadyCount(), p.IsMatched()}); now != last {
+		if now := (shown{h.db.ReadyCount(), p.IsMatched(), h.meetSignature(p)}); now != last {
 			last = now
 			sseEvent(w, "refresh")
 		}

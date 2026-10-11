@@ -133,6 +133,10 @@ func (p Phase) IsSocial() bool     { return p == PhaseSocial }
 func (p Phase) IsShowTell() bool   { return p == PhaseShowTell }
 func (p Phase) IsClosed() bool     { return p == PhaseClosed }
 
+// AllowsMeetings reports whether meeting confirmation is open: during the
+// social and show & tell phases, and not before them or once closed.
+func (p Phase) AllowsMeetings() bool { return p == PhaseSocial || p == PhaseShowTell }
+
 // EventStore owns the event_state table: the Phase is read by every page
 // that hides or shows Matches, and changed only by the host advancing the
 // event and by a Reset. It announces every phase change on DB's change feed
@@ -186,10 +190,14 @@ func (s *EventStore) set(phase Phase) error {
 	return err
 }
 
-// Reset starts the event over: no Participants, no activity, and back to
-// onboarding — one transaction, so a failure leaves everything as it was.
+// Reset starts the event over: no Participants, no meetings, no activity, and
+// back to onboarding — one transaction, so a failure leaves everything as it
+// was. Meetings expire silently: no message, no nag.
 func (s *EventStore) Reset() error {
 	return s.db.inTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM meetings`); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`DELETE FROM participants`); err != nil {
 			return err
 		}

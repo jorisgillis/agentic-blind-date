@@ -93,6 +93,10 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
 	mux.HandleFunc("GET /user/match/{id}", h.Match)
 	mux.HandleFunc("GET /user/explore/{myId}/{otherId}", h.Explore)
+	mux.HandleFunc("GET /user/m/{id}", h.Meet)
+	mux.HandleFunc("POST /user/met/{id}", h.ConfirmMeeting)
+	mux.HandleFunc("GET /user/meet-status/{id}", h.MeetStatus)
+	mux.HandleFunc("GET /user/match-stream/{id}", h.MatchStream)
 
 	mux.HandleFunc("GET /bigscreen", h.Screen)
 	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
@@ -107,6 +111,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("DELETE /data/participant/{id}", h.DeleteParticipant)
 	mux.HandleFunc("GET /data/activity", h.DataActivity)
 	mux.HandleFunc("GET /data/state", h.DataState)
+	mux.HandleFunc("GET /data/meetings", h.DataMeetings)
 
 	mux.HandleFunc("GET /admin", h.Admin)
 	mux.HandleFunc("POST /admin/phase", h.AdvancePhase)

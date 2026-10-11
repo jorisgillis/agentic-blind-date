@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Blind Date — Your Match!</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     @keyframes pop-in {
@@ -128,6 +129,9 @@
     </div>
     {{end}}
 
+    {{/* Meet section — phase-gated, refreshed when the match stream says so */}}
+    {{template "fragment-meet-status.html" .MeetStatus}}
+
   </div>
 </div>
   <script>
@@ -141,6 +145,17 @@
     if (qr) {
       qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.href);
     }
+    function renderMeetQr() {
+      const el = document.getElementById('meet-qr');
+      if (el) {
+        el.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.origin + el.dataset.meet);
+      }
+    }
+    document.addEventListener('DOMContentLoaded', renderMeetQr);
+    document.addEventListener('htmx:afterSwap', renderMeetQr);
+    const _mes = new EventSource('/user/match-stream/{{.Me.ID}}');
+    _mes.addEventListener('refresh', () => htmx.trigger('#meet-status', 'refresh'));
+    _mes.onerror = () => _mes.close();
   </script>
 </body>
 </html>

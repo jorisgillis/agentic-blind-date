@@ -193,6 +193,18 @@ The matching status of a participant:
 
 Note: Relationship state is independent of pipeline state. A participant can be `ready` (pipeline) and `matched` or `unmatched` (relationship).
 
+### Meet Code
+A 6-character code a participant shows (as text or QR) so someone else can confirm meeting them. Drawn from an unambiguous alphabet (no `0/O/1/I`), derived deterministically from the participant's id, unique; a collision re-derives deterministically with a salt. Assigned at registration; existing participants are backfilled at startup.
+
+### Meet Link
+`{base}/user/m/{id}` — the participant's meet page, rendered as a QR on their personal page. Opening it shows the target's persona card and a confirm button.
+
+### Meeting
+A confirmed physical meeting between two participants. Stored as one canonical row per pair (`participant_a` = lexicographically lower id), with each side's confirmation tracked separately (`a_confirmed_at` / `b_confirmed_at`) and `completed_at` set when both sides have confirmed. Confirmation is a two-sided handshake, open only during the Social and Show & Tell phases; a one-sided confirmation is pending and expires silently on Reset. The meeting's **Origin** (`match` / `mission` / `other`) is tagged automatically at creation from the initiator's perspective (match is symmetric; mission is not). Meeting anyone counts, not only mission tiles.
+
+### Connection
+A participant's count of completed meetings — one connection per completed meeting. Derived from the meetings table, never stored.
+
 ## Subdomains
 
 ### Onboarding Subdomain
@@ -242,3 +254,6 @@ The **Relationship module** owns Relationship State and enforces the Key Invaria
 | Score | Numeric compatibility rating (0-100) |
 | Pair | Two participants being evaluated for matching |
 | Pool | Collection of ready, unmatched participants available for matching |
+| Meet code | A participant's 6-character code for confirming a physical meeting |
+| Meeting | A physical meeting between two participants, completed when both sides confirm |
+| Connection | One completed meeting, counted per participant (derived, never stored) |

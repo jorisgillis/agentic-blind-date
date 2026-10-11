@@ -66,6 +66,7 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 3. **Interview** → Answer 8 questions (5 fixed + 3 custom) via HTMX forms
 4. **Waiting Room** (`/user/wait/{id}`) → See persona, profile summary, poll for reveal
 5. **Match Reveal** (`/user/match/{id}`) → See partner, score, flags, icebreakers
+6. **Social** (`/user/match/{id}` or `/user/wait/{id}`) → Meet people: your meet code + QR and "I met someone" during the social/show & tell; two-sided confirm completes a meeting
 
 ### Admin Actions
 - **Advance Phase** (`POST /admin/phase`) → Moves the event forward: `social` (the Big Reveal), `showtell`, `closed`
@@ -134,12 +135,17 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | GET | `/user/wait/{id}` | Waiting room |
 | GET | `/user/wait-status/{id}` | HTMX fragment (polled 3s) |
 | GET | `/user/match/{id}` | Match results |
+| GET | `/user/match-stream/{id}` | SSE stream for the match page |
+| GET | `/user/m/{id}` | Meet page (target's persona card + confirm) |
+| POST | `/user/met/{id}` | Confirm a meeting (confirmer's id; target via `code` form value) |
+| GET | `/user/meet-status/{id}` | HTMX fragment: meet section (code, QR, "I met someone") |
 | GET | `/bigscreen` | Projector view with D3 graph |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel (phase, counts, transition buttons) |
 | POST | `/admin/phase` | Advance the event to a later phase |
 | POST | `/admin/reveal` | Reveal matches (alias for the social phase) |
 | POST | `/admin/reset` | Clear all data |
+| GET | `/data/meetings` | Debug: meetings (JSON) |
 | GET | `/data/*` | Debug endpoints (JSON) |
 
 ---
@@ -153,12 +159,20 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 id, github_handle, name, persona_name, persona_color, persona_symbol,
 persona_tagline, profile_json, custom_questions, answers_json,
 pipeline_step, matched_with, compat_score, compat_reason,
-red_flags, green_flags, icebreakers, created_at
+red_flags, green_flags, icebreakers, created_at, meet_code
 ```
 
 **event_state:**
 ```sql
 key ('phase'), value ('onboarding' | 'social' | 'showtell' | 'closed')
+```
+
+**meetings:**
+```sql
+participant_a, participant_b, a_confirmed_at, b_confirmed_at,
+completed_at, origin ('match' | 'mission' | 'other'), created_at
+-- PRIMARY KEY (participant_a, participant_b); participant_a is the
+-- lexicographically lower id, one canonical row per pair
 ```
 
 **activity_log:**

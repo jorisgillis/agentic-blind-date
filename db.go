@@ -32,6 +32,9 @@ type Participant struct {
 	// the same codec as the LLM cache (decodeMatchResult).
 	Assessment *matchResult
 	CreatedAt  time.Time
+	// MeetCode is the Participant's 6-character meet code (see meetcode.go);
+	// assigned at registration and backfilled for existing Participants.
+	MeetCode string
 }
 
 // DisplayHandle is how the Participant is identified on screen: "@handle" for
@@ -84,7 +87,8 @@ func NewDB(path string) (*DB, error) {
 			red_flags        TEXT NOT NULL DEFAULT '[]',
 			green_flags      TEXT NOT NULL DEFAULT '[]',
 			icebreakers      TEXT NOT NULL DEFAULT '[]',
-			created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			meet_code        TEXT
 		);
 
 		CREATE TABLE IF NOT EXISTS event_state (
@@ -108,6 +112,17 @@ func NewDB(path string) (*DB, error) {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
+		CREATE TABLE IF NOT EXISTS meetings (
+			participant_a  TEXT NOT NULL,
+			participant_b  TEXT NOT NULL,
+			a_confirmed_at DATETIME,
+			b_confirmed_at DATETIME,
+			completed_at   DATETIME,
+			origin         TEXT NOT NULL DEFAULT 'other',
+			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (participant_a, participant_b)
+		);
+
 	`)
 	if err != nil {
 		return nil, err
@@ -125,16 +140,29 @@ func NewDB(path string) (*DB, error) {
 		`ALTER TABLE participants DROP COLUMN extra_answers`,                              // ExtraAnswers live in profile_json
 		`UPDATE participants SET pipeline_step = 'ready' WHERE pipeline_step = 'matched'`, // Relationship State is not a Pipeline Step
 		`UPDATE event_state SET value = 'social' WHERE value = 'revealed'`,                // the Reveal became the Social phase
+		`ALTER TABLE participants ADD COLUMN meet_code TEXT`,                              // meet codes, backfilled below
 	} {
 		sqlDB.Exec(m)
 	}
+
+	// Meet codes are unique. The index is created after the migrations, so
+	// databases that gained the column through them are covered too.
+	if _, err := sqlDB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_meet_code ON participants (meet_code)`); err != nil {
+		return nil, err
+	}
+
 	// One-time backfill when has_github is introduced: until then, Non-GitHub
 	// Users could only be recognised by their generated handle.
 	if _, err := sqlDB.Exec(`ALTER TABLE participants ADD COLUMN has_github INTEGER NOT NULL DEFAULT 1`); err == nil {
 		sqlDB.Exec(`UPDATE participants SET has_github = 0 WHERE github_handle LIKE 'no-github-%'`)
 	}
 
-	return &DB{db: sqlDB, changes: newChangeFeed()}, nil
+	db := &DB{db: sqlDB, changes: newChangeFeed()}
+	// Participants who registered before meet codes existed get them backfilled.
+	if err := backfillMeetCodes(db); err != nil {
+		log.Printf("meet code backfill: %v", err)
+	}
+	return db, nil
 }
 
 func (db *DB) Close() error {
@@ -156,7 +184,7 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 		&profileJSON, &questionsJSON, &answersJSON, &interestsJSON,
 		&p.PipelineStep,
 		&p.MatchedWith, &compatScore, &compatReason,
-		&redFlags, &greenFlags, &icebreakers, &p.CreatedAt,
+		&redFlags, &greenFlags, &icebreakers, &p.CreatedAt, &p.MeetCode,
 	)
 	if err != nil {
 		return nil, err
@@ -202,7 +230,7 @@ const selectParticipant = `
 	       persona_name, persona_color, persona_symbol, persona_tagline,
 	       profile_json, questions, answers_json, interests, pipeline_step,
 	       COALESCE(matched_with, ''), compat_score, compat_reason,
-	       red_flags, green_flags, icebreakers, created_at
+	       red_flags, green_flags, icebreakers, created_at, COALESCE(meet_code, '')
 	FROM participants`
 
 func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
@@ -229,6 +257,11 @@ func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
 			`INSERT INTO participants (id, github_handle, has_github, name, persona_color, persona_symbol, questions, interests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			id, handle, hasGitHub, name, color, symbol, "[]", "{}",
 		)
+		if err != nil {
+			return err
+		}
+		// Every Participant gets a meet code at registration.
+		_, err = ensureMeetCode(tx, id)
 		return err
 	})
 }
@@ -264,6 +297,12 @@ func (db *DB) GetParticipant(id string) (*Participant, error) {
 
 func (db *DB) GetParticipantByHandle(handle string) (*Participant, error) {
 	row := db.db.QueryRow(selectParticipant+` WHERE github_handle = ?`, handle)
+	return scanParticipant(row)
+}
+
+// GetParticipantByMeetCode reads one Participant by their meet code.
+func (db *DB) GetParticipantByMeetCode(code string) (*Participant, error) {
+	row := db.db.QueryRow(selectParticipant+` WHERE meet_code = ?`, code)
 	return scanParticipant(row)
 }
 
