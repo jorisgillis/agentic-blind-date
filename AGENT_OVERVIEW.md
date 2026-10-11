@@ -144,9 +144,10 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | GET | `/user/settings/{id}` | HTMX fragment: contact-details settings section (channels off by default, github pre-filled) |
 | POST | `/user/settings/{id}` | Save the contact channels (entered once) |
 | GET | `/user/recap-link/{id}` | HTMX fragment: the recap link — the recap page as a QR during closed |
-| GET | `/user/recap/{token}` | Personal recap page (persona card, dossier, connections, stats) — unguessable UUID token |
+| GET | `/user/recap/{token}` | Personal recap page (persona card, dossier, connections, show & tell items, stats) — unguessable UUID token |
 | POST | `/user/showtell/signup/{id}` | Sign up for show & tell (title, one-line description, optional repo link) — open during the social and show & tell |
-| GET | `/user/showtell/{id}` | HTMX fragment: the show & tell section (sign-up form, queue place, status) |
+| GET | `/user/showtell/{id}` | HTMX fragment: the show & tell section (sign-up form, queue place, status, question form, the asker's questions) |
+| POST | `/user/showtell/question/{id}` | Ask the presenter on stage a question (through the asker's persona) — live during show & tell, needs no meeting, earns nothing |
 | GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on; presenter mode at show & tell) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel (phase, counts, transition buttons) |
@@ -157,7 +158,9 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/admin/showtell/move` | Reorder the show & tell queue (up/down) |
 | POST | `/admin/showtell/remove` | Remove a sign-up from the queue |
 | GET | `/admin/showtell-queue` | HTMX fragment: the show & tell queue (personas, status, reorder, remove, on stage, reveal, done) |
-| GET | `/admin/showtell-stream` | SSE stream for the host console's queue |
+| POST | `/admin/showtell/question` | Mark an audience question asked (the Big Screen's current question), answered, or dismissed |
+| GET | `/admin/showtell-questions` | HTMX fragment: the audience question queue (asker personas, status, actions) |
+| GET | `/admin/showtell-stream` | SSE stream for the host console's queues |
 | GET | `/data/meetings` | Debug: meetings (JSON) |
 | GET | `/data/leaderboard` | Debug: connection ranking derived from completed meetings (JSON) |
 | GET | `/data/channels` | Debug: per-participant opted-in contact-channel counts (JSON, counts only) |
@@ -219,6 +222,15 @@ hype, position, created_at
 -- one sign-up per participant; sign-up opens with the social; the host queue
 -- reorders by position; the identity reveal (the host's explicit action) is
 -- the only way a handle reaches the Big Screen's presenter card
+```
+
+**showtell_questions:**
+```sql
+id, participant_id (REFERENCES participants), signup_id (REFERENCES showtell_signups),
+text, status ('queued'|'asked'|'answered'|'dismissed'), created_at
+-- one row per audience question, bound to the on-stage sign-up at submission;
+-- asked is the current question on the Big Screen (one at a time, personas
+-- only); asking needs no meeting and earns nothing
 ```
 
 **activity_log:**

@@ -523,7 +523,10 @@
 
 {{/* The personal page's show & tell section — open during the social and
      show & tell, refreshed when the page's stream says so: the sign-up form
-     (pre-filled once signed up) and the sign-up's status in the host's queue. */}}
+     (pre-filled once signed up), the sign-up's status in the host's queue, and
+     — during show & tell — the question form for the presenter on stage, with
+     the Participant's own questions. The question form's button is disabled
+     while nobody is on stage. */}}
 {{define "fragment-showtell.html"}}
 <div
   id="showtell"
@@ -583,6 +586,47 @@
       </button>
       {{if .Saved}}<p class="text-green-800 text-xs font-semibold text-center">✅ You're in the queue</p>{{end}}
     </form>
+  </div>
+{{end}}
+{{if .AskOpen}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">❓ Ask the presenter</p>
+    {{if .Presenter}}
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl {{.Presenter.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Presenter.PersonaSymbol}}</div>
+      <div>
+        <p class="font-bold text-sm text-gray-900">{{.Presenter.PersonaName}}</p>
+        <p class="text-xs text-gray-700">is on stage — “{{.Presenter.Title}}”</p>
+      </div>
+    </div>
+    {{else}}
+    <p class="text-gray-600 text-sm">The stage is empty — questions open when a presenter is up.</p>
+    {{end}}
+    <form hx-post="/user/showtell/question/{{.Me.ID}}" hx-target="#showtell" hx-swap="outerHTML" class="space-y-2">
+      <input
+        type="text"
+        name="question"
+        maxlength="300"
+        placeholder="{{.Me.PersonaSymbol}} {{.Me.PersonaName}} asks…"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none disabled:opacity-50"
+        {{if not .Presenter}}disabled{{end}}
+      />
+      <button
+        type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        {{if not .Presenter}}disabled{{end}}
+      >
+        Ask the presenter
+      </button>
+    </form>
+    {{if .Asked}}<p class="text-green-800 text-xs font-semibold text-center">✅ Queued — the host picks it up</p>{{end}}
+    {{if .MyQuestions}}
+    <div class="border-t border-black/10 pt-2 space-y-1">
+      {{range .MyQuestions}}
+      <p class="text-xs text-gray-800">“{{.Text}}” — {{if eq .Status "queued"}}⏳ queued{{else if eq .Status "asked"}}🎤 being asked on the big screen{{else if eq .Status "answered"}}✅ answered{{else}}🗑 dismissed{{end}}</p>
+      {{end}}
+    </div>
+    {{end}}
   </div>
 {{end}}
 </div>
@@ -667,6 +711,71 @@
   </ol>
   {{else}}
   <p class="text-gray-500 text-sm">No sign-ups yet — they appear here as participants sign up.</p>
+  {{end}}
+</div>
+{{end}}
+
+
+{{/* The host console's audience-question queue — refreshed when the queue
+     stream says so. Every question with its asker's Persona and status —
+     personas only, never identities. The host marks a question asked (it goes
+     on the Big Screen, one at a time) → answered, or dismissed. */}}
+{{define "fragment-showtell-questions.html"}}
+<div
+  id="showtell-questions"
+  hx-get="/admin/showtell-questions"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3"
+>
+  <p class="text-gray-400 text-xs uppercase tracking-widest">❓ Audience questions</p>
+  {{if .Questions}}
+  <ol class="space-y-2">
+    {{range .Questions}}
+    <li class="flex items-center gap-3 bg-gray-800/60 border border-gray-700 rounded-xl px-3 py-2">
+      <div class="w-9 h-9 rounded-lg {{.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0">{{.PersonaSymbol}}</div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm text-white">{{.Text}}</p>
+        <p class="text-xs text-gray-400">{{.PersonaSymbol}} {{.PersonaName}} asks</p>
+        <p class="text-xs text-gray-500">
+          {{if eq .Status "queued"}}⏳ queued
+          {{else if eq .Status "asked"}}🎤 on the big screen
+          {{else if eq .Status "answered"}}✅ answered
+          {{else}}🗑 dismissed{{end}}
+        </p>
+      </div>
+      <div class="flex items-center gap-1 flex-shrink-0">
+        {{if eq .Status "queued"}}
+        <form action="/admin/showtell/question" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="asked">
+          <button type="submit" class="px-2 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold">Ask</button>
+        </form>
+        {{end}}
+        {{if eq .Status "asked"}}
+        <form action="/admin/showtell/question" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="answered">
+          <button type="submit" class="px-2 py-1 text-xs bg-green-700 hover:bg-green-600 text-white rounded-lg font-bold">Answered</button>
+        </form>
+        {{end}}
+        {{if or (eq .Status "queued") (eq .Status "asked")}}
+        <form action="/admin/showtell/question" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="dismissed">
+          <button
+            type="submit"
+            class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg"
+            onclick="return confirm('Dismiss this question?')"
+          >Dismiss</button>
+        </form>
+        {{end}}
+      </div>
+    </li>
+    {{end}}
+  </ol>
+  {{else}}
+  <p class="text-gray-500 text-sm">No questions yet — the audience asks through their personas.</p>
   {{end}}
 </div>
 {{end}}

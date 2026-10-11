@@ -47,6 +47,10 @@
     {{template "fragment-showtell-queue.html" .ShowTell}}
     {{end}}
 
+    {{if .ShowTellQuestions.Open}}
+    {{template "fragment-showtell-questions.html" .ShowTellQuestions}}
+    {{end}}
+
     <div class="text-center py-4 text-indigo-400 font-bold">
       ✨ Continuous matching active
     </div>
@@ -95,11 +99,15 @@
     </div>
 
   </div>
-  {{if .ShowTell.Open}}
+  {{if or .ShowTell.Open .ShowTellQuestions.Open}}
   <script>
-    // The show & tell queue arrives by push, not polling.
+    // The show & tell queue and the audience questions arrive by push, not polling.
     const _showtell = new EventSource('/admin/showtell-stream');
-    _showtell.addEventListener('refresh', () => htmx.trigger('#showtell-queue', 'refresh'));
+    _showtell.addEventListener('refresh', () => {
+      htmx.trigger('#showtell-queue', 'refresh');
+      const questions = document.getElementById('showtell-questions');
+      if (questions) htmx.trigger(questions, 'refresh');
+    });
     _showtell.onerror = () => _showtell.close();
   </script>
   {{end}}

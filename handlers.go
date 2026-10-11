@@ -790,7 +790,8 @@ func (h *Handler) recapLinkData(p *Participant) map[string]any {
 // GET /user/recap/{token} — the personal recap page: the Participant's
 // evening, kept — their persona card, their match dossier (always unlocked
 // here), every connection with the channels they shared, the channels they
-// shared themselves, and their stats. The token is the unguessable UUID; an
+// shared themselves, their show & tell items (their sign-up and their
+// questions), and their stats. The token is the unguessable UUID; an
 // unknown token is a 404.
 func (h *Handler) Recap(w http.ResponseWriter, r *http.Request) {
 	p, err := h.recaps.ByToken(r.PathValue("token"))
@@ -808,7 +809,8 @@ func (h *Handler) Recap(w http.ResponseWriter, r *http.Request) {
 // recapData is the recap page's data: the Participant's persona card, their
 // match dossier (always unlocked here — the evening is theirs to keep), all
 // their connections with the channels those connections shared with them,
-// the channels they shared themselves, and their personal stats.
+// the channels they shared themselves, their show & tell items — their sign-up
+// and their audience questions — and their personal stats.
 func (h *Handler) recapData(p *Participant) map[string]any {
 	dossier, match := h.dossierData(p)
 	dossier["Unlocked"] = true // the recap always shows the dossier
@@ -842,6 +844,17 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 		log.Printf("Recap contact channels for %s: %v", p.ID, err)
 	}
 
+	// The Participant's show & tell items: their sign-up and the questions
+	// they asked, with how each ended up.
+	signup, err := h.showtell.ForParticipant(p.ID)
+	if err != nil {
+		log.Printf("Recap show & tell sign-up for %s: %v", p.ID, err)
+	}
+	questions, err := h.showtell.QuestionsForParticipant(p.ID)
+	if err != nil {
+		log.Printf("Recap show & tell questions for %s: %v", p.ID, err)
+	}
+
 	board, err := h.meetings.Leaderboard()
 	if err != nil {
 		log.Printf("Recap leaderboard for %s: %v", p.ID, err)
@@ -852,14 +865,16 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 	}
 
 	return map[string]any{
-		"Me":              p,
-		"Match":           match,
-		"Dossier":         dossier,
-		"Connections":     connections,
-		"Shared":          shared(mine),
-		"ConnectionCount": h.meetings.Connections(p.ID),
-		"Rank":            rankOf(board, p.ID),
-		"Champion":        champion != nil && champion.ID == p.ID,
+		"Me":                p,
+		"Match":             match,
+		"Dossier":           dossier,
+		"Connections":       connections,
+		"Shared":            shared(mine),
+		"ShowTellSignup":    signup,
+		"ShowTellQuestions": questions,
+		"ConnectionCount":   h.meetings.Connections(p.ID),
+		"Rank":              rankOf(board, p.ID),
+		"Champion":          champion != nil && champion.ID == p.ID,
 	}
 }
 
@@ -902,11 +917,13 @@ func (h *Handler) ShowTellStatus(w http.ResponseWriter, r *http.Request) {
 
 // showtellData is the personal page's show & tell section: the sign-up form —
 // open during the social and show & tell — with the Participant's sign-up and
-// its place in the host's queue, if any.
+// its place in the host's queue, if any, and the question form — live during
+// show & tell — bound to whoever is on stage, with the Participant's questions.
 func (h *Handler) showtellData(p *Participant) map[string]any {
 	data := map[string]any{
-		"Me":   p,
-		"Open": h.events.State().AllowsShowTell(),
+		"Me":      p,
+		"Open":    h.events.State().AllowsShowTell(),
+		"AskOpen": h.events.State().IsShowTell(),
 	}
 	signup, err := h.showtell.ForParticipant(p.ID)
 	if err != nil {
@@ -916,7 +933,50 @@ func (h *Handler) showtellData(p *Participant) map[string]any {
 		data["Signup"] = signup
 		data["Position"] = h.showtell.QueuePosition(p.ID)
 	}
+	// The question form binds to whoever is on stage; its button is disabled
+	// while the stage is empty.
+	presenter, err := h.showtell.OnStage()
+	if err != nil {
+		log.Printf("On-stage presenter: %v", err)
+	}
+	if presenter != nil {
+		data["Presenter"] = presenter
+	}
+	questions, err := h.showtell.QuestionsForParticipant(p.ID)
+	if err != nil {
+		log.Printf("Show & tell questions for %s: %v", p.ID, err)
+	}
+	if len(questions) > 0 {
+		data["MyQuestions"] = questions
+	}
 	return data
+}
+
+// POST /user/showtell/question/{id} — ask the presenter on stage a question,
+// through the asker's persona ("{symbol} asks: …"). Questioning needs no
+// meeting and earns nothing; it is live during show & tell and only while
+// someone is on stage.
+func (h *Handler) ShowTellQuestion(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	err = h.showtell.Ask(p, r.FormValue("question"))
+	switch {
+	case errors.Is(err, ErrShowTellClosed):
+		http.Error(w, "Questions are only open during show & tell.", 400)
+	case errors.Is(err, ErrNoPresenter):
+		http.Error(w, "Nobody is on stage — questions open when a presenter is up.", 400)
+	case errors.Is(err, ErrInvalidQuestion):
+		http.Error(w, err.Error(), 400)
+	case err != nil:
+		http.Error(w, "asking your question failed: "+err.Error(), 500)
+	default:
+		data := h.showtellData(p)
+		data["Asked"] = true
+		h.render(w, "fragment-showtell.html", data)
+	}
 }
 
 // POST /admin/showtell/stage — the host's presenter-mode actions on a sign-up
@@ -984,6 +1044,42 @@ func (h *Handler) ShowTellRemove(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
+// POST /admin/showtell/question — the host's question-queue actions on a
+// question (the "id" form value): "asked" puts it on the Big Screen — one
+// current question at a time — "answered" marks it answered, "dismissed"
+// drops it.
+func (h *Handler) ShowTellQuestionAction(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "That question is not in the queue.", 400)
+		return
+	}
+	var to QuestionStatus
+	switch r.FormValue("action") {
+	case "asked":
+		to = QuestionAsked
+	case "answered":
+		to = QuestionAnswered
+	case "dismissed":
+		to = QuestionDismissed
+	default:
+		http.Error(w, "Unknown action — asked, answered or dismissed.", 400)
+		return
+	}
+	_, err = h.showtell.TransitionQuestion(id, to)
+	switch {
+	case errors.Is(err, ErrShowTellClosed):
+		http.Error(w, "The question queue is only live during show & tell.", 400)
+	case errors.Is(err, ErrQuestionNotFound):
+		http.Error(w, "That question is not in the queue.", 404)
+	case errors.Is(err, ErrAlreadyAsked), errors.Is(err, ErrInvalidQuestionTransition):
+		http.Error(w, err.Error(), 400)
+	case err != nil:
+		http.Error(w, "updating the question queue failed: "+err.Error(), 500)
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
 // GET /admin/showtell-queue — HTMX, the host console's show & tell queue,
 // refreshed when the queue stream says so.
 func (h *Handler) ShowTellQueue(w http.ResponseWriter, r *http.Request) {
@@ -1005,15 +1101,20 @@ func (h *Handler) showtellQueueData() map[string]any {
 }
 
 // GET /admin/showtell-stream — tells the host console to refresh the show &
-// tell queue when it changes.
+// tell queue and the audience-question queue when either changes.
 func (h *Handler) ShowTellStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	last := h.showtellQueueSignature()
+	lastQueue := h.showtellQueueSignature()
+	lastQuestions := h.showtellQuestionsSignature()
 	h.watch(w, r, func() bool {
-		if now := h.showtellQueueSignature(); now != last {
-			last = now
+		if now := h.showtellQueueSignature(); now != lastQueue {
+			lastQueue = now
+			sseEvent(w, "refresh")
+		}
+		if now := h.showtellQuestionsSignature(); now != lastQuestions {
+			lastQuestions = now
 			sseEvent(w, "refresh")
 		}
 		return false
@@ -1030,6 +1131,40 @@ func (h *Handler) showtellQueueSignature() string {
 	var b strings.Builder
 	for _, s := range queue {
 		fmt.Fprintf(&b, "%d:%s:%d:%t;", s.ID, s.Status, s.Position, s.IdentityRevealed)
+	}
+	return b.String()
+}
+
+// GET /admin/showtell-questions — HTMX, the host console's audience-question
+// queue, refreshed when the queue stream says so.
+func (h *Handler) ShowTellQuestions(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "fragment-showtell-questions.html", h.showtellQuestionsData())
+}
+
+// showtellQuestionsData is the host console's audience-question queue: every
+// question with its asker's Persona and status — personas only, never
+// identities.
+func (h *Handler) showtellQuestionsData() map[string]any {
+	questions, err := h.showtell.Questions()
+	if err != nil {
+		log.Printf("Show & tell questions: %v", err)
+	}
+	return map[string]any{
+		"Open":      h.events.State().IsShowTell(),
+		"Questions": questions,
+	}
+}
+
+// showtellQuestionsSignature is what the queue stream also watches: every
+// question's id and status.
+func (h *Handler) showtellQuestionsSignature() string {
+	questions, err := h.showtell.Questions()
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, q := range questions {
+		fmt.Fprintf(&b, "%d:%s;", q.ID, q.Status)
 	}
 	return b.String()
 }
@@ -1223,6 +1358,19 @@ func (h *Handler) presenterPayload() map[string]any {
 		payload["handle"] = p.DisplayHandle()
 		payload["name"] = p.Name
 	}
+	// The current audience question rides with the presenter card — an
+	// extension of presenter mode. The asker's persona and the text only:
+	// personas, never identities.
+	if question, err := h.showtell.CurrentQuestion(); err != nil {
+		log.Printf("Current show & tell question: %v", err)
+	} else if question != nil {
+		payload["question"] = map[string]any{
+			"text":           question.Text,
+			"persona_name":   question.PersonaName,
+			"persona_symbol": question.PersonaSymbol,
+			"persona_color":  question.PersonaColor,
+		}
+	}
 	return payload
 }
 
@@ -1400,12 +1548,13 @@ func writeJSON(w http.ResponseWriter, v any) {
 func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 	phase := h.events.State()
 	h.render(w, "admin.html", map[string]any{
-		"Phase":    phase,
-		"Count":    h.db.ParticipantCount(),
-		"Ready":    h.db.ReadyCount(),
-		"Matched":  h.db.MatchedCount(),
-		"Next":     phase.Next(),
-		"ShowTell": h.showtellQueueData(),
+		"Phase":             phase,
+		"Count":             h.db.ParticipantCount(),
+		"Ready":             h.db.ReadyCount(),
+		"Matched":           h.db.MatchedCount(),
+		"Next":              phase.Next(),
+		"ShowTell":          h.showtellQueueData(),
+		"ShowTellQuestions": h.showtellQuestionsData(),
 	})
 }
 

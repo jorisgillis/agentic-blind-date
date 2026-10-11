@@ -106,6 +106,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/recap/{token}", h.Recap)
 	mux.HandleFunc("POST /user/showtell/signup/{id}", h.ShowTellSignup)
 	mux.HandleFunc("GET /user/showtell/{id}", h.ShowTellStatus)
+	mux.HandleFunc("POST /user/showtell/question/{id}", h.ShowTellQuestion)
 
 	mux.HandleFunc("GET /bigscreen", h.Screen)
 	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
@@ -133,7 +134,9 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("POST /admin/showtell/stage", h.ShowTellStage)
 	mux.HandleFunc("POST /admin/showtell/move", h.ShowTellMove)
 	mux.HandleFunc("POST /admin/showtell/remove", h.ShowTellRemove)
+	mux.HandleFunc("POST /admin/showtell/question", h.ShowTellQuestionAction)
 	mux.HandleFunc("GET /admin/showtell-queue", h.ShowTellQueue)
+	mux.HandleFunc("GET /admin/showtell-questions", h.ShowTellQuestions)
 	mux.HandleFunc("GET /admin/showtell-stream", h.ShowTellStream)
 
 	return mux

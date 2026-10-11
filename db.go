@@ -156,6 +156,15 @@ func NewDB(path string) (*DB, error) {
 			created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
+		CREATE TABLE IF NOT EXISTS showtell_questions (
+			id             INTEGER PRIMARY KEY AUTOINCREMENT,
+			participant_id TEXT NOT NULL REFERENCES participants(id),
+			signup_id      INTEGER NOT NULL REFERENCES showtell_signups(id),
+			text           TEXT NOT NULL,
+			status         TEXT NOT NULL DEFAULT 'queued',
+			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
 	`)
 	if err != nil {
 		return nil, err

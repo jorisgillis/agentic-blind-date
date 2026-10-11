@@ -33,6 +33,7 @@ Each ADR follows this structure:
 | [0012](0012-reveal-ceremony-and-locked-dossier.md) | The Reveal Ceremony and the Locked Dossier | Accepted | 2026-10-10 |
 | [0013](0013-contact-exchange-and-personal-recap.md) | Contact Exchange and the Personal Recap | Accepted | 2026-10-10 |
 | [0014](0014-showtell-signup-host-queue-presenter-mode.md) | Show & Tell — Sign-up, Host Queue, Presenter Mode with Identity Reveal | Accepted | 2026-10-10 |
+| [0015](0015-showtell-audience-questions.md) | Show & Tell — Audience Questions Through Personas | Accepted | 2026-10-10 |
 
 ## When to Create an ADR
 

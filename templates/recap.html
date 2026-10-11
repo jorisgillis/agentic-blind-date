@@ -75,6 +75,37 @@
       {{end}}
     </div>
 
+    {{/* Show & tell — the Participant's sign-up and their audience questions,
+         with how each ended up. Personas only, like everywhere outside stage. */}}
+    {{if or .ShowTellSignup .ShowTellQuestions}}
+    <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+      <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎤 Your show &amp; tell</p>
+      {{if .ShowTellSignup}}
+      <div class="space-y-1">
+        <p class="font-bold text-sm text-gray-900">“{{.ShowTellSignup.Title}}”</p>
+        {{if .ShowTellSignup.Description}}
+        <p class="text-xs text-gray-700" data-md>{{.ShowTellSignup.Description}}</p>
+        {{end}}
+        {{if .ShowTellSignup.RepoURL}}
+        <p class="text-xs"><a href="{{.ShowTellSignup.RepoURL}}" class="text-indigo-700 underline" target="_blank" rel="noopener">{{.ShowTellSignup.RepoURL}}</a></p>
+        {{end}}
+        <p class="text-xs text-gray-700">
+          {{if eq .ShowTellSignup.Status "queued"}}⏳ queued
+          {{else if eq .ShowTellSignup.Status "on_stage"}}🎤 on stage
+          {{else}}✅ presented{{end}}
+        </p>
+      </div>
+      {{end}}
+      {{if .ShowTellQuestions}}
+      <div class="space-y-1 {{if .ShowTellSignup}}border-t border-black/10 pt-2{{end}}">
+        {{range .ShowTellQuestions}}
+        <p class="text-xs text-gray-800">“{{.Text}}” — {{if eq .Status "queued"}}queued{{else if eq .Status "asked"}}being asked{{else if eq .Status "answered"}}answered{{else}}dismissed{{end}}</p>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+
     {{/* Their own contact details — what they shared during the evening */}}
     <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-2">
       <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📇 Your contact details</p>

@@ -110,14 +110,15 @@ func signupRow(row *sql.Row) (*ShowTellSignup, error) {
 	return signup, nil
 }
 
-// ShowTell owns the showtell_signups table: the show & tell sign-ups, the
-// host's queue and the Big Screen's presenter mode. Sign-up opens with the
-// social; staging, the identity reveal and done belong to show & tell.
+// ShowTell owns the showtell_signups and showtell_questions tables: the show
+// & tell sign-ups, the host's queue, the Big Screen's presenter mode and the
+// audience questions. Sign-up opens with the social; staging, the identity
+// reveal, done and the question queue belong to show & tell.
 type ShowTell struct {
 	db     *DB
 	events *EventStore
 	agent  *HypeAgent
-	mu     sync.Mutex // serializes staging: one read-then-write on the queue
+	mu     sync.Mutex // serializes staging and question transitions: one read-then-write on the queue
 }
 
 // NewShowTell creates the ShowTell module.
@@ -220,14 +221,24 @@ func (s *ShowTell) QueuePosition(participantID string) int {
 }
 
 // Signature is what the personal page's stream watches: the Participant's
-// sign-up state, so the section refreshes when it changes — queued (and where
-// in the queue), on stage, presented, revealed.
+// sign-up state — queued (and where in the queue), on stage, presented,
+// revealed — their questions' states, and who is on stage, because the
+// section's question form depends on the presenter. The section refreshes
+// when any of them changes.
 func (s *ShowTell) Signature(participantID string) string {
-	signup, err := s.ForParticipant(participantID)
-	if err != nil || signup == nil {
-		return ""
+	var b strings.Builder
+	if signup, err := s.ForParticipant(participantID); err == nil && signup != nil {
+		fmt.Fprintf(&b, "%d:%s:%d:%t;", signup.ID, signup.Status, signup.Position, signup.IdentityRevealed)
 	}
-	return fmt.Sprintf("%d:%s:%d:%t", signup.ID, signup.Status, signup.Position, signup.IdentityRevealed)
+	if questions, err := s.QuestionsForParticipant(participantID); err == nil {
+		for _, q := range questions {
+			fmt.Fprintf(&b, "%d:%s;", q.ID, q.Status)
+		}
+	}
+	if onStage, err := s.OnStage(); err == nil && onStage != nil {
+		fmt.Fprintf(&b, "stage:%d;", onStage.ID)
+	}
+	return b.String()
 }
 
 // Stage puts a queued sign-up on stage: the Big Screen's presenter mode shows
@@ -377,25 +388,31 @@ func (s *ShowTell) Move(id int64, dir string) error {
 	})
 }
 
-// Remove takes a sign-up out of the queue, whatever its status.
+// Remove takes a sign-up out of the queue, whatever its status — and the
+// questions asked about it, in the same transaction.
 func (s *ShowTell) Remove(id int64) error {
-	res, err := s.db.db.Exec(`DELETE FROM showtell_signups WHERE id = ?`, id)
-	if err != nil {
+	return s.db.inTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM showtell_questions WHERE signup_id = ?`, id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`DELETE FROM showtell_signups WHERE id = ?`, id)
 		return err
-	}
-	if rowsAffected(res) > 0 {
-		s.db.changed()
-	}
-	return nil
+	})
 }
 
-// RemoveParticipant deletes a Participant's sign-up when they leave the event.
+// RemoveParticipant deletes a Participant's sign-up when they leave the event,
+// and with it their questions — both the ones they asked and the ones their
+// talk drew, in the same transaction.
 func (s *ShowTell) RemoveParticipant(id string) error {
-	_, err := s.db.db.Exec(`DELETE FROM showtell_signups WHERE participant_id = ?`, id)
-	if err == nil {
-		s.db.changed()
-	}
-	return err
+	return s.db.inTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`
+			DELETE FROM showtell_questions
+			WHERE participant_id = ? OR signup_id IN (SELECT id FROM showtell_signups WHERE participant_id = ?)`, id, id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`DELETE FROM showtell_signups WHERE participant_id = ?`, id)
+		return err
+	})
 }
 
 // HypeAgent writes the one-line hype intro for a presenter going on stage. It

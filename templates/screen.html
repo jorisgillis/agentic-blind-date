@@ -62,6 +62,10 @@
           <p id="presenter-description" class="text-gray-400 text-sm"></p>
           <a id="presenter-repo" class="text-indigo-400 text-sm underline" target="_blank" rel="noopener"></a>
         </div>
+        <div id="presenter-question" class="hidden border-t border-gray-700 pt-4 space-y-1">
+          <p id="question-asker" class="text-sm font-bold"></p>
+          <p id="question-text" class="text-xl font-bold"></p>
+        </div>
       </div>
     </div>
     <div id="empty-state" class="absolute inset-0 flex items-center justify-center">
@@ -348,6 +352,19 @@ function updateGraph(data) {
     } else {
       persona.classList.remove('hidden');
       identity.classList.add('hidden');
+    }
+    // The current audience question — an extension of presenter mode: the
+    // asker's persona asks, personas only, never identities.
+    const question = presenter.question;
+    const questionPanel = document.getElementById('presenter-question');
+    if (question) {
+      const asker = document.getElementById('question-asker');
+      asker.textContent = (question.persona_symbol || '❓') + ' ' + (question.persona_name || '') + ' asks:';
+      asker.style.color = colorMap[question.persona_color] || '#c084fc';
+      document.getElementById('question-text').textContent = question.text || '';
+      questionPanel.classList.remove('hidden');
+    } else {
+      questionPanel.classList.add('hidden');
     }
   } else {
     panel.classList.add('hidden');
