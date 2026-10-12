@@ -482,19 +482,52 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dossier, match := h.dossierData(p)
 	h.render(w, "match.html", map[string]any{
+		"Me":           p,
+		"PhaseHeader":  h.phaseHeaderData(p),
+		"PhaseContent": h.phaseContentData(p),
+		"Settings":     h.settingsData(p),
+	})
+}
+
+// ── the match page's phase-content region ──────────────────────────────────
+
+// GET /user/phase-content/{id} — HTMX, the match page's phase-content region:
+// the composition of per-card fragments the current phase calls for. The
+// region is swapped on the match stream's 'phase' event — a phase change is
+// the one moment a bigger visual beat is wanted — while the per-card fragments
+// inside it keep their own 'refresh' wiring, so a refresh never re-animates
+// the region.
+func (h *Handler) PhaseContent(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if dest := h.destination(p); dest != "/user/match/"+p.ID {
+		w.Header().Set("HX-Redirect", dest)
+		return
+	}
+	h.render(w, "fragment-phase-content.html", h.phaseContentData(p))
+}
+
+// phaseContentData is the match page's phase-content region: the per-card
+// fragments the current phase calls for, composed around the match reveal —
+// the mission card and the meet section during the social, the show & tell
+// tooling from show & tell on, and the recap link leading once closed.
+func (h *Handler) phaseContentData(p *Participant) map[string]any {
+	dossier, match := h.dossierData(p)
+	return map[string]any{
 		"Me":          p,
-		"PhaseHeader": h.phaseHeaderData(p),
+		"Phase":       h.events.State(),
 		"Match":       match,
 		"Score":       dossier["Score"],
 		"Dossier":     dossier,
 		"MeetStatus":  h.meetStatusData(p),
 		"MissionCard": h.missionCardData(p),
 		"ShowTell":    h.showtellData(p),
-		"Settings":    h.settingsData(p),
 		"RecapLink":   h.recapLinkData(p),
-	})
+	}
 }
 
 // dossierData is the Match page's dossier: the fun payload of the Match — the

@@ -308,9 +308,10 @@ func TestPersonaCard(t *testing.T) {
 	}
 }
 
-// TestMatchPage_SectionOrder covers #130: the mission card sits high on the
-// page, the meet code QR right next to it, the match reveal and the dossier
-// below the mission card, and the share-profile QR at the bottom.
+// TestMatchPage_SectionOrder covers #137: the match page is the phase header,
+// then the phase-content region — the mission card first, the meet section
+// next, then the match reveal with the dossier, the recap link last — then the
+// bottom sections, the settings and the share-profile QR.
 func TestMatchPage_SectionOrder(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
@@ -321,15 +322,16 @@ func TestMatchPage_SectionOrder(t *testing.T) {
 	body := readBody(t, get(t, srv, "/user/match/a"))
 
 	markers := []string{
-		"It's a match!",
+		`id="phase-header"`,
+		`id="phase-content"`,
 		`id="mission-card"`,
 		`id="meet-status"`,
+		"It's a match!",
 		"Find them in the room",
 		`id="dossier"`,
-		`id="showtell"`,
+		`id="recap"`,
 		`id="settings"`,
 		`id="qr"`,
-		`id="recap"`,
 	}
 	last := -1
 	for _, m := range markers {
@@ -342,6 +344,14 @@ func TestMatchPage_SectionOrder(t *testing.T) {
 			t.Errorf("%q appears out of order on the match page", m)
 		}
 		last = idx
+	}
+	// The show & tell section joins the region in the showtell phase.
+	if strings.Contains(body, `id="showtell"`) {
+		t.Error("the social's match page should not carry the show & tell section")
+	}
+	// Exactly one recap anchor: the region carries it in every phase.
+	if n := strings.Count(body, `id="recap"`); n != 1 {
+		t.Errorf("want exactly one recap anchor on the match page, got %d", n)
 	}
 }
 
@@ -378,20 +388,27 @@ func TestMatchPage_RendersThePhaseHeader(t *testing.T) {
 		}
 	}
 
-	// The stream refreshes the header on 'refresh' and on the 'phase' event.
+	// The stream refreshes the header on 'refresh' and on the 'phase' event,
+	// which additionally swaps the phase-content region.
 	if n := strings.Count(body, `htmx.trigger('#phase-header', 'refresh')`); n != 2 {
 		t.Errorf("want the header refreshed by both stream events, got %d triggers", n)
 	}
-	if !strings.Contains(body, `_mes.addEventListener('phase', () => htmx.trigger('#phase-header', 'refresh'));`) {
-		t.Errorf("the match page should listen for the 'phase' event")
+	phase := body[strings.Index(body, `_mes.addEventListener('phase'`):]
+	for _, want := range []string{
+		`htmx.trigger('#phase-header', 'refresh')`,
+		`htmx.trigger('#phase-content', 'phase')`,
+	} {
+		if !strings.Contains(phase, want) {
+			t.Errorf("the 'phase' event should refresh the header and swap the region with %q, got %q", want, phase)
+		}
 	}
 }
 
 // TestMatchPage_ShowsThePartnerAndTheLockedDossier covers the Reveal: the
 // Match page shows the partner's full persona card and the "find them in the
-// room" panel — personas only, never the partner's handle — while the
-// dossier (reason, flags, icebreakers) starts out locked, and Explore's
-// "Others at the event" section is gone.
+// room" panel — personas only, never the partner's handle — inside the
+// phase-content region, while the dossier (reason, flags, icebreakers) starts
+// out locked, and Explore's "Others at the event" section is gone.
 func TestMatchPage_ShowsThePartnerAndTheLockedDossier(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal() // after the Reveal, matched Participants see their Match
@@ -405,6 +422,10 @@ func TestMatchPage_ShowsThePartnerAndTheLockedDossier(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("match page should contain %q", want)
 		}
+	}
+	// The reveal renders inside the phase-content region.
+	if region, hero := strings.Index(body, `id="phase-content"`), strings.Index(body, "It's a match!"); region < 0 || region > hero {
+		t.Errorf("the match reveal should render inside the phase-content region, got region at %d, hero at %d", region, hero)
 	}
 	for _, absent := range []string{"@b", "Both love tabs", "hogs the whiteboard", "Why tabs?", "The Snake", "Others at the event", "/user/explore"} {
 		if strings.Contains(body, absent) {

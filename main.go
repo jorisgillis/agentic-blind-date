@@ -107,6 +107,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
 	mux.HandleFunc("GET /user/persona/{id}", h.PersonaCard)
 	mux.HandleFunc("GET /user/phase-header/{id}", h.PhaseHeader)
+	mux.HandleFunc("GET /user/phase-content/{id}", h.PhaseContent)
 	mux.HandleFunc("GET /user/match/{id}", h.Match)
 	mux.HandleFunc("GET /user/dossier/{id}", h.Dossier)
 	mux.HandleFunc("GET /user/mission/{id}", h.MissionCard)

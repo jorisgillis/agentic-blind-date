@@ -33,75 +33,13 @@
          'phase' event when the host advances the evening */}}
     {{template "fragment-phase-header.html" .PhaseHeader}}
 
-    <div class="text-center mt-5 mb-8 pop-in">
-      <div class="text-8xl mb-3">{{.Me.PersonaSymbol}}</div>
-      <div class="text-4xl mb-2">💘</div>
-      <h1 class="text-3xl font-black text-gray-900">It's a match!</h1>
-      {{if .Match}}
-      <p class="text-gray-700 mt-1">{{.Score}}% compatibility</p>
-      {{end}}
-    </div>
-
-    {{/* Mission card — the evening's hunting ground, refreshed when the
-         match stream says so */}}
-    {{template "fragment-mission-card.html" .MissionCard}}
-
-    {{/* Meet section — your meet code QR and the handshake, right next to
-         the mission card, refreshed when the match stream says so */}}
-    {{template "fragment-meet-status.html" .MeetStatus}}
-
-    {{if .Match}}
-    {{$m := .Match}}
-
-    {{/* Compatibility meter */}}
-    <div class="mb-6">
-      <div class="h-3 bg-black/20 rounded-full overflow-hidden">
-        <div
-          class="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full transition-all duration-1000"
-          style="width: {{.Score}}%"
-        ></div>
-      </div>
-    </div>
-
-    {{/* Match card + Find them merged — personas only, never the partner's handle */}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
-      <div class="flex items-center gap-4">
-        <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
-          {{$m.PersonaSymbol}}
-        </div>
-        <div>
-          <p class="font-bold text-lg text-gray-900">{{$m.PersonaName}}</p>
-          {{if $m.PersonaTagline}}
-          <p class="text-gray-700 text-sm italic" data-md>"{{$m.PersonaTagline}}"</p>
-          {{end}}
-        </div>
-      </div>
-      <div class="mt-4 pt-4 border-t border-black/10 flex items-center gap-3">
-        <div class="w-12 h-12 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow">
-          {{$m.PersonaSymbol}}
-        </div>
-        <div>
-          <p class="text-pink-800 font-bold text-xs">📍 Find them in the room</p>
-          <p class="text-gray-900 text-sm font-medium mt-0.5">{{$m.PersonaSymbol}} on a {{colorName $m.PersonaColor}} background</p>
-        </div>
-      </div>
-    </div>
-
-    {{/* Dossier — locked until the pair's Meeting completes, refreshed when
-         the match stream says so */}}
-    {{template "fragment-dossier.html" .Dossier}}
-
-    {{else}}
-    <div class="text-center text-gray-700 py-12">
-      <p class="text-4xl mb-3">🤷</p>
-      <p class="font-bold text-gray-900">You don't have a match (yet)</p>
-      <p class="text-sm mt-2">Hang tight — your mission card above sends you hunting.</p>
-    </div>
-    {{end}}
-
-    {{/* Show & tell — sign-up open during the social and show & tell,
-         refreshed when the match stream says so */}}
-    {{template "fragment-showtell.html" .ShowTell}}
+    {{/* Phase content — the region the current phase calls for (ADR 0019,
+         step 2): the mission card, the meet section, the match reveal and
+         the dossier during the social, the show & tell tooling from show &
+         tell on, the recap leading once closed. Swapped live on the 'phase'
+         event; the per-card fragments inside it keep their own 'refresh'
+         wiring, so a refresh never re-animates the region */}}
+    {{template "fragment-phase-content.html" .PhaseContent}}
 
     {{/* Settings — the Participant's contact channels, entered once */}}
     {{template "fragment-settings.html" .Settings}}
@@ -111,10 +49,6 @@
       <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
       <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
     </div>
-
-    {{/* Recap link — during closed, the recap page as a QR, refreshed when
-         the match stream says so */}}
-    {{template "fragment-recap-link.html" .RecapLink}}
 
   </div>
 </div>
@@ -135,7 +69,10 @@
       htmx.trigger('#showtell', 'refresh');
       htmx.trigger('#recap', 'refresh');
     });
-    _mes.addEventListener('phase', () => htmx.trigger('#phase-header', 'refresh'));
+    _mes.addEventListener('phase', () => {
+      htmx.trigger('#phase-header', 'refresh');
+      htmx.trigger('#phase-content', 'phase');
+    });
     _mes.onerror = () => _mes.close();
   </script>
 </body>
