@@ -293,12 +293,18 @@ func TestMatchPage_PhaseEventSwapsTheRegion(t *testing.T) {
 	if strings.Contains(refresh, "#phase-content") {
 		t.Errorf("the 'refresh' listener must not trigger the region, got %q", refresh)
 	}
-	for _, card := range []string{"#phase-header", "#meet-status", "#mission-card", "#showtell", "#recap"} {
-		if !strings.Contains(refresh, `htmx.trigger('`+card+`', 'refresh')`) {
+	// The header is on the page in every phase and refreshes unguarded.
+	if !strings.Contains(refresh, `htmx.trigger('#phase-header', 'refresh')`) {
+		t.Error("the 'refresh' listener should keep refreshing the phase header")
+	}
+	// The region composes per phase, so the card anchors are guarded: a card
+	// absent from the current phase's composition is skipped, not an error.
+	if !strings.Contains(refresh, "if (el) htmx.trigger(el, 'refresh')") {
+		t.Errorf("the 'refresh' listener should guard the per-card refreshes, got %q", refresh)
+	}
+	for _, card := range []string{"#meet-status", "#dossier", "#mission-card", "#showtell", "#recap"} {
+		if !strings.Contains(refresh, `refreshCard('`+card+`')`) {
 			t.Errorf("the 'refresh' listener should keep refreshing %s", card)
 		}
-	}
-	if !strings.Contains(refresh, "getElementById('dossier')") {
-		t.Error("the 'refresh' listener keeps the dossier's guarded wiring")
 	}
 }

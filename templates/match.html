@@ -62,12 +62,17 @@
     const _mes = new EventSource('/user/match-stream/{{.Me.ID}}');
     _mes.addEventListener('refresh', () => {
       htmx.trigger('#phase-header', 'refresh');
-      htmx.trigger('#meet-status', 'refresh');
-      const dossier = document.getElementById('dossier');
-      if (dossier) htmx.trigger(dossier, 'refresh');
-      htmx.trigger('#mission-card', 'refresh');
-      htmx.trigger('#showtell', 'refresh');
-      htmx.trigger('#recap', 'refresh');
+      // The region composes per phase, so some cards are absent in some
+      // phases — refresh the ones that are on screen.
+      const refreshCard = (sel) => {
+        const el = document.querySelector(sel);
+        if (el) htmx.trigger(el, 'refresh');
+      };
+      refreshCard('#meet-status');
+      refreshCard('#dossier');
+      refreshCard('#mission-card');
+      refreshCard('#showtell');
+      refreshCard('#recap');
     });
     _mes.addEventListener('phase', () => {
       htmx.trigger('#phase-header', 'refresh');
