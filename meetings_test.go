@@ -593,6 +593,31 @@ func TestMeetPage_WithCookieShowsTheConfirmButton(t *testing.T) {
 	}
 }
 
+// TestMeetPage_ConfirmDialogDemandsAttention guards the confirm dialog's
+// treatment: it pops continuously, stands out in emerald against the app's
+// indigo actions, and respects reduced motion.
+func TestMeetPage_ConfirmDialogDemandsAttention(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
+	deps.events.Reveal()
+
+	body := readBody(t, withCookie(t, srv, "/user/m/b", "a"))
+	for _, want := range []string{
+		"meet-pulse",             // the continuous pop
+		"prefers-reduced-motion", // motion is opt-out
+		"bg-emerald-600",         // the confirm action's own color
+		"border-emerald-600/50",  // the dialog's color difference
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the confirm dialog should carry %q", want)
+		}
+	}
+	if strings.Contains(body, "bg-indigo-600") {
+		t.Error("the confirm dialog should not use the app's default indigo button")
+	}
+}
+
 func TestMeetPage_SelfMeetIsFriendly(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
