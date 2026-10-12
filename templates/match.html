@@ -36,9 +36,9 @@
     {{/* Phase content — the region the current phase calls for (ADR 0019,
          step 2): the mission card, the meet section and the match reveal
          during the social, the show & tell tooling from show & tell on, the
-         reveal leading once closed. Swapped live on the 'phase' event; the
-         per-card fragments inside it keep their own 'refresh' wiring, so a
-         refresh never re-animates the region */}}
+         recap once closed — the page has become it. Swapped live on the
+         'phase' event; the per-card fragments inside it keep their own
+         'refresh' wiring, so a refresh never re-animates the region */}}
     {{template "fragment-phase-content.html" .PhaseContent}}
 
     {{/* More — the evergreen drawer (ADR 0019, step 3): the dossier, the
@@ -71,7 +71,7 @@
           <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
         </div>
 
-        {{/* Recap link — during closed, the recap page as a QR, refreshed
+        {{/* Recap link — during closed, the recap page as a button, refreshed
              when the match stream says so */}}
         {{template "fragment-recap-link.html" .RecapLink}}
 
@@ -101,6 +101,7 @@
       refreshCard('#mission-card');
       refreshCard('#showtell');
       refreshCard('#recap');
+      refreshCard('#recap-content');
     });
     _mes.addEventListener('phase', () => {
       htmx.trigger('#phase-header', 'refresh');

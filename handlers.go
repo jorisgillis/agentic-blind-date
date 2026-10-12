@@ -317,6 +317,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	data["ShowTell"] = h.showtellData(p)
 	data["Settings"] = h.settingsData(p)
 	data["RecapLink"] = h.recapLinkData(p)
+	data["RecapContent"] = h.recapContentData(p)
 	data["PhaseHeader"] = h.phaseHeaderData(p)
 	h.render(w, "wait.html", data)
 }
@@ -461,7 +462,7 @@ func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase) string {
 	case PhaseShowTell:
 		return "Show & tell: audience questions open"
 	case PhaseClosed:
-		return "Your recap is kept — scan the recap QR at the bottom of the page"
+		return "Your recap is kept — open it from More below"
 	}
 	answered := 0
 	for _, q := range p.Questions {
@@ -565,13 +566,14 @@ func (h *Handler) PhaseContent(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) phaseContentData(p *Participant) map[string]any {
 	dossier, match := h.dossierData(p)
 	return map[string]any{
-		"Me":          p,
-		"Phase":       h.events.State(),
-		"Match":       match,
-		"Score":       dossier["Score"],
-		"MeetStatus":  h.meetStatusData(p),
-		"MissionCard": h.missionCardData(p),
-		"ShowTell":    h.showtellData(p),
+		"Me":           p,
+		"Phase":        h.events.State(),
+		"Match":        match,
+		"Score":        dossier["Score"],
+		"MeetStatus":   h.meetStatusData(p),
+		"MissionCard":  h.missionCardData(p),
+		"ShowTell":     h.showtellData(p),
+		"RecapContent": h.recapContentData(p),
 	}
 }
 
@@ -651,6 +653,7 @@ func (h *Handler) missionCardData(p *Participant) map[string]any {
 	data := map[string]any{
 		"Me":        p,
 		"Preparing": h.events.State().MissionCardsLive(),
+		"Closed":    h.events.State().IsClosed(),
 	}
 	card, err := h.missions.Get(p.ID)
 	if err != nil {
@@ -976,8 +979,9 @@ func githubHandle(p *Participant) string {
 // ── the personal recap ─────────────────────────────────────────────────────
 
 // GET /user/recap-link/{id} — HTMX, the personal page's recap link: during
-// closed, the Participant's recap page as a QR — the unguessable link to
-// their evening, persistent across restarts.
+// closed, a button to the Participant's recap page — they navigate
+// themselves. The recap token is the unguessable link to their evening,
+// persistent across restarts.
 func (h *Handler) RecapLink(w http.ResponseWriter, r *http.Request) {
 	p, err := h.store.Get(r.PathValue("id"))
 	if err != nil {
@@ -1002,6 +1006,19 @@ func (h *Handler) recapLinkData(p *Participant) map[string]any {
 	return data
 }
 
+// GET /user/recap-content/{id} — HTMX, the recap's evening content on the
+// personal pages: once the event is closed, the page has become the recap.
+// Before closed the anchor renders empty; it fills by push when the event
+// closes.
+func (h *Handler) RecapContent(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, "fragment-recap.html", h.recapContentData(p))
+}
+
 // GET /user/recap/{token} — the personal recap page: the Participant's
 // evening, kept — their persona card, their match dossier (always unlocked
 // here), every connection with the channels they shared, the channels they
@@ -1022,14 +1039,26 @@ func (h *Handler) Recap(w http.ResponseWriter, r *http.Request) {
 }
 
 // recapData is the recap page's data: the Participant's persona card, their
-// match dossier (always unlocked here — the evening is theirs to keep), all
-// their connections with the channels those connections shared with them,
-// the channels they shared themselves, their show & tell items — their sign-up
-// and their audience questions — and their personal stats.
+// match dossier (always unlocked here — the evening is theirs to keep), and
+// the recap's evening content.
 func (h *Handler) recapData(p *Participant) map[string]any {
 	dossier, match := h.dossierData(p)
 	dossier["Unlocked"] = true // the recap always shows the dossier
+	data := h.recapContentData(p)
+	data["Closed"] = true // the recap page always shows the content
+	data["Match"] = match
+	data["Score"] = dossier["Score"]
+	data["Dossier"] = dossier
+	return data
+}
 
+// recapContentData is the recap's evening content: the personal stats, every
+// connection with the channels those connections shared with the Participant,
+// the channels the Participant shared themselves, and their show & tell items
+// — their sign-up and their audience questions. On the personal pages it
+// renders only once the event is closed — the page has become the recap;
+// recapData forces the flag on the recap page itself.
+func (h *Handler) recapContentData(p *Participant) map[string]any {
 	type connectionView struct {
 		Other    *Participant
 		Revealed []ContactChannel
@@ -1081,8 +1110,6 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 
 	return map[string]any{
 		"Me":                p,
-		"Match":             match,
-		"Dossier":           dossier,
 		"Connections":       connections,
 		"Shared":            shared(mine),
 		"ShowTellSignup":    signup,
@@ -1090,6 +1117,7 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 		"ConnectionCount":   h.meetings.Connections(p.ID),
 		"Rank":              rankOf(board, p.ID),
 		"Champion":          champion != nil && champion.ID == p.ID,
+		"Closed":            h.events.State().IsClosed(),
 	}
 }
 
