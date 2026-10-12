@@ -14,6 +14,16 @@
       100% { transform: scale(1); opacity: 1; }
     }
     .pop-in { animation: pop-in 0.5s ease-out forwards; }
+    /* The confirm dialog is the page's one loud element: it pops in, then
+       keeps pulsing so the handshake never leaves the participant's eye. */
+    @keyframes meet-pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+      50% { transform: scale(1.02); box-shadow: 0 0 0 14px rgba(16, 185, 129, 0); }
+    }
+    .meet-pulse { animation: pop-in 0.5s ease-out forwards, meet-pulse 1.4s ease-in-out 0.6s infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .pop-in, .meet-pulse { animation: none; }
+    }
   </style>
 </head>
 <body class="{{.Target.PersonaColor}} min-h-screen px-4 py-10" style="color-scheme: light;">
@@ -64,13 +74,12 @@
         hx-post="/user/met/{{.Me.ID}}"
         hx-target="#meet-result"
         hx-swap="outerHTML"
-        class="bg-black/15 border border-black/10 rounded-2xl p-5 pop-in space-y-3"
-        style="animation-delay:0.15s"
+        class="bg-emerald-500/10 border border-emerald-600/50 rounded-2xl p-5 meet-pulse space-y-3"
       >
         <input type="hidden" name="code" value="{{.Target.MeetCode}}" />
         <button
           type="submit"
-          class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-3 text-sm transition-colors"
+          class="w-full bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/50 text-white font-bold rounded-xl py-3 text-sm transition-colors"
         >
           🤝 Yes, we met!
         </button>
