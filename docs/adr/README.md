@@ -38,6 +38,8 @@ Each ADR follows this structure:
 | [0017](0017-structured-leveled-server-logging.md) | Structured, Leveled Server Logging | Accepted | 2026-10-11 |
 | [0018](0018-server-side-qr-generation.md) | Server-Side QR Generation | Accepted | 2026-10-11 |
 
+| [0019](0019-participant-page-layout.md) | Participant Page Layout — Phase-Progressive Disclosure with a Persistent Phase Header | Proposed | 2026-10-11 |
+
 ## When to Create an ADR
 
 Create an ADR when a decision:
