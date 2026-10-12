@@ -209,3 +209,157 @@ func TestPhaseHeader_Endpoint(t *testing.T) {
 		t.Errorf("unknown: want 404, got %d", resp.StatusCode)
 	}
 }
+
+// assertQueueBadge checks the header's show & tell queue badge (#139): its
+// state, its text and the colour that tells the two states apart — indigo
+// while queued, the app's live emerald once on stage.
+func assertQueueBadge(t *testing.T, body, state, text string) {
+	t.Helper()
+	if !strings.Contains(body, `data-badge="`+state+`"`) {
+		t.Errorf("the header should carry the %q queue badge, got: %s", state, body)
+	}
+	if !strings.Contains(body, html.EscapeString(text)) {
+		t.Errorf("the queue badge should read %q, got: %s", text, body)
+	}
+	want := "font-bold bg-indigo-600 text-white"
+	if state == "on-stage" {
+		want = "font-bold bg-emerald-600 text-white"
+	}
+	if !strings.Contains(body, want) {
+		t.Errorf("the %q badge should render with %q, got: %s", state, want, body)
+	}
+}
+
+// assertNoQueueBadge checks the header carries no show & tell queue badge.
+func assertNoQueueBadge(t *testing.T, body string) {
+	t.Helper()
+	if strings.Contains(body, "data-badge") {
+		t.Errorf("no queue badge should render, got: %s", body)
+	}
+}
+
+// TestPhaseHeader_ShowsTheQueueBadgeDuringShowTell covers #139: during the
+// show & tell phase, a signed-up Participant's header carries their queue
+// position as a badge — "You're up in N" while their talk waits in the host's
+// queue, a distinct on-stage state once the host stages them — and the badge
+// follows the host's reorders and staging, because it rides the header
+// fragment the streams refresh.
+func TestPhaseHeader_ShowsTheQueueBadgeDuringShowTell(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "me", "The Me", "ready")
+	seed(t, deps.db, "other", "The Other", "ready")
+	if err := deps.events.Advance(PhaseShowTell); err != nil {
+		t.Fatal(err)
+	}
+	signUp(t, deps, "other", "Other talk")
+	signUp(t, deps, "me", "My talk")
+
+	header := func() string {
+		t.Helper()
+		return readBody(t, get(t, srv, "/user/phase-header/me"))
+	}
+
+	// The second sign-up joins the tail: the badge shows their place.
+	body := header()
+	assertPhaseHeader(t, body, PhaseShowTell,
+		"Tonight: show & tell — sign up to present, or ask the one on stage",
+		"Show & tell: audience questions open")
+	assertQueueBadge(t, body, "queued", "You're up in 2")
+
+	// The host reorders the queue: the re-fetched fragment shows the new place.
+	if err := deps.showtell.Move(signupID(t, deps, "me"), "up"); err != nil {
+		t.Fatal(err)
+	}
+	assertQueueBadge(t, header(), "queued", "You're up in 1")
+
+	// The host stages them: the badge flips to the distinct on-stage state.
+	stageSignup(t, deps, "me")
+	onStage := header()
+	assertQueueBadge(t, onStage, "on-stage", "On stage now")
+	if strings.Contains(onStage, `data-badge="queued"`) {
+		t.Errorf("the on-stage state must render distinctly from the queued one, got: %s", onStage)
+	}
+
+	// Once the talk is presented, the Participant is out of the queue: no badge.
+	if _, err := deps.showtell.Done(signupID(t, deps, "me")); err != nil {
+		t.Fatal(err)
+	}
+	assertNoQueueBadge(t, header())
+}
+
+// TestPhaseHeader_NoQueueBadgeWithoutASignUp covers #139: a Participant who
+// has not signed up sees no badge in the header during the show & tell phase.
+func TestPhaseHeader_NoQueueBadgeWithoutASignUp(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "me", "The Me", "ready")
+	if err := deps.events.Advance(PhaseShowTell); err != nil {
+		t.Fatal(err)
+	}
+
+	body := readBody(t, get(t, srv, "/user/phase-header/me"))
+	assertPhaseHeader(t, body, PhaseShowTell,
+		"Tonight: show & tell — sign up to present, or ask the one on stage",
+		"Show & tell: audience questions open")
+	assertNoQueueBadge(t, body)
+}
+
+// TestPhaseHeader_NoQueueBadgeOutsideTheShowTellPhase covers #139: the badge
+// is a show & tell thing — a signed-up Participant sees none during the social.
+func TestPhaseHeader_NoQueueBadgeOutsideTheShowTellPhase(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "me", "The Me", "ready")
+	if err := deps.events.Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+	signUp(t, deps, "me", "My talk")
+
+	assertNoQueueBadge(t, readBody(t, get(t, srv, "/user/phase-header/me")))
+}
+
+// TestPhaseHeader_NoQueueBadgeWhenTheSignupIsUnreadable covers the badge's
+// error path: a sign-up that cannot be read leaves the header without a badge.
+func TestPhaseHeader_NoQueueBadgeWhenTheSignupIsUnreadable(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "me", "The Me", "ready")
+	if err := deps.events.Advance(PhaseShowTell); err != nil {
+		t.Fatal(err)
+	}
+	signUp(t, deps, "me", "My talk")
+	breakOnFault(t, deps.db, "showtell_read")
+
+	resp := get(t, srv, "/user/phase-header/me")
+	if resp.StatusCode != 200 {
+		t.Fatalf("want the header to render, got %d", resp.StatusCode)
+	}
+	assertNoQueueBadge(t, readBody(t, resp))
+}
+
+// TestPhaseHeader_QueueBadgeRidesBothPersonalPages covers #139: the badge is
+// part of the shared phase-header fragment, so it appears on both personal
+// pages — the match page for a matched Participant, the wait page for an
+// unmatched one.
+func TestPhaseHeader_QueueBadgeRidesBothPersonalPages(t *testing.T) {
+	t.Run("match page", func(t *testing.T) {
+		srv, deps := newTestServer(t, nil, nil)
+		seed(t, deps.db, "a", "The Gopher", "ready")
+		seed(t, deps.db, "b", "The Crab", "ready")
+		pair(t, deps.db, "a", "b")
+		if err := deps.events.Advance(PhaseShowTell); err != nil {
+			t.Fatal(err)
+		}
+		signUp(t, deps, "a", "Gopher talk")
+
+		assertQueueBadge(t, readBody(t, get(t, srv, "/user/match/a")), "queued", "You're up in 1")
+	})
+
+	t.Run("wait page", func(t *testing.T) {
+		srv, deps := newTestServer(t, nil, nil)
+		seed(t, deps.db, "w", "The Wave", "ready")
+		if err := deps.events.Advance(PhaseShowTell); err != nil {
+			t.Fatal(err)
+		}
+		signUp(t, deps, "w", "Wave talk")
+
+		assertQueueBadge(t, readBody(t, get(t, srv, "/user/wait/w")), "queued", "You're up in 1")
+	})
+}

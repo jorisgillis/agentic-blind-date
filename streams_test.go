@@ -236,6 +236,69 @@ func TestWaitStream_EmitsAPhaseEventWhenTheHostAdvancesThePhase(t *testing.T) {
 	})
 }
 
+// TestPersonalStreams_RefreshThePhaseHeaderOnQueueChanges covers #139's push
+// half: the queue badge rides the header fragment on the personal pages'
+// existing 'refresh' events, which already fire when the host reorders the
+// queue or stages a sign-up — the show & tell signature both streams watch
+// carries the Participant's sign-up position and status, and the on-stage
+// sign-up. No new stream or event is involved.
+func TestPersonalStreams_RefreshThePhaseHeaderOnQueueChanges(t *testing.T) {
+	t.Run("wait stream", func(t *testing.T) {
+		srv, deps := newTestServer(t, nil, nil)
+		seed(t, deps.db, "w", "W", "ready")
+		seed(t, deps.db, "other", "Other", "ready")
+		if err := deps.events.Advance(PhaseShowTell); err != nil {
+			t.Fatal(err)
+		}
+		signUp(t, deps, "other", "Other talk")
+		signUp(t, deps, "w", "W talk")
+
+		s := open(t, srv, "/user/wait-stream/w")
+		sentNothingNew(t, s, 1, "", "nothing changed")
+
+		// The host reorders the queue: the Participant's place changes.
+		if err := deps.showtell.Move(signupID(t, deps, "w"), "up"); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, s, "event: refresh")
+
+		// The host stages them: the badge flips to the on-stage state.
+		before := s.String()
+		stageSignup(t, deps, "w")
+		eventually(t, "staging to refresh the header", func() bool {
+			return len(s.String()) > len(before)
+		})
+	})
+
+	t.Run("match stream", func(t *testing.T) {
+		srv, deps := newTestServer(t, nil, nil)
+		seed(t, deps.db, "a", "A", "ready")
+		seed(t, deps.db, "b", "B", "ready")
+		pair(t, deps.db, "a", "b")
+		if err := deps.events.Advance(PhaseShowTell); err != nil {
+			t.Fatal(err)
+		}
+		signUp(t, deps, "b", "B talk")
+		signUp(t, deps, "a", "A talk")
+
+		s := open(t, srv, "/user/match-stream/a")
+		sentNothingNew(t, s, 1, "", "nothing changed")
+
+		// The host reorders the queue: the Participant's place changes.
+		if err := deps.showtell.Move(signupID(t, deps, "a"), "up"); err != nil {
+			t.Fatal(err)
+		}
+		waitFor(t, s, "event: refresh")
+
+		// The host stages them: the badge flips to the on-stage state.
+		before := s.String()
+		stageSignup(t, deps, "a")
+		eventually(t, "staging to refresh the header", func() bool {
+			return len(s.String()) > len(before)
+		})
+	})
+}
+
 func TestScreenStream_PushesTheGraphNowAndOnEveryChange(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")

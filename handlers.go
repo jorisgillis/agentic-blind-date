@@ -376,6 +376,15 @@ type phaseHeaderStep struct {
 	Current bool
 }
 
+// phaseHeaderBadge is the Participant's own show & tell queue position in the
+// phase header: "You're up in N" while their talk waits in the host's queue,
+// a distinct live state once the host has staged them. The queue itself stays
+// on the Big Screen; only the number rides the header (ADR 0019, decision 1).
+type phaseHeaderBadge struct {
+	Text    string
+	OnStage bool
+}
+
 // phaseHeaderData is the personal pages' phase header. It renders from the
 // phase machine's current state — a late joiner simply sees the earlier steps
 // as done — and weaves the Participant's own status into the current phase.
@@ -391,12 +400,41 @@ func (h *Handler) phaseHeaderData(p *Participant) map[string]any {
 		})
 	}
 	return map[string]any{
-		"Me":      p,
-		"Phase":   phase,
-		"Steps":   steps,
-		"Summary": phase.Tonight(),
-		"Status":  h.phaseHeaderStatus(p, phase),
+		"Me":         p,
+		"Phase":      phase,
+		"Steps":      steps,
+		"Summary":    phase.Tonight(),
+		"Status":     h.phaseHeaderStatus(p, phase),
+		"QueueBadge": h.phaseHeaderQueueBadge(p, phase),
 	}
+}
+
+// phaseHeaderQueueBadge is the Participant's show & tell queue badge for the
+// phase header, computed only during the show & tell phase: their 1-based
+// place in the host's queue, or the distinct on-stage state once the host has
+// staged them. A Participant without a sign-up — or whose talk is already
+// presented, out of the queue — sees no badge. The badge rides the header
+// fragment on the personal pages' existing 'refresh' events: the show & tell
+// signature both streams watch carries the sign-up's position and status.
+func (h *Handler) phaseHeaderQueueBadge(p *Participant, phase Phase) *phaseHeaderBadge {
+	if phase != PhaseShowTell {
+		return nil
+	}
+	signup, err := h.showtell.ForParticipant(p.ID)
+	if err != nil {
+		logger("handler").Warn("phase header sign-up", "participant", p.ID, "err", err)
+		return nil
+	}
+	if signup == nil {
+		return nil
+	}
+	switch signup.Status {
+	case SignupOnStage:
+		return &phaseHeaderBadge{Text: "On stage now", OnStage: true}
+	case SignupQueued:
+		return &phaseHeaderBadge{Text: fmt.Sprintf("You're up in %d", h.showtell.QueuePosition(p.ID))}
+	}
+	return nil
 }
 
 // phaseHeaderStatus is the Participant's own status line in the phase header,
