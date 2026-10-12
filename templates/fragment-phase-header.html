@@ -30,6 +30,19 @@
   </div>
 
   <p class="text-sm font-semibold text-gray-900">{{.Summary}}</p>
-  <p class="text-xs text-gray-700">{{.Status}}</p>
+  {{/* The status row: the Participant's own status line, with their show &
+       tell queue badge on the right during the show & tell phase — the queue
+       itself stays on the Big Screen, only the number rides the header. The
+       on-stage state is the app's live emerald, pulsing like the meet
+       confirm; motion-safe keeps it still under prefers-reduced-motion. */}}
+  <div class="flex items-center justify-between gap-2">
+    <p class="text-xs text-gray-700">{{.Status}}</p>
+    {{if .QueueBadge}}
+    <span
+      data-badge="{{if .QueueBadge.OnStage}}on-stage{{else}}queued{{end}}"
+      class="flex-shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold {{if .QueueBadge.OnStage}}bg-emerald-600 text-white shadow-lg shadow-emerald-500/50 motion-safe:animate-pulse{{else}}bg-indigo-600 text-white{{end}}"
+    >{{.QueueBadge.Text}}</span>
+    {{end}}
+  </div>
 </div>
 {{end}}

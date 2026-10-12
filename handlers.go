@@ -376,6 +376,15 @@ type phaseHeaderStep struct {
 	Current bool
 }
 
+// phaseHeaderBadge is the Participant's own show & tell queue position in the
+// phase header: "You're up in N" while their talk waits in the host's queue,
+// a distinct live state once the host has staged them. The queue itself stays
+// on the Big Screen; only the number rides the header (ADR 0019, decision 1).
+type phaseHeaderBadge struct {
+	Text    string
+	OnStage bool
+}
+
 // phaseHeaderData is the personal pages' phase header. It renders from the
 // phase machine's current state — a late joiner simply sees the earlier steps
 // as done — and weaves the Participant's own status into the current phase.
@@ -391,12 +400,41 @@ func (h *Handler) phaseHeaderData(p *Participant) map[string]any {
 		})
 	}
 	return map[string]any{
-		"Me":      p,
-		"Phase":   phase,
-		"Steps":   steps,
-		"Summary": phase.Tonight(),
-		"Status":  h.phaseHeaderStatus(p, phase),
+		"Me":         p,
+		"Phase":      phase,
+		"Steps":      steps,
+		"Summary":    phase.Tonight(),
+		"Status":     h.phaseHeaderStatus(p, phase),
+		"QueueBadge": h.phaseHeaderQueueBadge(p, phase),
 	}
+}
+
+// phaseHeaderQueueBadge is the Participant's show & tell queue badge for the
+// phase header, computed only during the show & tell phase: their 1-based
+// place in the host's queue, or the distinct on-stage state once the host has
+// staged them. A Participant without a sign-up — or whose talk is already
+// presented, out of the queue — sees no badge. The badge rides the header
+// fragment on the personal pages' existing 'refresh' events: the show & tell
+// signature both streams watch carries the sign-up's position and status.
+func (h *Handler) phaseHeaderQueueBadge(p *Participant, phase Phase) *phaseHeaderBadge {
+	if phase != PhaseShowTell {
+		return nil
+	}
+	signup, err := h.showtell.ForParticipant(p.ID)
+	if err != nil {
+		logger("handler").Warn("phase header sign-up", "participant", p.ID, "err", err)
+		return nil
+	}
+	if signup == nil {
+		return nil
+	}
+	switch signup.Status {
+	case SignupOnStage:
+		return &phaseHeaderBadge{Text: "On stage now", OnStage: true}
+	case SignupQueued:
+		return &phaseHeaderBadge{Text: fmt.Sprintf("You're up in %d", h.showtell.QueuePosition(p.ID))}
+	}
+	return nil
 }
 
 // phaseHeaderStatus is the Participant's own status line in the phase header,
@@ -482,19 +520,59 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dossier, match := h.dossierData(p)
+	// The evergreen cards ride at the page's top level for the "More" drawer
+	// (ADR 0019, step 3): the dossier, the settings, the share-profile QR and
+	// the recap link — outside the phase-content region, so they survive
+	// phase swaps and keep their own refresh wiring.
+	dossier, _ := h.dossierData(p)
 	h.render(w, "match.html", map[string]any{
+		"Me":           p,
+		"PhaseHeader":  h.phaseHeaderData(p),
+		"PhaseContent": h.phaseContentData(p),
+		"Dossier":      dossier,
+		"Settings":     h.settingsData(p),
+		"RecapLink":    h.recapLinkData(p),
+	})
+}
+
+// ── the match page's phase-content region ──────────────────────────────────
+
+// GET /user/phase-content/{id} — HTMX, the match page's phase-content region:
+// the composition of per-card fragments the current phase calls for. The
+// region is swapped on the match stream's 'phase' event — a phase change is
+// the one moment a bigger visual beat is wanted — while the per-card fragments
+// inside it keep their own 'refresh' wiring, so a refresh never re-animates
+// the region.
+func (h *Handler) PhaseContent(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if dest := h.destination(p); dest != "/user/match/"+p.ID {
+		w.Header().Set("HX-Redirect", dest)
+		return
+	}
+	h.render(w, "fragment-phase-content.html", h.phaseContentData(p))
+}
+
+// phaseContentData is the match page's phase-content region: the per-card
+// fragments the current phase calls for, composed around the match reveal —
+// the mission card and the meet section during the social, the show & tell
+// tooling from show & tell on. The evergreen cards — the dossier, the
+// settings, the share-profile QR and the recap link — live in the page's
+// "More" drawer instead (ADR 0019, step 3, #138), outside this region.
+func (h *Handler) phaseContentData(p *Participant) map[string]any {
+	dossier, match := h.dossierData(p)
+	return map[string]any{
 		"Me":          p,
-		"PhaseHeader": h.phaseHeaderData(p),
+		"Phase":       h.events.State(),
 		"Match":       match,
 		"Score":       dossier["Score"],
-		"Dossier":     dossier,
 		"MeetStatus":  h.meetStatusData(p),
 		"MissionCard": h.missionCardData(p),
 		"ShowTell":    h.showtellData(p),
-		"Settings":    h.settingsData(p),
-		"RecapLink":   h.recapLinkData(p),
-	})
+	}
 }
 
 // dossierData is the Match page's dossier: the fun payload of the Match — the

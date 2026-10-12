@@ -337,14 +337,15 @@
      flags and the icebreakers. Locked (blurred placeholders, the payload
      itself never in the page) until the pair's dossier unlocks; refreshed
      when the match stream says so — the pair's Meeting completing unlocks
-     it, without a manual refresh. */}}
+     it, without a manual refresh. It renders inside the page's "More"
+     drawer, where the drawer's spacing takes care of the margins. */}}
 {{define "fragment-dossier.html"}}
 <div
   id="dossier"
   hx-get="/user/dossier/{{.Me.ID}}"
   hx-trigger="refresh"
   hx-swap="outerHTML"
-  class="space-y-4 mb-4"
+  class="space-y-4"
 >
 {{if .Unlocked}}
 
