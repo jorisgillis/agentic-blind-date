@@ -311,6 +311,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	data["ShowTell"] = h.showtellData(p)
 	data["Settings"] = h.settingsData(p)
 	data["RecapLink"] = h.recapLinkData(p)
+	data["PhaseHeader"] = h.phaseHeaderData(p)
 	h.render(w, "wait.html", data)
 }
 
@@ -342,6 +343,89 @@ func (h *Handler) PersonaCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "fragment-persona-card.html", p)
+}
+
+// ── phase header ───────────────────────────────────────────────────────────
+
+// GET /user/phase-header/{id} — HTMX, the personal pages' persistent phase
+// header: the evening's progress strip, the one-line "Tonight: …" summary and
+// the Participant's own status, refreshed when the page's stream says so — on
+// 'refresh' like every other fragment, and on the 'phase' event when the host
+// advances the evening.
+func (h *Handler) PhaseHeader(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, "fragment-phase-header.html", h.phaseHeaderData(p))
+}
+
+// phaseHeaderStep is one step of the phase header's progress strip: the phase
+// itself, its short label, and whether it is done, current or upcoming.
+type phaseHeaderStep struct {
+	Phase   Phase
+	Label   string
+	Done    bool
+	Current bool
+}
+
+// phaseHeaderData is the personal pages' phase header. It renders from the
+// phase machine's current state — a late joiner simply sees the earlier steps
+// as done — and weaves the Participant's own status into the current phase.
+func (h *Handler) phaseHeaderData(p *Participant) map[string]any {
+	phase := h.events.State()
+	steps := make([]phaseHeaderStep, 0, len(phases))
+	for _, q := range phases {
+		steps = append(steps, phaseHeaderStep{
+			Phase:   q,
+			Label:   q.StepLabel(),
+			Done:    q.rank() < phase.rank(),
+			Current: q == phase,
+		})
+	}
+	return map[string]any{
+		"Me":      p,
+		"Phase":   phase,
+		"Steps":   steps,
+		"Summary": phase.Tonight(),
+		"Status":  h.phaseHeaderStatus(p, phase),
+	}
+}
+
+// phaseHeaderStatus is the Participant's own status line in the phase header,
+// per phase: the Interview's progress during onboarding, the Mission card's
+// stamped tiles during the social, a show & tell pointer during show & tell,
+// and the recap pointer once the event is closed.
+func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase) string {
+	switch phase {
+	case PhaseSocial:
+		card, err := h.missions.Get(p.ID)
+		if err != nil {
+			logger("handler").Warn("phase header mission card", "participant", p.ID, "err", err)
+		}
+		if card == nil {
+			return "Mission: your card is being prepared"
+		}
+		stamped := 0
+		for _, tile := range h.stampedTiles(p, card) {
+			if tile.Stamped {
+				stamped++
+			}
+		}
+		return fmt.Sprintf("Mission: %d of %d tiles stamped", stamped, len(card.Tiles))
+	case PhaseShowTell:
+		return "Show & tell: audience questions open"
+	case PhaseClosed:
+		return "Your recap is kept — scan the recap QR at the bottom of the page"
+	}
+	answered := 0
+	for _, q := range p.Questions {
+		if _, ok := p.Answers[q.ID]; ok {
+			answered++
+		}
+	}
+	return fmt.Sprintf("Interview: %d of %d answered", answered, len(p.Questions))
 }
 
 // waitStatusData is the wait page's status section. A matched Participant
@@ -395,6 +479,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 	dossier, match := h.dossierData(p)
 	h.render(w, "match.html", map[string]any{
 		"Me":          p,
+		"PhaseHeader": h.phaseHeaderData(p),
 		"Match":       match,
 		"Score":       dossier["Score"],
 		"Dossier":     dossier,
@@ -685,7 +770,8 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 // GET /user/match-stream/{id}
 // Tells the match page to refresh its meet section and its dossier when the
 // Participant's meetings or the phase change — the pair's Meeting completing
-// unlocks the dossier.
+// unlocks the dossier. A phase transition additionally emits a distinct
+// 'phase' event, so the phase header updates live.
 func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -697,10 +783,15 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	last := h.meetSignature(first)
+	lastPhase := h.events.State()
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
 			return true
+		}
+		if now := h.events.State(); now != lastPhase {
+			lastPhase = now
+			sseEvent(w, "phase")
 		}
 		if now := h.meetSignature(p); now != last {
 			last = now
@@ -1856,7 +1947,8 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 // GET /user/wait-stream/{id}
 // Tells the wait page to refresh when what it shows changes (the ready count,
 // being matched, the persona being crafted, the meet section) and redirects
-// once the Participant belongs elsewhere.
+// once the Participant belongs elsewhere. A phase transition additionally
+// emits a distinct 'phase' event, so the phase header updates live.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -1874,10 +1966,15 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 		persona string
 	}
 	last := shown{h.db.ReadyCount(), first.IsMatched(), h.meetSignature(first), first.PersonaName}
+	lastPhase := h.events.State()
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
 			return true
+		}
+		if now := h.events.State(); now != lastPhase {
+			lastPhase = now
+			sseEvent(w, "phase")
 		}
 		if dest := h.destination(p); dest != "/user/wait/"+id {
 			sseRedirect(w, dest)

@@ -27,7 +27,13 @@
 <div class="{{textColor .Me.PersonaColor}}">
   <div class="max-w-md mx-auto">
 
-    <div class="text-center mb-8 pop-in">
+    {{/* Phase header — persistent and page-level (ADR 0019): the evening's
+         progress strip at the top of the page, refreshed when the match
+         stream says so: on 'refresh' like every other fragment, and on the
+         'phase' event when the host advances the evening */}}
+    {{template "fragment-phase-header.html" .PhaseHeader}}
+
+    <div class="text-center mt-5 mb-8 pop-in">
       <div class="text-8xl mb-3">{{.Me.PersonaSymbol}}</div>
       <div class="text-4xl mb-2">💘</div>
       <h1 class="text-3xl font-black text-gray-900">It's a match!</h1>
@@ -121,6 +127,7 @@
     document.addEventListener('DOMContentLoaded', renderMd);
     const _mes = new EventSource('/user/match-stream/{{.Me.ID}}');
     _mes.addEventListener('refresh', () => {
+      htmx.trigger('#phase-header', 'refresh');
       htmx.trigger('#meet-status', 'refresh');
       const dossier = document.getElementById('dossier');
       if (dossier) htmx.trigger(dossier, 'refresh');
@@ -128,6 +135,7 @@
       htmx.trigger('#showtell', 'refresh');
       htmx.trigger('#recap', 'refresh');
     });
+    _mes.addEventListener('phase', () => htmx.trigger('#phase-header', 'refresh'));
     _mes.onerror = () => _mes.close();
   </script>
 </body>
