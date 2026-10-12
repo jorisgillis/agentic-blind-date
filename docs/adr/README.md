@@ -28,6 +28,7 @@ Each ADR follows this structure:
 | [0007](0007-separation-of-matching-logic-into-matcher-module.md) | Separation of Matching Logic into Matcher Module | Accepted | 2026-05-16 |
 | [0008](0008-quality-assurance-approach.md) | Quality Assurance Approach | Accepted | 2026-05-16 |
 | [0009](0009-self-hosted-front-end-assets.md) | Self-Hosted Front-End Assets and In-Browser Tailwind v4 | Accepted | 2026-09-24 |
+
 | [0010](0010-event-phase-machine.md) | Event Phase Machine | Accepted | 2026-10-10 |
 | [0011](0011-meeting-handshake.md) | Meeting Confirmation Handshake | Accepted | 2026-10-10 |
 | [0012](0012-reveal-ceremony-and-locked-dossier.md) | The Reveal Ceremony and the Locked Dossier | Accepted | 2026-10-10 |
@@ -37,6 +38,9 @@ Each ADR follows this structure:
 | [0016](0016-closing-ceremony-public-recap-host-export.md) | Closing Ceremony, Public Recap and the Host Export Pack | Accepted | 2026-10-10 |
 | [0017](0017-structured-leveled-server-logging.md) | Structured, Leveled Server Logging | Accepted | 2026-10-11 |
 | [0018](0018-server-side-qr-generation.md) | Server-Side QR Generation | Accepted | 2026-10-11 |
+
+| [0019](0019-participant-page-layout.md) | Participant Page Layout — Phase-Progressive Disclosure with a Persistent Phase Header | Proposed | 2026-10-11 |
+
 
 ## When to Create an ADR
 
