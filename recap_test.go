@@ -12,11 +12,12 @@ import (
 // This file covers ticket #117's personal recap: the recaps store (the
 // unguessable, persistent token), the recap page (persona card, the match
 // dossier always unlocked, connections with revealed channels, personal
-// stats), the recap link as a QR on the personal page during closed, and the
-// recap gating.
+// stats), the recap link as a button on the personal page during closed, the
+// personal pages becoming the recap once the event is closed, and the recap
+// gating.
 
 // recapToken reads the recap token out of the recap-link fragment, the way
-// the personal page's QR carries it.
+// the personal page's button carries it.
 func recapToken(t *testing.T, srv *testSrv, id string) string {
 	t.Helper()
 	body := readBody(t, get(t, srv, "/user/recap-link/"+id))
@@ -517,8 +518,11 @@ func TestRecapData_TheLeaderboardFailureIsLogged(t *testing.T) {
 }
 
 // TestRecap_GitHubHandlesAppearOnlyAsRevealedChannels covers the handle rule:
-// on the owner's own recap a GitHub handle appears only as a revealed github
-// contact channel — the owner opted in — and nowhere else outside stage.
+// a GitHub handle appears only as a revealed github contact channel — the
+// owner opted in, after a completed meeting — and nowhere else outside stage.
+// The revealed channels show in the meet section once the meeting completes,
+// on the recap page, and on the personal pages once they have become the
+// recap.
 func TestRecap_GitHubHandlesAppearOnlyAsRevealedChannels(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
@@ -544,6 +548,19 @@ func TestRecap_GitHubHandlesAppearOnlyAsRevealedChannels(t *testing.T) {
 	// bbb opts in on github; aaa opts in on email only; ccc shares nothing.
 	saveChannels(t, srv, "bbb", url.Values{"github": {"octocat-bbb"}, "github_on": {"on"}})
 	saveChannels(t, srv, "aaa", url.Values{"email": {"aaa@example.com"}, "email_on": {"on"}})
+
+	// During the social the Match page carries no handle but revealed
+	// channels: bbb's appears in the meet section — the meeting completed
+	// and bbb opted in — while ccc's appears nowhere (no meeting with aaa,
+	// nothing shared).
+	matchBody := readBody(t, get(t, srv, "/user/match/aaa"))
+	if !strings.Contains(matchBody, "octocat-bbb") {
+		t.Error("bbb opted in after a completed meeting: their handle appears as their revealed channel")
+	}
+	if strings.Contains(matchBody, "octocat-ccc") {
+		t.Error("ccc shared nothing and never met aaa: their handle appears nowhere")
+	}
+
 	if err := deps.events.Advance(PhaseClosed); err != nil {
 		t.Fatal(err)
 	}
@@ -559,10 +576,15 @@ func TestRecap_GitHubHandlesAppearOnlyAsRevealedChannels(t *testing.T) {
 		t.Error("ccc shared nothing: their handle does not appear on the recap")
 	}
 
-	// Nowhere else outside stage: the Match page carries no partner handle.
-	matchBody := readBody(t, get(t, srv, "/user/match/aaa"))
-	if strings.Contains(matchBody, "octocat-bbb") || strings.Contains(matchBody, "octocat-ccc") {
-		t.Error("the Match page carries no handles")
+	// Once closed the Match page has become the recap: bbb's handle appears
+	// as their revealed channel of the completed meeting, and ccc's never
+	// does.
+	matchBody = readBody(t, get(t, srv, "/user/match/aaa"))
+	if !strings.Contains(matchBody, "octocat-bbb") {
+		t.Error("closed: bbb's handle appears as their revealed channel")
+	}
+	if strings.Contains(matchBody, "octocat-ccc") {
+		t.Error("closed: ccc's handle never appears")
 	}
 	// The debug endpoint shows counts only, never handles as channel values.
 	if body := readBody(t, get(t, srv, "/data/channels")); strings.Contains(body, "octocat") {
@@ -570,36 +592,40 @@ func TestRecap_GitHubHandlesAppearOnlyAsRevealedChannels(t *testing.T) {
 	}
 }
 
-// TestRecapLink_ShowsTheQrOnlyWhenClosed covers the personal page's recap
-// link: during closed, the recap page as a QR; before that, nothing — but
-// the refresh hook stays, so the QR arrives by push when the event closes.
-func TestRecapLink_ShowsTheQrOnlyWhenClosed(t *testing.T) {
+// TestRecapLink_ShowsTheButtonOnlyWhenClosed covers the personal page's recap
+// link: during closed, a button to the recap page — the Participant navigates
+// themselves, no QR to scan; before that, nothing — but the refresh hook
+// stays, so the button arrives by push when the event closes.
+func TestRecapLink_ShowsTheButtonOnlyWhenClosed(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 
-	// Onboarding: no recap link, but the refresh hook stays.
+	// Onboarding: no recap button, but the refresh hook stays.
 	body := readBody(t, get(t, srv, "/user/recap-link/a"))
 	if !strings.Contains(body, `id="recap"`) || !strings.Contains(body, `hx-get="/user/recap-link/a"`) {
 		t.Errorf("the gated-off section should keep its refresh hook, got: %s", body)
 	}
-	if strings.Contains(body, "recap-qr") {
+	if strings.Contains(body, "/user/recap/") {
 		t.Error("during onboarding there is no recap link")
 	}
 
 	// The social: still nothing.
 	deps.events.Reveal()
-	if body := readBody(t, get(t, srv, "/user/recap-link/a")); strings.Contains(body, "recap-qr") {
+	if body := readBody(t, get(t, srv, "/user/recap-link/a")); strings.Contains(body, "/user/recap/") {
 		t.Error("during the social there is no recap link yet")
 	}
 
-	// Closed: the recap link as a QR.
+	// Closed: the recap link as a button to the recap page — no QR.
 	if err := deps.events.Advance(PhaseClosed); err != nil {
 		t.Fatal(err)
 	}
 	body = readBody(t, get(t, srv, "/user/recap-link/a"))
 	token := recapToken(t, srv, "a")
-	if !strings.Contains(body, `id="recap-qr"`) || !strings.Contains(body, `src="/qr?data=/user/recap/`+token+`&size=150"`) {
-		t.Errorf("during closed the recap link shows as a QR, got: %s", body)
+	if !strings.Contains(body, `href="/user/recap/`+token+`"`) || !strings.Contains(body, "Open your recap") {
+		t.Errorf("during closed the recap link shows as a button, got: %s", body)
+	}
+	if strings.Contains(body, "/qr?data=/user/recap/") {
+		t.Error("the recap link is a button, not a QR")
 	}
 	if again := recapToken(t, srv, "a"); again != token {
 		t.Error("the recap token is stable")
@@ -610,9 +636,9 @@ func TestRecapLink_ShowsTheQrOnlyWhenClosed(t *testing.T) {
 	}
 }
 
-// TestRecapLink_ATokenFailureShowsNoQr covers the recap link against a token
-// creation that fails: the section renders without the QR.
-func TestRecapLink_ATokenFailureShowsNoQr(t *testing.T) {
+// TestRecapLink_ATokenFailureShowsNoButton covers the recap link against a
+// token creation that fails: the section renders without the button.
+func TestRecapLink_ATokenFailureShowsNoButton(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	if err := deps.events.Advance(PhaseClosed); err != nil {
@@ -621,18 +647,18 @@ func TestRecapLink_ATokenFailureShowsNoQr(t *testing.T) {
 	failWrites(t, deps.db, "recap_insert")
 
 	body := readBody(t, get(t, srv, "/user/recap-link/a"))
-	if strings.Contains(body, "recap-qr") {
-		t.Error("a failed token creation shows no QR")
+	if strings.Contains(body, "/user/recap/") {
+		t.Error("a failed token creation shows no recap button")
 	}
 	if !strings.Contains(body, `id="recap"`) {
 		t.Error("the section keeps its refresh hook")
 	}
 }
 
-// TestPersonalPages_ShowTheRecapQrWhenClosed covers the recap link on both
-// personal pages: the fragment is there from the start, the QR arrives with
-// the close.
-func TestPersonalPages_ShowTheRecapQrWhenClosed(t *testing.T) {
+// TestPersonalPages_ShowTheRecapButtonWhenClosed covers the recap link on
+// both personal pages: the fragment is there from the start, the button
+// arrives with the close.
+func TestPersonalPages_ShowTheRecapButtonWhenClosed(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The YAML Wrangler", "ready")
@@ -645,8 +671,8 @@ func TestPersonalPages_ShowTheRecapQrWhenClosed(t *testing.T) {
 		if !strings.Contains(body, `id="recap"`) || !strings.Contains(body, `hx-get="/user/recap-link/`) {
 			t.Errorf("%s should include the recap link section, got: %s", path, body)
 		}
-		if strings.Contains(body, `id="recap-qr"`) {
-			t.Errorf("%s: no QR before the event closes", path)
+		if strings.Contains(body, "/user/recap/") {
+			t.Errorf("%s: no recap button before the event closes", path)
 		}
 	}
 
@@ -655,15 +681,177 @@ func TestPersonalPages_ShowTheRecapQrWhenClosed(t *testing.T) {
 	}
 	for _, path := range []string{"/user/match/aaa", "/user/wait/solo"} {
 		body := readBody(t, get(t, srv, path))
-		if !strings.Contains(body, `id="recap-qr"`) || !strings.Contains(body, `src="/qr?data=/user/recap/`) {
-			t.Errorf("%s: the recap QR shows during closed, got: %s", path, body)
+		if !strings.Contains(body, `href="/user/recap/`) || !strings.Contains(body, "Open your recap") {
+			t.Errorf("%s: the recap button shows during closed, got: %s", path, body)
+		}
+	}
+}
+
+// TestRecapContent_RendersOnlyWhenClosed covers the recap-content endpoint:
+// the evening's content the personal pages render once the event is closed.
+// Before closed the anchor renders empty; it fills when the event closes; an
+// unknown participant is a 404.
+func TestRecapContent_RendersOnlyWhenClosed(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+
+	// Onboarding: the anchor renders with its refresh wiring, empty.
+	body := readBody(t, get(t, srv, "/user/recap-content/a"))
+	for _, want := range []string{`id="recap-content"`, `hx-get="/user/recap-content/a"`, `hx-trigger="refresh"`, `hx-swap="outerHTML"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the anchor should render with %q, got: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "🤝 Your connections") {
+		t.Error("before closed the recap content renders empty")
+	}
+
+	// The social: still empty.
+	deps.events.Reveal()
+	if body := readBody(t, get(t, srv, "/user/recap-content/a")); strings.Contains(body, "🤝 Your connections") {
+		t.Error("during the social the recap content renders empty")
+	}
+
+	// Closed: the evening's content.
+	if err := deps.events.Advance(PhaseClosed); err != nil {
+		t.Fatal(err)
+	}
+	body = readBody(t, get(t, srv, "/user/recap-content/a"))
+	for _, want := range []string{"❤️ 0 connection", "🤝 Your connections", "No completed meetings", "📇 Your contact details", "You didn't share any contact details."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("during closed the recap content shows %q, got: %s", want, body)
+		}
+	}
+
+	if resp := get(t, srv, "/user/recap-content/nobody"); resp.StatusCode != 404 {
+		t.Errorf("unknown participant: want 404, got %d", resp.StatusCode)
+	}
+}
+
+// TestPersonalPages_BecomeTheRecapWhenClosed covers the closed personal pages:
+// the page has become the recap — the persona card, the match headline and
+// the evening's content — while nothing actionable remains, and the More
+// drawer keeps the evergreen options: the dossier, the settings to share
+// contacts, the share-profile QR and the recap button.
+func TestPersonalPages_BecomeTheRecapWhenClosed(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "aaa", "The Gopher", "ready")
+	seed(t, deps.db, "bbb", "The YAML Wrangler", "ready")
+	seed(t, deps.db, "solo", "The Loner", "ready")
+	pair(t, deps.db, "aaa", "bbb")
+	if err := deps.events.Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+	ms := NewMeetings(deps.db, deps.events)
+	x, y := reload(t, deps.db, "aaa"), reload(t, deps.db, "bbb")
+	if _, _, err := ms.Confirm(x, y, OriginMatch); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ms.Confirm(y, x, OriginMatch); err != nil {
+		t.Fatal(err)
+	}
+	if err := deps.events.Advance(PhaseClosed); err != nil {
+		t.Fatal(err)
+	}
+
+	// The match page has become the recap: the persona card, the match
+	// headline, the evening's content — and the drawer's evergreen cards
+	// after it.
+	body := readBody(t, get(t, srv, "/user/match/aaa"))
+	assertOrder(t, body,
+		`id="persona-card"`,
+		"💘 Your match",
+		`id="recap-content"`,
+		"❤️ 1 connection",
+		"🤝 Your connections",
+		"📇 Your contact details",
+		"<details",
+	)
+	for _, want := range []string{
+		"The YAML Wrangler",     // the match headline, and the one connection
+		"91% compatibility",     // the match headline
+		"#1 on the leaderboard", // tied with bbb, ahead on persona name
+		"👑 Merge Trophy",        // the champion
+		"shared nothing",        // bbb shared no contact channels
+		"You didn't share any contact details.",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the closed match page should show %q, got: %s", want, body)
+		}
+	}
+	// Nothing actionable remains: no mission card, no meet section, no show
+	// & tell, no match reveal.
+	for _, absent := range []string{`id="mission-card"`, `id="meet-status"`, `id="showtell"`, "It's a match!", "Find them in the room"} {
+		if strings.Contains(body, absent) {
+			t.Errorf("the closed match page should not carry %q", absent)
+		}
+	}
+	// The More drawer keeps the evergreen options: the unlocked dossier, the
+	// settings to share contacts, the share-profile QR and the recap button.
+	drawer := drawerOf(t, body)
+	assertOrder(t, drawer,
+		`id="dossier"`,
+		`id="settings"`,
+		`id="qr"`,
+		`id="recap"`,
+	)
+	for _, want := range []string{
+		"Both love tabs", // the dossier, unlocked by the completed meeting
+		`src="/qr?data=/user/match/aaa&size=150"`,
+		`href="/user/recap/` + recapToken(t, srv, "aaa") + `"`,
+		"Open your recap",
+	} {
+		if !strings.Contains(drawer, want) {
+			t.Errorf("the closed match page's drawer should carry %q, got: %s", want, drawer)
+		}
+	}
+
+	// The wait page has become the recap too — the unmatched solo: the
+	// persona card and the evening's content, with the phase cards' anchors
+	// empty and no match headline (the wait page never had one).
+	waitBody := readBody(t, get(t, srv, "/user/wait/solo"))
+	assertOrder(t, waitBody,
+		`id="persona-card"`,
+		`id="recap-content"`,
+		"❤️ 0 connection",
+		"🤝 Your connections",
+		"No completed meetings",
+		"📇 Your contact details",
+		"<details",
+	)
+	// The phase cards' anchors stay — empty, gated off — so the page's
+	// refresh wiring keeps finding them.
+	for _, id := range []string{"mission-card", "meet-status", "showtell"} {
+		if n := strings.Count(waitBody, `id="`+id+`"`); n != 1 {
+			t.Errorf("the closed wait page keeps the empty %q anchor, got %d", id, n)
+		}
+	}
+	for _, absent := range []string{`id="dossier"`, "Your mission", "It's a match!", "💘 Your match"} {
+		if strings.Contains(waitBody, absent) {
+			t.Errorf("the closed wait page should not carry %q", absent)
+		}
+	}
+	// The recap content arrives by push: the stream's refresh listener
+	// triggers the anchor.
+	if !strings.Contains(waitBody, `htmx.trigger('#recap-content', 'refresh')`) {
+		t.Error("the wait stream's refresh listener should trigger the recap content")
+	}
+	// The options stay: the persona card's share-profile QR and the drawer's
+	// settings and recap button.
+	for _, want := range []string{
+		`src="/qr?data=/user/wait/solo&size=120"`,
+		`href="/user/recap/` + recapToken(t, srv, "solo") + `"`,
+		"Open your recap",
+	} {
+		if !strings.Contains(waitBody, want) {
+			t.Errorf("the closed wait page should carry %q", want)
 		}
 	}
 }
 
 // TestMatchStream_PushesTheRecapLinkWhenTheEventCloses covers the push: the
 // match page's stream fires when the phase changes, and the recap link it
-// then fetches carries the QR.
+// then fetches carries the button.
 func TestMatchStream_PushesTheRecapLinkWhenTheEventCloses(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
@@ -679,9 +867,10 @@ func TestMatchStream_PushesTheRecapLinkWhenTheEventCloses(t *testing.T) {
 	}
 	waitFor(t, s, "event: refresh")
 
-	// The refresh the stream pushed re-renders the recap link — with the QR.
-	if body := readBody(t, get(t, srv, "/user/recap-link/aaa")); !strings.Contains(body, "recap-qr") {
-		t.Errorf("after the push the recap link shows the QR, got: %s", body)
+	// The refresh the stream pushed re-renders the recap link — with the
+	// button.
+	if body := readBody(t, get(t, srv, "/user/recap-link/aaa")); !strings.Contains(body, "Open your recap") {
+		t.Errorf("after the push the recap link shows the button, got: %s", body)
 	}
 }
 
@@ -700,8 +889,8 @@ func TestWaitStream_PushesTheRecapLinkWhenTheEventCloses(t *testing.T) {
 	}
 	waitFor(t, s, "event: refresh")
 
-	if body := readBody(t, get(t, srv, "/user/recap-link/solo")); !strings.Contains(body, "recap-qr") {
-		t.Errorf("after the push the recap link shows the QR, got: %s", body)
+	if body := readBody(t, get(t, srv, "/user/recap-link/solo")); !strings.Contains(body, "Open your recap") {
+		t.Errorf("after the push the recap link shows the button, got: %s", body)
 	}
 }
 

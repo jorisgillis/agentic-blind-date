@@ -132,8 +132,10 @@ func TestBigScreenServesTheJoinQRWithoutAnyQRCodeLibrary(t *testing.T) {
 }
 
 // TestPersonalPagesServeQRsFromTheServer covers #126: the wait and match
-// pages and the meet/recap fragments render their QRs through /qr — the
-// participant URLs never leave the server for a third-party image service.
+// pages and the meet fragment render their QRs through /qr — the participant
+// URLs never leave the server for a third-party image service. (The recap
+// link is a button since the personal pages became the recap when closed —
+// recap_test.go covers it.)
 func TestPersonalPagesServeQRsFromTheServer(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Bard", StepReady)
@@ -165,15 +167,6 @@ func TestPersonalPagesServeQRsFromTheServer(t *testing.T) {
 		}
 		if strings.Contains(body, "api.qrserver.com") {
 			t.Error("the match page should not reference api.qrserver.com")
-		}
-	})
-	t.Run("the recap link fragment", func(t *testing.T) {
-		if err := deps.events.Advance(PhaseClosed); err != nil {
-			t.Fatal(err)
-		}
-		body := readBody(t, get(t, srv, "/user/recap-link/a"))
-		if !strings.Contains(body, `src="/qr?data=/user/recap/`) {
-			t.Error("the recap QR should be served by /qr")
 		}
 	})
 }

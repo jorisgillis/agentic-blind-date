@@ -52,10 +52,11 @@ func seedMatchedPair(t *testing.T, deps *testDeps) {
 // TestPhaseContent_RendersTheCompositionPerPhase covers #137's per-phase
 // render: the region shows only what the current phase calls for — the social
 // leads with the mission card, then the meet section, then the match reveal;
-// show & tell adds its tooling after the reveal; closed leads with the
-// reveal, then the mission card. The evergreen cards (the dossier, the
-// settings, the share-profile QR, the recap link) are not part of the region
-// — they live in the page's More drawer (#138).
+// show & tell adds its tooling after the reveal; once closed the page has
+// become the recap — the persona card, the match headline and the evening's
+// content. The evergreen cards (the dossier, the settings, the share-profile
+// QR, the recap link) are not part of the region — they live in the page's
+// More drawer (#138).
 func TestPhaseContent_RendersTheCompositionPerPhase(t *testing.T) {
 	t.Run(string(PhaseSocial), func(t *testing.T) {
 		srv, deps := newTestServer(t, missionLLM(), nil)
@@ -128,20 +129,20 @@ func TestPhaseContent_RendersTheCompositionPerPhase(t *testing.T) {
 		body := readBody(t, get(t, srv, "/user/phase-content/me"))
 
 		assertPhaseContentRegion(t, body)
-		// Closed: the match reveal leads, then the mission card in its final
-		// stamped state.
+		// Closed: the page has become the recap — the persona card, the
+		// match headline and the evening's content.
 		assertOrder(t, body,
-			"It's a match!",
-			`id="mission-card"`,
+			`id="persona-card"`,
+			"💘 Your match",
+			`id="recap-content"`,
+			"🤝 Your connections",
 		)
 		// The recap link is an evergreen card — it lives in the More drawer
 		// (#138), so the region carries neither it nor the dossier.
 		assertRegionKeepsOutTheEvergreenCards(t, body)
-		if !strings.Contains(body, "Your mission — meet 8 personas") {
-			t.Error("closed keeps the mission card in its final stamped state")
-		}
-		// No meet section and no show & tell once closed.
-		for _, absent := range []string{`id="meet-status"`, `id="showtell"`} {
+		// No mission card, no meet section, no show & tell and no match
+		// reveal once closed — nothing can happen anymore.
+		for _, absent := range []string{`id="mission-card"`, `id="meet-status"`, `id="showtell"`, "It's a match!"} {
 			if strings.Contains(body, absent) {
 				t.Errorf("closed should not carry %s", absent)
 			}
@@ -305,7 +306,7 @@ func TestMatchPage_PhaseEventSwapsTheRegion(t *testing.T) {
 	if !strings.Contains(refresh, "if (el) htmx.trigger(el, 'refresh')") {
 		t.Errorf("the 'refresh' listener should guard the per-card refreshes, got %q", refresh)
 	}
-	for _, card := range []string{"#meet-status", "#dossier", "#mission-card", "#showtell", "#recap"} {
+	for _, card := range []string{"#meet-status", "#dossier", "#mission-card", "#showtell", "#recap", "#recap-content"} {
 		if !strings.Contains(refresh, `refreshCard('`+card+`')`) {
 			t.Errorf("the 'refresh' listener should keep refreshing %s", card)
 		}

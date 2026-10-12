@@ -1112,6 +1112,34 @@ func TestMissionCardSection_IsEmptyWhenTheEventDoesNotAllowCards(t *testing.T) {
 	}
 }
 
+// TestMissionCardSection_IsEmptyOnceTheEventIsClosed covers the closed
+// gate: the page has become the recap — the recap's stats tell the evening —
+// so even a generated card renders empty, while the anchor stays for the
+// page's refresh wiring.
+func TestMissionCardSection_IsEmptyOnceTheEventIsClosed(t *testing.T) {
+	srv, deps := newTestServer(t, missionLLM(), nil)
+	seed(t, deps.db, "me", "The Me", "ready")
+	seedReady(t, deps.db, 9)
+	if err := deps.events.Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deps.missions.GenerateFor("me"); err != nil {
+		t.Fatal(err)
+	}
+	if err := deps.events.Advance(PhaseClosed); err != nil {
+		t.Fatal(err)
+	}
+
+	body := readBody(t, get(t, srv, "/user/mission/me"))
+
+	if !strings.Contains(body, `id="mission-card"`) {
+		t.Errorf("the anchor should stay for the refresh wiring, got %q", body)
+	}
+	if strings.Contains(body, "Your mission") || strings.Contains(body, "stamp-in") {
+		t.Errorf("once closed the mission card is over, got %q", body)
+	}
+}
+
 func TestMissionCardSection_AnUnknownParticipantIs404(t *testing.T) {
 	srv, _ := newTestServer(t, missionLLM(), nil)
 
