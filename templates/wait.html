@@ -59,6 +59,11 @@
          refreshed when the wait stream says so */}}
     {{template "fragment-showtell.html" .ShowTell}}
 
+    {{/* The recap — once the event is closed, the page has become the
+         recap: the stats, the connections, the show & tell items and the
+         shared contact details arrive with the close */}}
+    {{template "fragment-recap.html" .RecapContent}}
+
     {{/* More — the evergreen drawer (ADR 0019, step 3): the GitHub summary,
          the settings and the recap link behind a single bottom toggle. Its
          cards keep their own refresh wiring. A browser-native
@@ -118,8 +123,8 @@
         {{/* Settings — the Participant's contact channels, entered once */}}
         {{template "fragment-settings.html" .Settings}}
 
-        {{/* Recap link — during closed, the recap page as a QR, refreshed
-             when the wait stream says so */}}
+        {{/* Recap link — during closed, the recap page as a button,
+             refreshed when the wait stream says so */}}
         {{template "fragment-recap-link.html" .RecapLink}}
 
       </div>
@@ -136,7 +141,7 @@
     document.addEventListener('htmx:afterSwap', renderMd);
     const _es = new EventSource('/user/wait-stream/{{$p.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
-    _es.addEventListener('refresh', () => { htmx.trigger('#phase-header', 'refresh'); htmx.trigger('#persona-card', 'refresh'); htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); htmx.trigger('#showtell', 'refresh'); htmx.trigger('#recap', 'refresh'); });
+    _es.addEventListener('refresh', () => { htmx.trigger('#phase-header', 'refresh'); htmx.trigger('#persona-card', 'refresh'); htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); htmx.trigger('#showtell', 'refresh'); htmx.trigger('#recap', 'refresh'); htmx.trigger('#recap-content', 'refresh'); });
     _es.addEventListener('phase', () => htmx.trigger('#phase-header', 'refresh'));
     _es.onerror = () => _es.close();
   </script>

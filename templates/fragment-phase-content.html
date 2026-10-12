@@ -1,14 +1,14 @@
 {{/* The match page's phase-content region (ADR 0019, step 2): the composition
      of per-card fragments the current phase calls for. The social leads with
      the mission card, then the meet section, then the match reveal; show &
-     tell adds its tooling after the reveal; once closed the match reveal
-     leads, then the mission card in its final stamped state. The evergreen
-     cards — the dossier, the settings, the share-profile QR and the recap
-     link — live in the page's "More" drawer (step 3, #138), outside this
-     region. The region is swapped live on the match stream's 'phase' event —
-     a phase change is the one moment a bigger visual beat is wanted — while
-     the per-card fragments inside it keep their own 'refresh' wiring, so a
-     refresh never re-animates the region. */}}
+     tell adds its tooling after the reveal; once closed the page has become
+     the recap — the persona card, the match headline and the evening's
+     content. The evergreen cards — the dossier, the settings, the
+     share-profile QR and the recap link — live in the page's "More" drawer
+     (step 3, #138), outside this region. The region is swapped live on the
+     match stream's 'phase' event — a phase change is the one moment a bigger
+     visual beat is wanted — while the per-card fragments inside it keep
+     their own 'refresh' wiring, so a refresh never re-animates the region. */}}
 {{define "fragment-phase-content.html"}}
 <div
   id="phase-content"
@@ -17,12 +17,15 @@
   hx-swap="outerHTML"
 >
   {{if .Phase.IsClosed}}
-  {{/* Closed: the match reveal leads, then the mission card in its final
-       stamped state — no meet section and no show & tell once closed
-       (meetings are disabled; Phase.AllowsMeetings is false), and the recap
-       link lives in the More drawer. */}}
-  {{template "fragment-match-reveal.html" .}}
-  {{template "fragment-mission-card.html" .MissionCard}}
+  {{/* Closed: the page has become the recap — the persona card, the match
+       headline and the evening's content (stats, connections, show & tell,
+       shared contact details). No mission card, no meet section and no show
+       & tell once closed — nothing can happen anymore; the dossier, the
+       settings, the share-profile QR and the recap button live in the More
+       drawer. */}}
+  {{template "fragment-persona-card.html" .Me}}
+  {{template "fragment-recap-match.html" .}}
+  {{template "fragment-recap.html" .RecapContent}}
   {{else if .Phase.IsShowTell}}
   {{template "fragment-mission-card.html" .MissionCard}}
   {{template "fragment-meet-status.html" .MeetStatus}}
