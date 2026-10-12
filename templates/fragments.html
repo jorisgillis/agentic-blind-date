@@ -90,13 +90,14 @@
     <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3" id="multiselect-form">
       <input type="hidden" name="answer" id="selected-options" value="" />
       <div class="space-y-2" id="option-container">
-        {{range .Question.Options}}
+        {{$question := .Question}}
+        {{range $question.Options}}
         <label class="flex items-center gap-3 p-4 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700 cursor-pointer transition-colors">
           <input
             type="checkbox"
             class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
             value="{{.}}"
-            onchange="updateMultiSelect(this, {{.Question.MaxSelections}})"
+            onchange="updateMultiSelect(this, {{$question.MaxSelections}})"
           />
           <span class="text-sm">{{.}}</span>
         </label>

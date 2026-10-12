@@ -607,6 +607,67 @@ func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
 	}
 }
 
+func TestOnboardPage_MultiSelectQuestionRendersAllOptions(t *testing.T) {
+	srv, db := testServer(t)
+
+	// A Non-GitHub Participant's first question is the multi-select Extra
+	// Question; its options must all render (#141: the options loop shadowed
+	// .Question, so template execution died after the first option).
+	db.CreateParticipant("id-1", "no-github-id-1", "No GitHub", false)
+	forceInterview(db, "id-1", []Question{
+		{ID: "extra_0", Text: "What are your top 3 programming languages?", Options: []string{"Go", "Python", "Rust", "TypeScript"}, MaxSelections: 3, Mode: MultiSelect},
+		{ID: "fixed_0", Text: "Tabs or spaces?", Options: []string{"Tabs", "Spaces"}, Mode: SingleSelect},
+	}, map[string]string{}, StepInterviewing)
+
+	body := readBody(t, get(t, srv, "/user/onboard/id-1"))
+	for _, want := range []string{
+		`value="Go"`, `value="Python"`, `value="Rust"`, `value="TypeScript"`,
+		// html/template's JS escaper pads the interpolated max with spaces.
+		"updateMultiSelect(this,",
+		"0/3 selected",
+		`id="submit-multiselect"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("onboard page: want %q in the multi-select form", want)
+		}
+	}
+	if strings.Contains(body, "render error") {
+		t.Error("onboard page: unexpected render error text")
+	}
+
+	// Answering renders the next question through the same fragment.
+	resp := post(t, srv, "/user/answer/id-1", url.Values{"answer": {`["Go", "Rust"]`}})
+	next := readBody(t, resp)
+	if resp.StatusCode != 200 {
+		t.Errorf("POST /user/answer/id-1: want 200, got %d", resp.StatusCode)
+	}
+	if !strings.Contains(next, "Tabs or spaces?") {
+		t.Error("answer response: want the next question")
+	}
+	if strings.Contains(next, "render error") {
+		t.Error("answer response: unexpected render error text")
+	}
+}
+
+func TestRender_TemplateErrorReturnsClean500(t *testing.T) {
+	_, deps := newTestServer(t, nil, nil)
+
+	// Rendering the question fragment with data that is not a QuestionData
+	// fails mid-template; the response must be a clean 500, not a partial
+	// page with status 200 (#141).
+	rec := httptest.NewRecorder()
+	deps.handler.render(rec, "fragment-question.html", "not a question")
+	resp := rec.Result()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 500 {
+		t.Errorf("render error: want 500, got %d", resp.StatusCode)
+	}
+	if body := readBody(t, resp); strings.Contains(body, "pipeline-area") {
+		t.Error("render error: response leaks partial template output")
+	}
+}
+
 func TestRoot_RedirectsToTheLandingPageAndUnknownPathsAreNotFound(t *testing.T) {
 	srv, _ := testServer(t)
 
