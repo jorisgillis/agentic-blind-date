@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -127,10 +128,15 @@ func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 	// Pages are revalidated on every load: the app can be updated while an
 	// event is running, and a cached page would keep running its old scripts.
 	w.Header().Set("Cache-Control", "no-cache")
-	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
+	// Render into a buffer first: a template error must not leak a partial
+	// page with status 200 to the participant.
+	var buf bytes.Buffer
+	if err := h.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
 		logger("handler").Error("rendering the template", "template", name, "err", err)
 		http.Error(w, "render error", 500)
+		return
 	}
+	_, _ = w.Write(buf.Bytes())
 }
 
 const cookieName = "participant_id"
