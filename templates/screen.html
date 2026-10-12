@@ -7,7 +7,22 @@
   <title>Agentic Blind Date — Big Screen</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    // A dead big-screen script must be visible, never silent: any error
+    // shows as a banner, so a broken screen says why instead of showing
+    // nothing. Installed in its own block so it survives a parse error in
+    // the main script below.
+    window.addEventListener('error', function (e) {
+      var el = document.getElementById('script-error');
+      if (!el && document.body) {
+        el = document.createElement('div');
+        el.id = 'script-error';
+        el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99;background:#7f1d1d;color:#fee2e2;padding:8px 16px;font:14px monospace;white-space:pre-wrap';
+        document.body.insertBefore(el, document.body.firstChild);
+      }
+      if (el) el.textContent = 'Big screen script error: ' + (e.message || e.type);
+    });
+  </script>
   <style>
     html, body { height: 100%; overflow: hidden; }
     .node { cursor: grab; }
@@ -31,7 +46,7 @@
         <p id="phase-label" class="text-sm text-gray-400">Loading...</p>
         <p id="count-label" class="text-xs text-gray-600"></p>
       </div>
-      <div id="qr" class="rounded-lg overflow-hidden flex-shrink-0"></div>
+      <img id="qr" src="/qr?data=/user&size=110" alt="Join the event" class="rounded-lg flex-shrink-0" width="110" height="110" />
     </div>
   </header>
 
@@ -40,6 +55,42 @@
       <g id="edges-layer"></g>
       <g id="nodes-layer"></g>
     </svg>
+    <canvas id="confetti" class="absolute inset-0 pointer-events-none"></canvas>
+    <div id="leaderboard" class="absolute top-4 left-4 bg-gray-900/90 border border-gray-700 rounded-xl p-4 hidden" style="min-width: 280px; z-index: 5;">
+      <h2 class="text-xs uppercase tracking-widest text-gray-400 mb-2">Connections</h2>
+      <p id="champion" class="hidden text-amber-400 font-bold text-sm mb-2"></p>
+      <ol id="leaderboard-list" class="space-y-1 text-sm"></ol>
+    </div>
+    <div id="stats" class="absolute top-4 right-4 bg-gray-900/90 border border-gray-700 rounded-xl p-4 hidden text-sm space-y-1" style="min-width: 240px; z-index: 5;">
+      <h2 class="text-xs uppercase tracking-widest text-gray-400 mb-2">The evening</h2>
+      <p>👥 <span id="stat-participants"></span> participants</p>
+      <p>🤝 <span id="stat-meetings"></span> completed meetings</p>
+      <p>📇 <span id="stat-exchanges"></span> contact details exchanged</p>
+      <p>❓ <span id="stat-questions"></span> questions (<span id="stat-answered"></span> answered)</p>
+    </div>
+    <div id="presenter" class="absolute inset-0 hidden items-center justify-center bg-gray-950/80" style="z-index: 10;">
+      <div class="bg-gray-900 border border-purple-500 rounded-3xl p-10 max-w-xl w-full mx-4 text-center space-y-4 shadow-2xl">
+        <p id="presenter-hype" class="text-lg text-purple-300 italic"></p>
+        <div id="presenter-symbol" class="text-7xl"></div>
+        <div id="presenter-persona">
+          <p id="presenter-name" class="text-3xl font-black mt-2"></p>
+          <p id="presenter-tagline" class="text-gray-400 text-sm italic"></p>
+        </div>
+        <div id="presenter-identity" class="hidden">
+          <p id="presenter-handle" class="text-3xl font-black text-pink-400"></p>
+          <p id="presenter-real-name" class="text-gray-400 text-sm"></p>
+        </div>
+        <div class="border-t border-gray-700 pt-4 space-y-1">
+          <p id="presenter-title" class="text-xl font-bold"></p>
+          <p id="presenter-description" class="text-gray-400 text-sm"></p>
+          <a id="presenter-repo" class="text-indigo-400 text-sm underline" target="_blank" rel="noopener"></a>
+        </div>
+        <div id="presenter-question" class="hidden border-t border-gray-700 pt-4 space-y-1">
+          <p id="question-asker" class="text-sm font-bold"></p>
+          <p id="question-text" class="text-xl font-bold"></p>
+        </div>
+      </div>
+    </div>
     <div id="empty-state" class="absolute inset-0 flex items-center justify-center">
       <div class="text-center">
         <p class="text-6xl mb-4">📱</p>
@@ -56,15 +107,8 @@
 <script>
 const colorMap = {{.Palette}};
 
-// QR code pointing to /user
-new QRCode(document.getElementById('qr'), {
-  text: window.location.origin + '/user',
-  width: 110,
-  height: 110,
-  colorDark: '#ffffff',
-  colorLight: '#030712',
-  correctLevel: QRCode.CorrectLevel.M,
-});
+// The join QR points to /user — at the close it becomes the recap QR (below)
+let recapQrUrl = null;
 
 // D3 force simulation
 const container = document.getElementById('graph-container');
@@ -107,6 +151,60 @@ function drag() {
 
 let currentNodes = [];
 
+// Confetti for a meeting completion: a short burst of falling pieces on a
+// canvas over the graph. Client-side only — the completion itself arrives by
+// push, as a new meeting edge.
+const confettiCanvas = document.getElementById('confetti');
+let confettiRAF = null;
+
+function celebrate() {
+  const ctx = confettiCanvas.getContext('2d');
+  confettiCanvas.width = confettiCanvas.clientWidth;
+  confettiCanvas.height = confettiCanvas.clientHeight;
+  const colors = ['#ec4899', '#22c55e', '#3b82f6', '#f59e0b', '#a855f7', '#ffffff'];
+  const parts = [];
+  for (let i = 0; i < 160; i++) {
+    parts.push({
+      x: Math.random() * confettiCanvas.width,
+      y: -20 - Math.random() * 120,
+      w: 6 + Math.random() * 6,
+      h: 8 + Math.random() * 8,
+      vx: -1.5 + Math.random() * 3,
+      vy: 2 + Math.random() * 3.5,
+      rot: Math.random() * Math.PI,
+      vr: -0.15 + Math.random() * 0.3,
+      color: colors[i % colors.length],
+    });
+  }
+  const start = performance.now();
+  if (confettiRAF) cancelAnimationFrame(confettiRAF);
+  function frame(now) {
+    ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+    let alive = false;
+    for (const p of parts) {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.rot += p.vr;
+      if (p.y < confettiCanvas.height + 20) alive = true;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    if (alive && now - start < 6000) {
+      confettiRAF = requestAnimationFrame(frame);
+    } else {
+      ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      confettiRAF = null;
+    }
+  }
+  confettiRAF = requestAnimationFrame(frame);
+}
+
+// The meeting edges the last push already knew about; a completion is a
+// meeting edge that appears (or a match edge that turns into one).
+let knownMeetingEdges = null;
+
 function updateGraph(data) {
   const revealed = data.revealed;
 
@@ -128,21 +226,30 @@ function updateGraph(data) {
   // Fresh edge objects (D3 will mutate source/target to node refs)
   const edges = data.edges.map(e => ({
     source: e.source, target: e.target,
-    score: e.score, matched: e.matched,
+    score: e.score, matched: e.matched, meeting: e.meeting,
     _key: e.source + '-' + e.target,
   }));
   simulation.force('link').links(edges);
 
-  // Render edges
+  // A completion arrived by push: celebrate it.
+  const meetingKeys = new Set(edges.filter(e => e.meeting).map(e => e._key));
+  if (knownMeetingEdges !== null) {
+    let fresh = 0;
+    meetingKeys.forEach(k => { if (!knownMeetingEdges.has(k)) fresh++; });
+    if (fresh > 0) celebrate();
+  }
+  knownMeetingEdges = meetingKeys;
+
+  // Render edges: a completed meeting is the strongest fact on the graph.
   const edgeSel = edgesLayer.selectAll('line').data(edges, d => d._key);
   edgeSel.exit().remove();
   edgeSel.enter().append('line')
     .merge(edgeSel)
-    .attr('class', d => d.matched ? 'edge-matched' : '')
-    .attr('stroke', d => d.matched ? '#ec4899' : '#3b82f6')
-    .attr('stroke-width', d => d.matched ? 3.5 : 1)
-    .attr('stroke-dasharray', d => d.matched ? null : '6,4')
-    .attr('stroke-opacity', d => d.matched ? 0.9 : 0.45);
+    .attr('class', d => d.meeting ? '' : d.matched ? 'edge-matched' : '')
+    .attr('stroke', d => d.meeting ? '#22c55e' : d.matched ? '#ec4899' : '#3b82f6')
+    .attr('stroke-width', d => d.meeting || d.matched ? 3.5 : 1)
+    .attr('stroke-dasharray', d => d.meeting || d.matched ? null : '6,4')
+    .attr('stroke-opacity', d => d.meeting ? 0.95 : d.matched ? 0.9 : 0.45);
 
   // Render nodes
   const nodeSel = nodesLayer.selectAll('g.node').data(currentNodes, d => d.id);
@@ -177,15 +284,74 @@ function updateGraph(data) {
       return null;
     });
   nodeAll.select('.sym').text(d => d.symbol || '🎭');
-  nodeAll.select('.lbl').text(d =>
-    revealed ? d.handle : (d.persona_name || '')
-  );
+  // Persona names only, in every phase — identities never reach the Big Screen.
+  nodeAll.select('.lbl').text(d => d.persona_name || '');
 
   if (hasNew) simulation.alpha(0.4).restart();
 
   // Empty state
   document.getElementById('empty-state').style.display =
     data.nodes.length === 0 ? 'flex' : 'none';
+
+  // The social scoreboard: top 5 by connections, sent from the social on.
+  // Persona names only, in every phase.
+  const board = data.leaderboard;
+  const leaderboardPanel = document.getElementById('leaderboard');
+  if (board && board.length > 0) {
+    leaderboardPanel.classList.remove('hidden');
+    const list = document.getElementById('leaderboard-list');
+    list.textContent = '';
+    board.forEach((c, i) => {
+      const li = document.createElement('li');
+      li.className = 'flex items-center gap-2';
+      const rank = document.createElement('span');
+      rank.className = 'text-gray-500 w-5';
+      rank.textContent = (i + 1) + '.';
+      const symbol = document.createElement('span');
+      symbol.textContent = c.persona_symbol || '';
+      const name = document.createElement('span');
+      name.style.color = colorMap[c.persona_color] || '#9ca3af';
+      name.textContent = c.persona_name || '';
+      const count = document.createElement('span');
+      count.className = 'ml-auto text-gray-400';
+      count.textContent = c.connections;
+      li.append(rank, symbol, name, count);
+      list.appendChild(li);
+    });
+  } else {
+    leaderboardPanel.classList.add('hidden');
+  }
+
+  // The closing view: the evening's stats, sent from closed on.
+  const stats = data.stats;
+  const statsPanel = document.getElementById('stats');
+  if (stats) {
+    statsPanel.classList.remove('hidden');
+    document.getElementById('stat-participants').textContent = stats.participants;
+    document.getElementById('stat-meetings').textContent = stats.meetings;
+    document.getElementById('stat-exchanges').textContent = stats.contact_exchanges;
+    document.getElementById('stat-questions').textContent = stats.questions;
+    document.getElementById('stat-answered').textContent = stats.questions_answered;
+  } else {
+    statsPanel.classList.add('hidden');
+  }
+
+  // The champion takes the Merge Trophy on the final leaderboard.
+  const champion = data.champion;
+  const championEl = document.getElementById('champion');
+  if (champion) {
+    championEl.classList.remove('hidden');
+    championEl.textContent = '👑 ' + (champion.persona_symbol || '') + ' ' + (champion.persona_name || '') + ' takes the Merge Trophy';
+  } else {
+    championEl.classList.add('hidden');
+  }
+
+  // The recap QR: at the close the join QR becomes the recap QR.
+  if (data.recap_url && recapQrUrl !== data.recap_url) {
+    recapQrUrl = data.recap_url;
+    document.getElementById('qr').src =
+      '/qr?data=' + encodeURIComponent(recapQrUrl) + '&size=110';
+  }
 
   // Status labels
   const phaseEl = document.getElementById('phase-label');
@@ -196,6 +362,60 @@ function updateGraph(data) {
   // Activity ticker
   if (data.activity && data.activity.length > 0) {
     document.getElementById('ticker').textContent = data.activity[0];
+  }
+
+  // Presenter mode: the on-stage presenter's card with the hype intro —
+  // personas only, until the host's explicit identity reveal flips the card
+  // to the GitHub handle/name.
+  const presenter = data.presenter;
+  const presenterPanel = document.getElementById('presenter');
+  if (presenter) {
+    presenterPanel.classList.remove('hidden');
+    presenterPanel.classList.add('flex');
+    document.getElementById('presenter-hype').textContent = presenter.hype || '';
+    document.getElementById('presenter-symbol').textContent = presenter.persona_symbol || '🎤';
+    const nameEl = document.getElementById('presenter-name');
+    nameEl.textContent = presenter.persona_name || '';
+    nameEl.style.color = colorMap[presenter.persona_color] || '#ffffff';
+    document.getElementById('presenter-tagline').textContent = presenter.persona_tagline || '';
+    document.getElementById('presenter-title').textContent = presenter.title || '';
+    document.getElementById('presenter-description').textContent = presenter.description || '';
+    const repo = document.getElementById('presenter-repo');
+    if (presenter.repo_url) {
+      repo.textContent = presenter.repo_url;
+      repo.href = presenter.repo_url;
+      repo.classList.remove('hidden');
+    } else {
+      repo.classList.add('hidden');
+    }
+    // The identity reveal flips the card: the handle/name replaces the persona.
+    const persona = document.getElementById('presenter-persona');
+    const identity = document.getElementById('presenter-identity');
+    if (presenter.identity_revealed) {
+      document.getElementById('presenter-handle').textContent = presenter.handle || '';
+      document.getElementById('presenter-real-name').textContent = presenter.name || '';
+      persona.classList.add('hidden');
+      identity.classList.remove('hidden');
+    } else {
+      persona.classList.remove('hidden');
+      identity.classList.add('hidden');
+    }
+    // The current audience question — an extension of presenter mode: the
+    // asker's persona asks, personas only, never identities.
+    const question = presenter.question;
+    const questionPanel = document.getElementById('presenter-question');
+    if (question) {
+      const asker = document.getElementById('question-asker');
+      asker.textContent = (question.persona_symbol || '❓') + ' ' + (question.persona_name || '') + ' asks:';
+      asker.style.color = colorMap[question.persona_color] || '#c084fc';
+      document.getElementById('question-text').textContent = question.text || '';
+      questionPanel.classList.remove('hidden');
+    } else {
+      questionPanel.classList.add('hidden');
+    }
+  } else {
+    presenterPanel.classList.add('hidden');
+    presenterPanel.classList.remove('flex');
   }
 }
 

@@ -21,15 +21,19 @@
         JSON endpoints:
         <a href="/data/participants" class="text-indigo-400 hover:underline">/data/participants</a> ·
         <a href="/data/state" class="text-indigo-400 hover:underline">/data/state</a> ·
-        <a href="/data/activity" class="text-indigo-400 hover:underline">/data/activity</a>
+        <a href="/data/activity" class="text-indigo-400 hover:underline">/data/activity</a> ·
+        <a href="/data/meetings" class="text-indigo-400 hover:underline">/data/meetings</a> ·
+        <a href="/data/leaderboard" class="text-indigo-400 hover:underline">/data/leaderboard</a> ·
+        <a href="/data/channels" class="text-indigo-400 hover:underline">/data/channels</a> ·
+        /data/missioncard/{id}
       </p>
     </div>
 
-    {{/* Event state */}}
+    {{/* Event phase */}}
     <section>
-      <h2 class="text-gray-400 uppercase text-xs tracking-widest mb-3">Event State</h2>
+      <h2 class="text-gray-400 uppercase text-xs tracking-widest mb-3">Phase</h2>
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex gap-8">
-        <div><span class="text-gray-500">phase</span> <span class="text-yellow-300 font-bold ml-2">{{.Event.Label}}</span></div>
+        <div><span class="text-gray-500">phase</span> <span class="text-yellow-300 font-bold ml-2">{{.Phase.Label}}</span></div>
         <div><span class="text-gray-500">participants</span> <span class="font-bold ml-2">{{.Count}}</span></div>
         <div><span class="text-gray-500">ready</span> <span class="font-bold ml-2">{{.ReadyCount}}</span></div>
       </div>

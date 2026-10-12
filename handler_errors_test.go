@@ -143,7 +143,7 @@ type plainWriter struct{ http.ResponseWriter }
 func TestStreams_NeedAWriterThatCanStream(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "p", "P", "ready")
-	for _, path := range []string{"/user/pipeline-stream/p", "/user/wait-stream/p", "/bigscreen/stream"} {
+	for _, path := range []string{"/user/pipeline-stream/p", "/user/wait-stream/p", "/bigscreen/stream", "/admin/showtell-stream"} {
 		rec := httptest.NewRecorder()
 		srv.h.ServeHTTP(plainWriter{rec}, httptest.NewRequest("GET", path, nil))
 		if rec.Code != 500 {
@@ -158,7 +158,8 @@ func TestStreams_EndWhenTheParticipantIsRemoved(t *testing.T) {
 	seed(t, deps.db, "w", "W", "ready")
 	pipeline := open(t, srv, "/user/pipeline-stream/i")
 	wait := open(t, srv, "/user/wait-stream/w")
-	sentNothingNew(t, pipeline, 1, "", "before removal")
+	waitFor(t, pipeline, "event: refresh") // the connect-time sync
+	sentNothingNew(t, pipeline, 1, pipeline.String(), "before removal")
 	sentNothingNew(t, wait, 1, "", "before removal")
 
 	NewRelationships(deps.db).Remove("i")
@@ -180,7 +181,7 @@ func TestStreams_SendAHeartbeatWhenIdle(t *testing.T) {
 
 func TestRender_AMissingTemplateIsAnError(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
-	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, nil)
+	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, deps.missions, deps.showtell, nil)
 	rec := httptest.NewRecorder()
 
 	h.render(rec, "no-such-template.html", nil)

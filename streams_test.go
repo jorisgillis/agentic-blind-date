@@ -90,10 +90,14 @@ func TestPipelineStream_RefreshesWhenTheInterviewStartsAndRedirectsWhenDone(t *t
 	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
 
 	s := open(t, srv, "/user/pipeline-stream/p")
-	sentNothingNew(t, s, 1, "", "while preparing")
+	waitFor(t, s, "event: refresh") // the connect-time sync
+	synced := s.String()
+	sentNothingNew(t, s, 1, synced, "while preparing")
 
 	forceStep(deps.db, "p", StepInterviewing)
-	waitFor(t, s, "event: refresh")
+	eventually(t, "a second refresh when the Interview starts", func() bool {
+		return strings.Count(s.String(), "event: refresh") >= 2
+	})
 
 	before := s.String()
 	deps.db.LogActivity("someone else did something")
@@ -113,6 +117,19 @@ func TestPipelineStream_RedirectsImmediatelyWhenAlreadyDone(t *testing.T) {
 	waitFor(t, s, "data: /user/wait/r")
 }
 
+func TestPipelineStream_SyncsOnConnectWhenTheStepAlreadySettled(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.CreateParticipant("p", "p", "P", true)
+	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
+	forceStep(deps.db, "p", StepInterviewing)
+
+	s := open(t, srv, "/user/pipeline-stream/p")
+
+	// Nothing ever changes: the sync comes from connecting, so a page that
+	// rendered before the step settled (a reload, a restart) still catches up.
+	waitFor(t, s, "event: refresh")
+}
+
 func TestWaitStream_RefreshesOnChangesAndRedirectsOnTheReveal(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")
@@ -126,6 +143,23 @@ func TestWaitStream_RefreshesOnChangesAndRedirectsOnTheReveal(t *testing.T) {
 
 	post(t, srv, "/admin/reveal", nil)
 	waitFor(t, s, "event: redirect\ndata: /user/match/a")
+}
+
+// TestWaitStream_RefreshesWhenThePersonaIsCrafted covers #125: the persona is
+// crafted in the background after the last interview answer, and the wait
+// page's card appears by push when it lands.
+func TestWaitStream_RefreshesWhenThePersonaIsCrafted(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.CreateParticipant("a", "a", "A", true); err != nil {
+		t.Fatal(err)
+	}
+	forceStep(deps.db, "a", StepCreatingPersona)
+
+	s := open(t, srv, "/user/wait-stream/a")
+	sentNothingNew(t, s, 1, "", "the persona is still being crafted")
+
+	setPersona(t, deps.db, "a", "The Bard", "Ships things")
+	waitFor(t, s, "event: refresh")
 }
 
 func TestScreenStream_PushesTheGraphNowAndOnEveryChange(t *testing.T) {
@@ -148,13 +182,4 @@ func TestStreams_UnknownParticipantIs404(t *testing.T) {
 			t.Errorf("%s: want 404, got %d", path, s.status)
 		}
 	}
-}
-
-// waitForAny waits for the first event and returns what was written so far.
-func (s *liveStream) waitForAny(t *testing.T) *http.Response {
-	t.Helper()
-	eventually(t, "a first event", func() bool { return s.String() != "" })
-	rec := httptest.NewRecorder()
-	rec.WriteString(s.String())
-	return rec.Result()
 }

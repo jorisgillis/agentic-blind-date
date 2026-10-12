@@ -8,27 +8,23 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    @keyframes stamp-in {
+      0% { transform: scale(2); opacity: 0; }
+      60% { transform: scale(0.9); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .stamp-in { animation: stamp-in 0.4s ease-out; }
+  </style>
 </head>
 <body class="{{.Participant.PersonaColor}} text-gray-900 min-h-screen px-4 py-8">
   <div class="max-w-md mx-auto space-y-5">
 
     {{$p := .Participant}}
 
-    {{/* Persona card */}}
-    <div class="flex flex-col items-center text-center pt-2">
-      <div class="w-36 h-36 rounded-3xl bg-white/20 flex items-center justify-center text-8xl mb-4 shadow-xl ring-4 ring-black/10">
-        {{$p.PersonaSymbol}}
-      </div>
-      <h2 class="text-2xl font-black {{textColor $p.PersonaColor}}">{{$p.PersonaName}}</h2>
-      {{if $p.PersonaTagline}}
-      <p class="text-gray-700 text-sm mt-1 italic" data-md>"{{$p.PersonaTagline}}"</p>
-      {{end}}
-      <p class="text-gray-600 text-xs mt-1">{{$p.DisplayHandle}}</p>
-      <div class="mt-4">
-        <p class="text-gray-600 text-xs mb-2">📲 Let others find your profile</p>
-        <img id="qr" alt="QR code" class="mx-auto rounded-lg shadow-md" width="120" height="120" />
-      </div>
-    </div>
+    {{/* Persona card — refreshed when the wait stream says so: the persona
+         is crafted in the background after the last interview answer */}}
+    {{template "fragment-persona-card.html" .Participant}}
 
     {{/* GitHub summary */}}
     {{$prof := .Profile}}
@@ -91,6 +87,23 @@
 
     {{template "fragment-wait-status.html" .}}
 
+    {{/* Mission card — refreshed when the wait stream says so */}}
+    {{template "fragment-mission-card.html" .MissionCard}}
+
+    {{/* Meet section — phase-gated, refreshed when the wait stream says so */}}
+    {{template "fragment-meet-status.html" .MeetStatus}}
+
+    {{/* Show & tell — sign-up open during the social and show & tell,
+         refreshed when the wait stream says so */}}
+    {{template "fragment-showtell.html" .ShowTell}}
+
+    {{/* Settings — the Participant's contact channels, entered once */}}
+    {{template "fragment-settings.html" .Settings}}
+
+    {{/* Recap link — during closed, the recap page as a QR, refreshed when
+         the wait stream says so */}}
+    {{template "fragment-recap-link.html" .RecapLink}}
+
   </div>
   <script>
     function renderMd() {
@@ -100,13 +113,9 @@
     }
     document.addEventListener('DOMContentLoaded', renderMd);
     document.addEventListener('htmx:afterSwap', renderMd);
-    const qr = document.getElementById('qr');
-    if (qr) {
-      qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' + encodeURIComponent(window.location.href);
-    }
     const _es = new EventSource('/user/wait-stream/{{$p.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
-    _es.addEventListener('refresh', () => htmx.trigger('#wait-status', 'refresh'));
+    _es.addEventListener('refresh', () => { htmx.trigger('#persona-card', 'refresh'); htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); htmx.trigger('#showtell', 'refresh'); htmx.trigger('#recap', 'refresh'); });
     _es.onerror = () => _es.close();
   </script>
 </body>

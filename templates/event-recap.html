@@ -1,0 +1,99 @@
+{{define "event-recap.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Blind Date — The Evening, Recapped</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen px-4 py-10">
+<div class="max-w-2xl mx-auto space-y-8">
+
+  <div class="text-center">
+    <p class="text-gray-500 text-xs uppercase tracking-widest mb-2">The event is closed</p>
+    <h1 class="text-4xl font-black">The evening, recapped 💘</h1>
+    <p class="text-gray-400 mt-2">Thanks for playing — here's what the room did together.</p>
+  </div>
+
+  {{/* The evening's headline stats — counts only */}}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+      <p class="text-3xl font-black">{{.Stats.Participants}}</p>
+      <p class="text-gray-500 text-xs uppercase tracking-wide mt-1">participants</p>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+      <p class="text-3xl font-black">{{.Stats.Meetings}}</p>
+      <p class="text-gray-500 text-xs uppercase tracking-wide mt-1">meetings</p>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+      <p class="text-3xl font-black">{{.Stats.ContactExchanges}}</p>
+      <p class="text-gray-500 text-xs uppercase tracking-wide mt-1">exchanges</p>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+      <p class="text-3xl font-black">{{.Stats.Questions}}</p>
+      <p class="text-gray-500 text-xs uppercase tracking-wide mt-1">{{.Stats.QuestionsAnswered}} answered</p>
+    </div>
+  </div>
+
+  {{/* Top connectors — the connection leaderboard, personas only */}}
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-400 text-xs uppercase tracking-widest">🏆 Top connectors</p>
+    {{if .TopConnectors}}
+    <ol class="space-y-2">
+      {{range .TopConnectors}}
+      <li class="flex items-center gap-3">
+        <span class="text-gray-600 w-5 flex-shrink-0">{{.Rank}}.</span>
+        <div class="w-9 h-9 rounded-lg {{.Color}} flex items-center justify-center text-lg flex-shrink-0">{{.Symbol}}</div>
+        <p class="font-bold text-sm flex-1">{{.Name}}</p>
+        <p class="text-gray-400 text-sm">❤️ {{.Connections}}</p>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}
+    <p class="text-gray-500 text-sm">No connections were made — a shy room.</p>
+    {{end}}
+  </div>
+
+  {{/* The persona gallery — every Participant as their Persona */}}
+  <div>
+    <p class="text-gray-400 text-xs uppercase tracking-widest mb-3">🎭 The personas of the evening</p>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+      {{range .Gallery}}
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
+        <div class="w-14 h-14 mx-auto rounded-xl {{.Color}} flex items-center justify-center text-2xl shadow-md">{{.Symbol}}</div>
+        <p class="font-bold text-sm mt-2">{{.Name}}</p>
+        {{if .Tagline}}<p class="text-gray-500 text-xs italic mt-0.5">{{.Tagline}}</p>{{end}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  {{/* Show & tell — the talks, with their links */}}
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-400 text-xs uppercase tracking-widest">🎤 Show &amp; tell</p>
+    {{if .ShowTell}}
+    <ul class="space-y-3">
+      {{range .ShowTell}}
+      <li class="space-y-1">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg {{.Presenter.Color}} flex items-center justify-center text-lg flex-shrink-0">{{.Presenter.Symbol}}</div>
+          <div class="min-w-0">
+            <p class="font-bold text-sm">“{{.Title}}”</p>
+            <p class="text-gray-500 text-xs">{{.Presenter.Name}}{{if eq .Status "presented"}} · presented{{end}}</p>
+          </div>
+        </div>
+        {{if .Description}}<p class="text-gray-400 text-sm ml-12">{{.Description}}</p>{{end}}
+        {{if .RepoURL}}<p class="ml-12"><a href="{{.RepoURL}}" class="text-indigo-400 text-xs underline" target="_blank" rel="noopener">{{.RepoURL}}</a></p>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="text-gray-500 text-sm">No talks were signed up.</p>
+    {{end}}
+  </div>
+
+</div>
+</body>
+</html>
+{{end}}

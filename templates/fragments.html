@@ -144,10 +144,145 @@
 {{end}}
 
 
-{{/* Wait page status — refreshed when the wait stream says so */}}
+{{/* The personal page's meet section — refreshed when the page's stream says so */}}
+{{define "fragment-meet-status.html"}}
+<div
+  id="meet-status"
+  hx-get="/user/meet-status/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="space-y-4"
+>
+  {{if .Allowed}}
+
+  {{/* Your meet code + meet-link QR */}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide mb-2">🤝 Your meet code</p>
+    <p class="font-mono text-3xl font-black tracking-widest text-gray-900">{{.Me.MeetCode}}</p>
+    <img id="meet-qr" src="/qr?data=/user/m/{{.Me.ID}}&size=150" alt="Your meet link QR code" class="mx-auto rounded-lg mt-3 shadow-sm" width="150" height="150" />
+    <p class="text-gray-600 text-xs mt-2">Show this QR — the camera opens your meet page — or share your code.</p>
+  </div>
+
+  {{/* I met someone */}}
+  <form
+    hx-post="/user/met/{{.Me.ID}}"
+    hx-target="#meet-result"
+    hx-swap="outerHTML"
+    class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3"
+  >
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">I met someone</p>
+    <div class="flex gap-2">
+      <input
+        type="text"
+        name="code"
+        maxlength="6"
+        placeholder="Their code"
+        class="flex-1 bg-white/60 border border-black/10 rounded-xl px-4 py-3 text-sm font-mono uppercase tracking-widest text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <button
+        type="submit"
+        class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-4 py-3 text-sm transition-colors"
+      >
+        Meet
+      </button>
+    </div>
+    <p class="text-gray-600 text-xs">Scan their QR with your camera, or type their 6-character code.</p>
+  </form>
+  <div id="meet-result"></div>
+
+  {{/* Your meetings */}}
+  {{if .Meetings}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">Your meetings</p>
+    {{range .Meetings}}
+    <div class="space-y-2">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl {{.Other.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Other.PersonaSymbol}}</div>
+          <div>
+            <p class="font-bold text-sm text-gray-900">{{.Other.PersonaName}}</p>
+            <p class="text-xs text-gray-700">
+              {{if eq .Status "completed"}}🎉 You met!
+              {{else if eq .Status "pending"}}⏳ Pending — waiting for them to confirm
+              {{else}}They confirmed — confirm back!{{end}}
+            </p>
+          </div>
+        </div>
+        {{if eq .Status "awaiting"}}
+        <form hx-post="/user/met/{{$.Me.ID}}" hx-target="#meet-result" hx-swap="outerHTML">
+          <input type="hidden" name="code" value="{{.Other.MeetCode}}" />
+          <button
+            type="submit"
+            class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-3 py-2 text-xs transition-colors"
+          >
+            Confirm
+          </button>
+        </form>
+        {{end}}
+      </div>
+
+      {{/* The exchange prompt — after a completed meeting, both phones show
+           what each side chose to share. The mutual rule decides what is
+           revealed: a channel shows only if its owner opted in. */}}
+      {{if eq .Status "completed"}}
+      <div class="border-t border-black/10 pt-2 space-y-2">
+        <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🤝 Exchange contact details?</p>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="bg-white/40 rounded-xl p-2">
+            <p class="text-gray-600 font-semibold">They shared</p>
+            {{if .Revealed}}
+            {{range .Revealed}}<p class="text-gray-900 font-medium">{{.Label}}: {{.Value}}</p>{{end}}
+            {{else}}<p class="text-gray-500 italic">nothing</p>{{end}}
+          </div>
+          <div class="bg-white/40 rounded-xl p-2">
+            <p class="text-gray-600 font-semibold">You shared</p>
+            {{if .Shared}}
+            {{range .Shared}}<p class="text-gray-900 font-medium">{{.Label}}: {{.Value}}</p>{{end}}
+            {{else}}<p class="text-gray-500 italic">nothing</p>{{end}}
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  <p class="text-center text-gray-700 text-sm">❤️ {{.Connections}} connection{{if gt .Connections 1}}s{{end}}</p>
+
+  {{end}}
+</div>
+{{end}}
+
+
+{{/* The result of a meeting confirmation — swapped into the meet section or the meet page */}}
+{{define "fragment-meet-result.html"}}
+<div id="meet-result" class="bg-black/15 border border-black/10 rounded-2xl p-5">
+  <div class="flex items-center gap-3">
+    <div class="w-12 h-12 rounded-xl {{.Target.PersonaColor}} flex items-center justify-center text-xl flex-shrink-0 shadow-sm">{{.Target.PersonaSymbol}}</div>
+    <div>
+      <p class="font-bold text-gray-900">You found {{.Target.PersonaSymbol}} {{.Target.PersonaName}}!</p>
+      {{if .Already}}
+      <p class="text-sm text-gray-700">You already met {{.Target.PersonaSymbol}}!</p>
+      {{else if .Completed}}
+      <p class="text-sm text-gray-700">🎉 You both met — {{.Target.PersonaName}} confirmed too!</p>
+      {{else}}
+      <p class="text-sm text-gray-700">⏳ Recorded — {{.Target.PersonaName}} still has to confirm.</p>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
+
+{{/* Wait page status — refreshed when the wait stream says so. A matched
+     Participant sees the teaser: their future Match's emoji and colour and a
+     hint at what the pair disagreed on — never the partner's identity, score
+     or dossier. Once the Social has begun, an unmatched Participant sees a
+     clear no-match state instead of the ready count. */}}
 {{define "fragment-wait-status.html"}}
 {{$p := .Participant}}
-{{if $p.MatchedWith}}
+{{if .Partner}}
 <div
   id="wait-status"
   hx-get="/user/wait-status/{{$p.ID}}"
@@ -155,9 +290,23 @@
   hx-swap="outerHTML"
   class="text-center space-y-4 py-4"
 >
-  <p class="text-4xl">❤️</p>
+  <div class="w-20 h-20 mx-auto rounded-2xl {{.Partner.PersonaColor}} flex items-center justify-center text-4xl shadow-lg ring-4 ring-black/10">
+    {{.Partner.PersonaSymbol}}
+  </div>
   <p class="text-gray-900 font-bold">You've been matched!</p>
-  <p class="text-gray-700 text-sm">Your match is waiting for the Reveal. Keep an eye on the big screen!</p>
+  <p class="text-gray-700 text-sm">{{.Hint}}</p>
+</div>
+{{else if .Revealed}}
+<div
+  id="wait-status"
+  hx-get="/user/wait-status/{{$p.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="text-center space-y-4 py-4"
+>
+  <p class="text-4xl">🤷</p>
+  <p class="text-gray-900 font-bold">No match for you this time</p>
+  <p class="text-gray-700 text-sm">The evening goes on — go meet people in the room!</p>
 </div>
 {{else}}
 <div
@@ -180,4 +329,476 @@
   <p class="text-gray-600 text-xs">Watch the big screen!</p>
 </div>
 {{end}}
+{{end}}
+
+
+{{/* The Match page's dossier — the Match's fun payload: the reason, the
+     flags and the icebreakers. Locked (blurred placeholders, the payload
+     itself never in the page) until the pair's dossier unlocks; refreshed
+     when the match stream says so — the pair's Meeting completing unlocks
+     it, without a manual refresh. */}}
+{{define "fragment-dossier.html"}}
+<div
+  id="dossier"
+  hx-get="/user/dossier/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="space-y-4 mb-4"
+>
+{{if .Unlocked}}
+
+  {{/* Why you two */}}
+  {{if .Reason}}
+  <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in" style="animation-delay:0.15s">
+    <p class="text-gray-800 italic text-sm text-center" data-md>"{{.Reason}}"</p>
+  </div>
+  {{end}}
+
+  {{/* Flags */}}
+  {{if or .GreenFlags .RedFlags}}
+  <div class="grid grid-cols-2 gap-3 pop-in" style="animation-delay:0.25s">
+    {{if .GreenFlags}}
+    <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+      <p class="text-green-800 font-bold text-sm mb-2">✅ Green flags</p>
+      {{range .GreenFlags}}
+      <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
+      {{end}}
+    </div>
+    {{end}}
+    {{if .RedFlags}}
+    <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+      <p class="text-red-800 font-bold text-sm mb-2">🚩 Red flags</p>
+      {{range .RedFlags}}
+      <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{/* Icebreakers */}}
+  {{if .Icebreakers}}
+  <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in" style="animation-delay:0.35s">
+    <p class="text-indigo-800 font-bold text-sm mb-3">💬 Ask them</p>
+    {{range .Icebreakers}}
+    <p class="text-gray-800 text-sm mb-2" data-md>→ {{.}}</p>
+    {{end}}
+  </div>
+  {{end}}
+
+{{else}}
+
+  <div class="relative">
+    <div class="blur-sm select-none pointer-events-none space-y-4" aria-hidden="true">
+      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+        <div class="h-3 bg-black/20 rounded-full w-2/3 mx-auto"></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
+          <div class="h-2.5 bg-black/20 rounded-full w-1/2"></div>
+          <div class="h-2.5 bg-black/20 rounded-full"></div>
+          <div class="h-2.5 bg-black/20 rounded-full w-5/6"></div>
+        </div>
+        <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
+          <div class="h-2.5 bg-black/20 rounded-full w-1/2"></div>
+          <div class="h-2.5 bg-black/20 rounded-full"></div>
+          <div class="h-2.5 bg-black/20 rounded-full w-4/6"></div>
+        </div>
+      </div>
+      <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
+        <div class="h-2.5 bg-black/20 rounded-full w-1/3"></div>
+        <div class="h-2.5 bg-black/20 rounded-full"></div>
+        <div class="h-2.5 bg-black/20 rounded-full w-2/3"></div>
+      </div>
+    </div>
+    <div class="absolute inset-0 flex items-center justify-center">
+      <div class="bg-white/80 border border-black/10 rounded-2xl px-6 py-4 text-center shadow-lg space-y-1">
+        <p class="text-3xl">🔒</p>
+        <p class="text-gray-900 font-bold text-sm">Your dossier is locked</p>
+        <p class="text-gray-700 text-xs">Meet {{.Match.PersonaSymbol}} in the room to unlock it — confirm each other with your meet codes.</p>
+      </div>
+    </div>
+  </div>
+
+{{end}}
+</div>
+{{end}}
+
+
+{{/* The personal page's mission card — refreshed when the page's stream says
+     so: the card appearing (generation) and meeting completions (the stamps)
+     arrive by push. Stamps derive from completed meetings — there is no
+     stamped_at column; the meeting is the stamp. */}}
+{{define "fragment-mission-card.html"}}
+<div
+  id="mission-card"
+  hx-get="/user/mission/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+>
+{{if .Tiles}}
+<div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-4">
+  <div class="flex items-center justify-between gap-2">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎯 Your mission — meet 8 personas</p>
+    <p class="text-gray-800 text-xs font-bold whitespace-nowrap">❤️ {{.Connections}} · #{{.Rank}}</p>
+  </div>
+
+  {{/* The 3×3 grid — the center is your match (or your best fit) */}}
+  <div class="grid grid-cols-3 gap-2">
+    {{range .Grid}}
+    <div class="relative rounded-xl {{if .}}{{.Color}}{{else}}bg-black/5{{end}} min-h-24 p-1.5 flex flex-col items-center justify-center text-center shadow-sm {{if .}}{{if .Stamped}}ring-2 ring-green-600{{end}}{{end}}">
+      {{if .}}
+      {{if .Stamped}}<span class="absolute top-1 right-1 text-xs stamp-in">✅</span>{{end}}
+      <div class="text-xl leading-none">{{.Symbol}}</div>
+      <div class="text-[10px] font-bold text-gray-900 leading-tight mt-0.5">{{.Name}}</div>
+      <div class="text-[9px] text-gray-800 leading-snug mt-0.5 line-clamp-2">{{.Reason}}</div>
+      {{if eq .Kind "match"}}<div class="text-[9px] mt-0.5">💘</div>{{end}}
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+
+  {{/* Live progress — connections and rank vs the top 5 */}}
+  {{if .Top}}
+  <div class="border-t border-black/10 pt-3 space-y-2">
+    <p class="text-gray-700 text-xs uppercase tracking-wide">Top connections</p>
+    <div class="flex flex-wrap gap-1.5">
+      {{range .Top}}
+      <span class="bg-black/20 text-gray-900 rounded-full px-2 py-0.5 text-xs">{{.Symbol}} {{.Name}} · {{.Connections}}</span>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else if .Preparing}}
+<div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
+  <p class="text-gray-700 text-sm">🃏 Your mission card is being prepared…</p>
+</div>
+{{end}}
+</div>
+{{end}}
+
+
+{{/* The personal page's settings section: the Participant's contact channels —
+     entered once, off by default. The github channel is pre-filled from their
+     GitHub profile. After a completed meeting, both phones show what each side
+     chose to share. */}}
+{{define "fragment-settings.html"}}
+<div id="settings" class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+  <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📇 Your contact details</p>
+  <p class="text-gray-600 text-xs">Enter each channel once — everything stays off until you turn it on. After a completed meeting, you both see what you chose to share.</p>
+  <form hx-post="/user/settings/{{.Me.ID}}" hx-target="#settings" hx-swap="outerHTML" class="space-y-2">
+    {{range .Channels}}
+    <div class="flex items-center gap-2">
+      <span class="w-20 text-xs font-bold text-gray-800 flex-shrink-0">{{.Label}}</span>
+      <input
+        type="text"
+        name="{{.Channel}}"
+        value="{{.Value}}"
+        placeholder="{{.Label}}"
+        class="flex-1 bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <label class="flex items-center gap-1 text-xs font-semibold text-gray-700 flex-shrink-0">
+        <input
+          type="checkbox"
+          name="{{.Channel}}_on"
+          {{if .Enabled}}checked{{end}}
+          class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500"
+        />
+        Share
+      </label>
+    </div>
+    {{end}}
+    <button
+      type="submit"
+      class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors"
+    >
+      Save
+    </button>
+    {{if .Saved}}<p class="text-green-800 text-xs font-semibold text-center">✅ Saved</p>{{end}}
+  </form>
+</div>
+{{end}}
+
+
+{{/* The personal page's show & tell section — open during the social and
+     show & tell, refreshed when the page's stream says so: the sign-up form
+     (pre-filled once signed up), the sign-up's status in the host's queue, and
+     — during show & tell — the question form for the presenter on stage, with
+     the Participant's own questions. The question form's button is disabled
+     while nobody is on stage. */}}
+{{define "fragment-showtell.html"}}
+<div
+  id="showtell"
+  hx-get="/user/showtell/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+>
+{{if .Open}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎤 Show &amp; tell</p>
+    {{if .Signup}}
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl {{.Signup.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Signup.PersonaSymbol}}</div>
+      <div>
+        <p class="font-bold text-sm text-gray-900">{{.Signup.Title}}</p>
+        <p class="text-xs text-gray-700">
+          {{if eq .Signup.Status "queued"}}⏳ In the queue — #{{.Position}}
+          {{else if eq .Signup.Status "on_stage"}}🎤 You're on stage!
+          {{else}}✅ You presented{{end}}
+        </p>
+      </div>
+    </div>
+    {{if .Signup.IdentityRevealed}}
+    <p class="text-xs text-gray-700">🎭 The host revealed your identity on the big screen — go say hi!</p>
+    {{end}}
+    {{end}}
+    <form hx-post="/user/showtell/signup/{{.Me.ID}}" hx-target="#showtell" hx-swap="outerHTML" class="space-y-2">
+      <input
+        type="text"
+        name="title"
+        maxlength="120"
+        required
+        placeholder="Your talk's title"
+        value="{{if .Signup}}{{.Signup.Title}}{{end}}"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <input
+        type="text"
+        name="description"
+        maxlength="300"
+        placeholder="One line about it (optional)"
+        value="{{if .Signup}}{{.Signup.Description}}{{end}}"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <input
+        type="url"
+        name="repo"
+        placeholder="Repo link (optional)"
+        value="{{if .Signup}}{{.Signup.RepoURL}}{{end}}"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+      />
+      <button
+        type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors"
+      >
+        {{if .Signup}}Update my sign-up{{else}}Sign me up{{end}}
+      </button>
+      {{if .Saved}}<p class="text-green-800 text-xs font-semibold text-center">✅ You're in the queue</p>{{end}}
+    </form>
+  </div>
+{{end}}
+{{if .AskOpen}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">❓ Ask the presenter</p>
+    {{if .Presenter}}
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl {{.Presenter.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Presenter.PersonaSymbol}}</div>
+      <div>
+        <p class="font-bold text-sm text-gray-900">{{.Presenter.PersonaName}}</p>
+        <p class="text-xs text-gray-700">is on stage — “{{.Presenter.Title}}”</p>
+      </div>
+    </div>
+    {{else}}
+    <p class="text-gray-600 text-sm">The stage is empty — questions open when a presenter is up.</p>
+    {{end}}
+    <form hx-post="/user/showtell/question/{{.Me.ID}}" hx-target="#showtell" hx-swap="outerHTML" class="space-y-2">
+      <input
+        type="text"
+        name="question"
+        maxlength="300"
+        placeholder="{{.Me.PersonaSymbol}} {{.Me.PersonaName}} asks…"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none disabled:opacity-50"
+        {{if not .Presenter}}disabled{{end}}
+      />
+      <button
+        type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        {{if not .Presenter}}disabled{{end}}
+      >
+        Ask the presenter
+      </button>
+    </form>
+    {{if .Asked}}<p class="text-green-800 text-xs font-semibold text-center">✅ Queued — the host picks it up</p>{{end}}
+    {{if .MyQuestions}}
+    <div class="border-t border-black/10 pt-2 space-y-1">
+      {{range .MyQuestions}}
+      <p class="text-xs text-gray-800">“{{.Text}}” — {{if eq .Status "queued"}}⏳ queued{{else if eq .Status "asked"}}🎤 being asked on the big screen{{else if eq .Status "answered"}}✅ answered{{else}}🗑 dismissed{{end}}</p>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+{{end}}
+</div>
+{{end}}
+
+
+{{/* The host console's show & tell queue — refreshed when the queue stream
+     says so. Every sign-up with its presenter's Persona and status: reorder
+     and remove the queued ones, put the next one on stage, reveal the
+     presenter's identity (the only place a handle is shown) and mark talks
+     done. */}}
+{{define "fragment-showtell-queue.html"}}
+<div
+  id="showtell-queue"
+  hx-get="/admin/showtell-queue"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3"
+>
+  <p class="text-gray-400 text-xs uppercase tracking-widest">🎤 Show &amp; tell queue</p>
+  <p class="text-gray-500 text-xs">On stage puts the talk up with an AI hype intro · Reveal identity flips the presenter's card to their GitHub handle · Done ends the talk.</p>
+  {{if .Queue}}
+  <ol class="space-y-2">
+    {{range .Queue}}
+    <li class="flex items-center gap-3 bg-gray-800/60 border border-gray-700 rounded-xl px-3 py-2">
+      <div class="w-9 h-9 rounded-lg {{.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0">{{.PersonaSymbol}}</div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-bold text-white truncate">{{.Title}}</p>
+        <p class="text-xs text-gray-400 truncate">{{.PersonaName}}{{if .Description}} — {{.Description}}{{end}}</p>
+        <p class="text-xs text-gray-500">
+          {{if eq .Status "queued"}}⏳ queued
+          {{else if eq .Status "on_stage"}}🎤 on stage{{if .IdentityRevealed}} — identity revealed{{end}}
+          {{else}}✅ presented{{end}}
+        </p>
+      </div>
+      <div class="flex items-center gap-1 flex-shrink-0">
+        {{if eq .Status "queued"}}
+        <form action="/admin/showtell/move" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="dir" value="up">
+          <button type="submit" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg" title="Move up">↑</button>
+        </form>
+        <form action="/admin/showtell/move" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="dir" value="down">
+          <button type="submit" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg" title="Move down">↓</button>
+        </form>
+        <form action="/admin/showtell/stage" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="stage">
+          <button type="submit" class="px-2 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold">On stage</button>
+        </form>
+        {{end}}
+        {{if eq .Status "on_stage"}}
+        {{if not .IdentityRevealed}}
+        <form action="/admin/showtell/stage" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="reveal">
+          <button
+            type="submit"
+            class="px-2 py-1 text-xs bg-pink-600 hover:bg-pink-500 text-white rounded-lg font-bold"
+            onclick="return confirm('Reveal this presenter&apos;s identity on the big screen?')"
+          >Reveal identity</button>
+        </form>
+        {{end}}
+        <form action="/admin/showtell/stage" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="done">
+          <button type="submit" class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg">Done</button>
+        </form>
+        {{end}}
+        <form action="/admin/showtell/remove" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button
+            type="submit"
+            class="px-2 py-1 text-xs bg-gray-900 hover:bg-red-900 text-gray-500 hover:text-red-300 rounded-lg"
+            onclick="return confirm('Remove this sign-up from the queue?')"
+          >✕</button>
+        </form>
+      </div>
+    </li>
+    {{end}}
+  </ol>
+  {{else}}
+  <p class="text-gray-500 text-sm">No sign-ups yet — they appear here as participants sign up.</p>
+  {{end}}
+</div>
+{{end}}
+
+
+{{/* The host console's audience-question queue — refreshed when the queue
+     stream says so. Every question with its asker's Persona and status —
+     personas only, never identities. The host marks a question asked (it goes
+     on the Big Screen, one at a time) → answered, or dismissed. */}}
+{{define "fragment-showtell-questions.html"}}
+<div
+  id="showtell-questions"
+  hx-get="/admin/showtell-questions"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3"
+>
+  <p class="text-gray-400 text-xs uppercase tracking-widest">❓ Audience questions</p>
+  <p class="text-gray-500 text-xs">Ask puts the question on the big screen under the presenter · Answered marks it done · Dismiss drops it.</p>
+  {{if .Questions}}
+  <ol class="space-y-2">
+    {{range .Questions}}
+    <li class="flex items-center gap-3 bg-gray-800/60 border border-gray-700 rounded-xl px-3 py-2">
+      <div class="w-9 h-9 rounded-lg {{.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0">{{.PersonaSymbol}}</div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm text-white">{{.Text}}</p>
+        <p class="text-xs text-gray-400">{{.PersonaSymbol}} {{.PersonaName}} asks</p>
+        <p class="text-xs text-gray-500">
+          {{if eq .Status "queued"}}⏳ queued
+          {{else if eq .Status "asked"}}🎤 on the big screen
+          {{else if eq .Status "answered"}}✅ answered
+          {{else}}🗑 dismissed{{end}}
+        </p>
+      </div>
+      <div class="flex items-center gap-1 flex-shrink-0">
+        {{if eq .Status "queued"}}
+        <form action="/admin/showtell/question" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="asked">
+          <button type="submit" class="px-2 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold">Ask</button>
+        </form>
+        {{end}}
+        {{if eq .Status "asked"}}
+        <form action="/admin/showtell/question" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="answered">
+          <button type="submit" class="px-2 py-1 text-xs bg-green-700 hover:bg-green-600 text-white rounded-lg font-bold">Answered</button>
+        </form>
+        {{end}}
+        {{if or (eq .Status "queued") (eq .Status "asked")}}
+        <form action="/admin/showtell/question" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="dismissed">
+          <button
+            type="submit"
+            class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg"
+            onclick="return confirm('Dismiss this question?')"
+          >Dismiss</button>
+        </form>
+        {{end}}
+      </div>
+    </li>
+    {{end}}
+  </ol>
+  {{else}}
+  <p class="text-gray-500 text-sm">No questions yet — the audience asks through their personas.</p>
+  {{end}}
+</div>
+{{end}}
+
+
+{{/* The personal page's recap link — refreshed when the page's stream says so:
+     during closed, the Participant's recap page as a QR. The recap token is
+     the unguessable UUID; it persists across restarts. */}}
+{{define "fragment-recap-link.html"}}
+<div
+  id="recap"
+  hx-get="/user/recap-link/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+>
+  {{if .Token}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center space-y-2">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📲 Your recap</p>
+    <img id="recap-qr" src="/qr?data=/user/recap/{{.Token}}&size=150" alt="Your personal recap QR code" class="mx-auto rounded-lg shadow-sm" width="150" height="150" />
+    <p class="text-gray-600 text-xs">Scan to open your personal recap — your evening, kept.</p>
+  </div>
+  {{end}}
+</div>
 {{end}}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 )
@@ -31,7 +30,7 @@ type QuestionData struct {
 }
 
 // ErrInterviewOver is returned when an answer is submitted after the last question.
-var ErrInterviewOver = errors.New("No more questions to answer")
+var ErrInterviewOver = errors.New("no more questions to answer")
 
 // InvalidAnswerError reports an answer that does not fit the current question.
 // Its message is safe to show to the Participant.
@@ -65,7 +64,7 @@ func (iv *Interview) questionSet(profile *GitHubProfile, githubUser bool) []Ques
 	qs = append(qs, FixedQuestions...)
 	custom, err := iv.customQuestions(profile)
 	if err != nil {
-		log.Printf("Custom questions error: %v", err)
+		logger("interview").Warn("generating custom questions, falling back to the extra questions", "err", err)
 		return append(qs, ExtraQuestions...)
 	}
 	return append(qs, custom...)

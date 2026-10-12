@@ -203,10 +203,14 @@ func (t handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 type testDeps struct {
 	db          *DB
 	events      *EventStore
+	matcher     *Matcher
+	missions    *Missions
+	showtell    *ShowTell
 	llm         *fakeLLM
 	github      *fakeGitHub
 	onboarding  *Onboarding
 	matchmaking *Matchmaking
+	handler     *Handler
 }
 
 func newTestDB(t *testing.T) *DB {
@@ -223,22 +227,30 @@ func newTestDB(t *testing.T) *DB {
 
 func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testDeps) {
 	t.Helper()
+	return newTestServerOnDB(t, newTestDB(t), llm, gh)
+}
+
+// newTestServerOnDB wires the test server on an existing database — the
+// restart tests reopen the same file and serve it again.
+func newTestServerOnDB(t *testing.T, db *DB, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testDeps) {
+	t.Helper()
 	if llm == nil {
 		llm = newFakeLLM()
 	}
 	if gh == nil {
 		gh = newFakeGitHub()
 	}
-	db := newTestDB(t)
 	matcher := NewMatcher(db, gh, llm)
+	missions := NewMissions(db, matcher, llm)
+	showtell := NewShowTell(db, llm)
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
-	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking)
+	onboarding := NewOnboarding(db, gh, interview, NewPersonas(llm), matchmaking, missions)
 	srv := &testSrv{URL: "http://test", checks: map[string]int{}}
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, srv)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, srv)
 	srv.h = buildMux(h)
-	return srv, &testDeps{db: db, events: NewEventStore(db), llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking}
+	return srv, &testDeps{db: db, events: NewEventStore(db), matcher: matcher, missions: missions, showtell: showtell, llm: llm, github: gh, onboarding: onboarding, matchmaking: matchmaking, handler: h}
 }
 
 // forceStep puts a Participant at any Pipeline Step, bypassing the guarded

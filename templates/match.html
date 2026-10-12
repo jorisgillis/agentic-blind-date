@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agentic Blind Date — Your Match!</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     @keyframes pop-in {
@@ -14,6 +15,12 @@
       100% { transform: scale(1); opacity: 1; }
     }
     .pop-in { animation: pop-in 0.5s ease-out forwards; }
+    @keyframes stamp-in {
+      0% { transform: scale(2); opacity: 0; }
+      60% { transform: scale(0.9); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .stamp-in { animation: stamp-in 0.4s ease-out; }
   </style>
 </head>
 <body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10" style="color-scheme: light;">
@@ -29,6 +36,14 @@
       {{end}}
     </div>
 
+    {{/* Mission card — the evening's hunting ground, refreshed when the
+         match stream says so */}}
+    {{template "fragment-mission-card.html" .MissionCard}}
+
+    {{/* Meet section — your meet code QR and the handshake, right next to
+         the mission card, refreshed when the match stream says so */}}
+    {{template "fragment-meet-status.html" .MeetStatus}}
+
     {{if .Match}}
     {{$m := .Match}}
 
@@ -42,7 +57,7 @@
       </div>
     </div>
 
-    {{/* Match card + Find them merged */}}
+    {{/* Match card + Find them merged — personas only, never the partner's handle */}}
     <div class="bg-black/15 border border-black/10 rounded-2xl p-6 mb-4 pop-in" style="animation-delay:0.15s">
       <div class="flex items-center gap-4">
         <div class="w-16 h-16 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
@@ -50,12 +65,11 @@
         </div>
         <div>
           <p class="font-bold text-lg text-gray-900">{{$m.PersonaName}}</p>
-          <p class="text-gray-700 text-sm">{{$m.DisplayHandle}}</p>
+          {{if $m.PersonaTagline}}
+          <p class="text-gray-700 text-sm italic" data-md>"{{$m.PersonaTagline}}"</p>
+          {{end}}
         </div>
       </div>
-      {{if .Reason}}
-      <p class="mt-4 text-gray-800 italic text-sm" data-md>"{{.Reason}}"</p>
-      {{end}}
       <div class="mt-4 pt-4 border-t border-black/10 flex items-center gap-3">
         <div class="w-12 h-12 rounded-xl {{$m.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow">
           {{$m.PersonaSymbol}}
@@ -67,66 +81,34 @@
       </div>
     </div>
 
-    {{/* Flags */}}
-    {{if or .GreenFlags .RedFlags}}
-    <div class="grid grid-cols-2 gap-3 mb-4">
-      {{if .GreenFlags}}
-      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
-        <p class="text-green-800 font-bold text-sm mb-2">✅ Green flags</p>
-        {{range .GreenFlags}}
-        <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
-        {{end}}
-      </div>
-      {{end}}
-      {{if .RedFlags}}
-      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
-        <p class="text-red-800 font-bold text-sm mb-2">🚩 Red flags</p>
-        {{range .RedFlags}}
-        <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
-        {{end}}
-      </div>
-      {{end}}
-    </div>
-    {{end}}
-
-    {{/* Icebreakers */}}
-    {{if .Icebreakers}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mb-4" style="animation-delay:0.3s">
-      <p class="text-indigo-800 font-bold text-sm mb-3">💬 Ask them</p>
-      {{range .Icebreakers}}
-      <p class="text-gray-800 text-sm mb-2" data-md>→ {{.}}</p>
-      {{end}}
-    </div>
-    {{end}}
-
-    {{/* Others at the event */}}
-    {{if .Others}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in mt-4" style="animation-delay:0.45s">
-      <p class="text-gray-700 font-bold text-sm mb-3">👥 Others at the event</p>
-      <div class="grid grid-cols-3 gap-3">
-        {{range .Others}}
-        <a href="/user/explore/{{$.Me.ID}}/{{.ID}}" class="flex flex-col items-center text-center hover:opacity-75 active:scale-95 transition-all">
-          <div class="w-12 h-12 rounded-xl {{.PersonaColor}} flex items-center justify-center text-xl mb-1 shadow-sm">{{.PersonaSymbol}}</div>
-          <p class="text-xs font-bold leading-tight text-gray-900">{{if .PersonaName}}{{.PersonaName}}{{else}}{{.DisplayHandle}}{{end}}</p>
-          <p class="text-gray-600 text-xs">{{.DisplayHandle}}</p>
-        </a>
-        {{end}}
-      </div>
-    </div>
-    {{end}}
-
-    {{/* QR code */}}
-    <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
-      <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
-      <img id="qr" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
-    </div>
+    {{/* Dossier — locked until the pair's Meeting completes, refreshed when
+         the match stream says so */}}
+    {{template "fragment-dossier.html" .Dossier}}
 
     {{else}}
     <div class="text-center text-gray-700 py-12">
-      <p>Hmm, we couldn't find your match yet.</p>
-      <p class="text-sm mt-2">Refresh in a moment.</p>
+      <p class="text-4xl mb-3">🤷</p>
+      <p class="font-bold text-gray-900">You don't have a match (yet)</p>
+      <p class="text-sm mt-2">Hang tight — your mission card above sends you hunting.</p>
     </div>
     {{end}}
+
+    {{/* Show & tell — sign-up open during the social and show & tell,
+         refreshed when the match stream says so */}}
+    {{template "fragment-showtell.html" .ShowTell}}
+
+    {{/* Settings — the Participant's contact channels, entered once */}}
+    {{template "fragment-settings.html" .Settings}}
+
+    {{/* Share your profile — the page's only QR, at the bottom */}}
+    <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
+      <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
+      <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
+    </div>
+
+    {{/* Recap link — during closed, the recap page as a QR, refreshed when
+         the match stream says so */}}
+    {{template "fragment-recap-link.html" .RecapLink}}
 
   </div>
 </div>
@@ -137,10 +119,16 @@
       });
     }
     document.addEventListener('DOMContentLoaded', renderMd);
-    const qr = document.getElementById('qr');
-    if (qr) {
-      qr.src = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(window.location.href);
-    }
+    const _mes = new EventSource('/user/match-stream/{{.Me.ID}}');
+    _mes.addEventListener('refresh', () => {
+      htmx.trigger('#meet-status', 'refresh');
+      const dossier = document.getElementById('dossier');
+      if (dossier) htmx.trigger(dossier, 'refresh');
+      htmx.trigger('#mission-card', 'refresh');
+      htmx.trigger('#showtell', 'refresh');
+      htmx.trigger('#recap', 'refresh');
+    });
+    _mes.onerror = () => _mes.close();
   </script>
 </body>
 </html>

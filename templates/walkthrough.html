@@ -1,0 +1,154 @@
+{{/* Animated usage walkthrough for the landing page (issue #132): six abstract,
+     identity-free scenes telling the arc of the evening — join, interview, match,
+     social, show & tell, recap. CSS-drawn shapes only, no images; all sizes are
+     in em and scaled via font-size on .lw-scene. Base styles are the static
+     (completed) state, so prefers-reduced-motion just stops the animations.
+     The styles live in landing.html. */}}
+
+{{define "lw-scene-join"}}
+<div class="lw-scene">
+  <div class="lw-phone">
+    <div class="lw-join-pill lw-join-pill-1"><span class="lw-join-ava"></span><span class="lw-bar lw-bar-light" style="width:2.4em"></span></div>
+    <div class="lw-join-pill lw-join-pill-2"><span class="lw-join-ava lw-join-ava-b"></span><span class="lw-bar lw-bar-light" style="width:1.7em"></span></div>
+    <div class="lw-join-body">
+      <span class="lw-bar" style="width:3.2em"></span>
+      <span class="lw-bar" style="width:2.2em"></span>
+      <span class="lw-join-btn"></span>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "lw-scene-interview"}}
+<div class="lw-scene">
+  <div class="lw-chat">
+    <div class="lw-bubble lw-bubble-q">
+      <span class="lw-bar" style="width:4.6em"></span>
+      <span class="lw-bar" style="width:3.1em"></span>
+    </div>
+    <div class="lw-typing"><span></span><span></span><span></span></div>
+    <div class="lw-bubble lw-bubble-a lw-bubble-r">
+      <span class="lw-bar lw-bar-light" style="width:3.6em"></span>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "lw-scene-match"}}
+<div class="lw-scene">
+  <div class="lw-match">
+    <div class="lw-match-row">
+      <span class="lw-node lw-node-a"></span>
+      <span class="lw-match-link"></span>
+      <span class="lw-node lw-node-b"></span>
+    </div>
+    <div class="lw-persona lw-card">
+      <span class="lw-persona-ava"></span>
+      <span class="lw-persona-lines">
+        <span class="lw-bar" style="width:3.2em"></span>
+        <span class="lw-bar" style="width:2.2em"></span>
+      </span>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "lw-scene-social"}}
+<div class="lw-scene">
+  <div class="lw-social">
+    <div class="lw-social-top">
+      <span class="lw-figure lw-fig-indigo lw-social-fig-a"></span>
+      <span class="lw-social-spark"></span>
+      <span class="lw-figure lw-fig-fuchsia lw-social-fig-b"></span>
+    </div>
+    <div class="lw-mission lw-card">
+      <span class="lw-bar lw-bar-light" style="width:3.4em"></span>
+      <div class="lw-mission-grid">
+        <span class="lw-tile"></span>
+        <span class="lw-tile"></span>
+        <span class="lw-tile"></span>
+        <span class="lw-tile"></span>
+        <span class="lw-tile"></span>
+        <span class="lw-tile"></span>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "lw-scene-showtell"}}
+<div class="lw-scene">
+  <div class="lw-stage5">
+    <div class="lw-q-bubble"><span>?</span></div>
+    <div class="lw-presenter"><span class="lw-figure lw-fig-emerald"></span></div>
+    <div class="lw-stage5-platform"></div>
+    <div class="lw-audience"><span></span><span></span><span></span></div>
+  </div>
+</div>
+{{end}}
+
+{{define "lw-scene-recap"}}
+<div class="lw-scene">
+  <div class="lw-recap-card lw-card">
+    <span class="lw-recap-ava"></span>
+    <span class="lw-recap-lines">
+      <span class="lw-bar" style="width:3em"></span>
+      <span class="lw-bar" style="width:2.1em"></span>
+      <span class="lw-bar lw-bar-light" style="width:2.5em"></span>
+    </span>
+    <span class="lw-recap-check">✓</span>
+  </div>
+</div>
+{{end}}
+
+{{/* The walkthrough: six small tableaux stacked vertically; a highlight walks
+     down the stack, 6s per row, over a filling progress line. */}}
+{{define "walkthrough"}}
+<div class="lw-c-wrap">
+  <div class="lw-c-line"><div class="lw-c-line-fill"></div></div>
+  <div class="lw-c-rows">
+    <div class="lw-row">
+      <div class="lw-row-scene" aria-hidden="true">{{template "lw-scene-join" .}}</div>
+      <div class="min-w-0">
+        <div class="text-xs font-bold text-white">1 · Join</div>
+        <div class="text-[11px] leading-tight text-gray-400">Sign up with your name and GitHub handle.</div>
+      </div>
+    </div>
+    <div class="lw-row">
+      <div class="lw-row-scene" aria-hidden="true">{{template "lw-scene-interview" .}}</div>
+      <div class="min-w-0">
+        <div class="text-xs font-bold text-white">2 · Interview</div>
+        <div class="text-[11px] leading-tight text-gray-400">An AI agent interviews you — a few questions, answered at your pace.</div>
+      </div>
+    </div>
+    <div class="lw-row">
+      <div class="lw-row-scene" aria-hidden="true">{{template "lw-scene-match" .}}</div>
+      <div class="min-w-0">
+        <div class="text-xs font-bold text-white">3 · Match</div>
+        <div class="text-[11px] leading-tight text-gray-400">Your agent finds your technical soulmate and writes your persona card.</div>
+      </div>
+    </div>
+    <div class="lw-row">
+      <div class="lw-row-scene" aria-hidden="true">{{template "lw-scene-social" .}}</div>
+      <div class="min-w-0">
+        <div class="text-xs font-bold text-white">4 · Social</div>
+        <div class="text-[11px] leading-tight text-gray-400">Meet your match, then team up on a mission card.</div>
+      </div>
+    </div>
+    <div class="lw-row">
+      <div class="lw-row-scene" aria-hidden="true">{{template "lw-scene-showtell" .}}</div>
+      <div class="min-w-0">
+        <div class="text-xs font-bold text-white">5 · Show &amp; tell</div>
+        <div class="text-[11px] leading-tight text-gray-400">Volunteer on stage — one question from the audience, one demo.</div>
+      </div>
+    </div>
+    <div class="lw-row">
+      <div class="lw-row-scene" aria-hidden="true">{{template "lw-scene-recap" .}}</div>
+      <div class="min-w-0">
+        <div class="text-xs font-bold text-white">6 · Recap</div>
+        <div class="text-[11px] leading-tight text-gray-400">Keep your persona card — a souvenir of the evening.</div>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

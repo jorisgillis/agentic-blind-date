@@ -1,0 +1,34 @@
+{{define "fragment-persona-card.html"}}
+{{/* The wait page's persona card. The persona is crafted in the background
+     after the last interview answer, so the page may have rendered before
+     it exists — the card refreshes itself when the wait stream says so, and
+     shows a placeholder until then. */}}
+<div
+  id="persona-card"
+  hx-get="/user/persona/{{.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="flex flex-col items-center text-center pt-2"
+>
+  {{if .PersonaName}}
+  <div class="w-36 h-36 rounded-3xl bg-white/20 flex items-center justify-center text-8xl mb-4 shadow-xl ring-4 ring-black/10">
+    {{.PersonaSymbol}}
+  </div>
+  <h2 class="text-2xl font-black {{textColor .PersonaColor}}">{{.PersonaName}}</h2>
+  {{if .PersonaTagline}}
+  <p class="text-gray-700 text-sm mt-1 italic" data-md>"{{.PersonaTagline}}"</p>
+  {{end}}
+  <p class="text-gray-600 text-xs mt-1">{{.DisplayHandle}}</p>
+  <div class="mt-4">
+    <p class="text-gray-600 text-xs mb-2">📲 Let others find your profile</p>
+    <img src="/qr?data=/user/wait/{{.ID}}&size=120" alt="QR code" class="mx-auto rounded-lg shadow-md" width="120" height="120" />
+  </div>
+  {{else}}
+  <div class="w-36 h-36 rounded-3xl bg-white/20 flex items-center justify-center text-6xl mb-4 shadow-xl ring-4 ring-black/10 animate-pulse">
+    🎭
+  </div>
+  <h2 class="text-2xl font-black text-gray-900">Crafting your persona…</h2>
+  <p class="text-gray-600 text-xs mt-1">{{.DisplayHandle}}</p>
+  {{end}}
+</div>
+{{end}}

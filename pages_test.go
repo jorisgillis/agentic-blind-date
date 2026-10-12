@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
 // seed creates a Participant with a persona, profile and answers in the given pipeline step.
@@ -80,6 +78,40 @@ func TestLanding_UnknownCookieIsClearedAndTheFormShown(t *testing.T) {
 	}
 }
 
+func TestLanding_RendersTheAnimatedWalkthrough(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	body := readBody(t, get(t, srv, "/user"))
+
+	// The walkthrough: the heading, all six steps, one scene per step, and the
+	// reduced-motion static fallback.
+	for _, want := range []string{
+		"How the evening flows",
+		"1 · Join", "2 · Interview", "3 · Match",
+		"4 · Social", "5 · Show &amp; tell", "6 · Recap",
+		"prefers-reduced-motion",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page: want %q in the walkthrough", want)
+		}
+	}
+	if n := strings.Count(body, `class="lw-scene"`); n != 6 {
+		t.Errorf("want 6 walkthrough scenes, got %d", n)
+	}
+
+	// The join form stays immediately usable, and no prototype chrome ships.
+	for _, want := range []string{`id="joinForm"`, `action="/user/join"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page: want %q", want)
+		}
+	}
+	for _, unwanted := range []string{"lw-switcher", "PROTOTYPE", "variant="} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("landing page: prototype chrome %q must not ship", unwanted)
+		}
+	}
+}
+
 func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal() // after the Reveal, matched Participants see their Match
@@ -100,6 +132,20 @@ func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	}
 	if resp := get(t, srv, "/user/onboard/nobody"); resp.StatusCode != 404 {
 		t.Errorf("unknown: want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestOnboard_ShowsTheQuestionWhenTheInterviewAlreadyStarted(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "i", "I", "interviewing") // one unanswered question, as after a reload
+
+	body := readBody(t, get(t, srv, "/user/onboard/i"))
+
+	if strings.Contains(body, "Agent pipeline running") {
+		t.Errorf("want the interview, got the preparing placeholder")
+	}
+	if !strings.Contains(body, "Tabs or spaces?") {
+		t.Errorf("want the first question on a settled interview")
 	}
 }
 
@@ -174,7 +220,98 @@ func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 	}
 }
 
-func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
+// TestPersonaCard covers #125: the wait page's persona card is a refreshable
+// fragment — the persona is crafted in the background after the last
+// interview answer, so the fragment serves a placeholder until it exists.
+func TestPersonaCard(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "r", "The Bard", "ready")
+	if err := deps.db.CreateParticipant("crafting", "crafting", "Crafting", true); err != nil {
+		t.Fatal(err)
+	}
+	forceStep(deps.db, "crafting", StepCreatingPersona)
+	seed(t, deps.db, "m", "M", "ready")
+	seed(t, deps.db, "m2", "M2", "ready")
+	pair(t, deps.db, "m", "m2")
+
+	// The wait page loads the card as a fragment and refreshes it by push.
+	body := readBody(t, get(t, srv, "/user/wait/r"))
+	for _, want := range []string{`hx-get="/user/persona/r"`, `htmx.trigger('#persona-card', 'refresh')`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the wait page should contain %q", want)
+		}
+	}
+
+	// A ready Participant sees their persona card.
+	body = readBody(t, get(t, srv, "/user/persona/r"))
+	for _, want := range []string{`id="persona-card"`, `hx-get="/user/persona/r"`, "The Bard", "Ships things", `src="/qr?data=/user/wait/r&size=120"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the persona card should show %q, got: %s", want, body)
+		}
+	}
+
+	// A Participant whose persona is still being crafted sees a placeholder.
+	body = readBody(t, get(t, srv, "/user/persona/crafting"))
+	if !strings.Contains(body, "Crafting your persona") {
+		t.Errorf("want the crafting placeholder, got: %s", body)
+	}
+	if strings.Contains(body, "/qr?data=") {
+		t.Error("no profile QR before the persona exists")
+	}
+
+	// A matched Participant belongs on the match page once the social begins.
+	deps.events.Reveal()
+	if loc := get(t, srv, "/user/persona/m").Header.Get("HX-Redirect"); loc != "/user/match/m" {
+		t.Errorf("matched: want HX-Redirect to match, got %q", loc)
+	}
+	if resp := get(t, srv, "/user/persona/nobody"); resp.StatusCode != 404 {
+		t.Errorf("unknown: want 404, got %d", resp.StatusCode)
+	}
+}
+
+// TestMatchPage_SectionOrder covers #130: the mission card sits high on the
+// page, the meet code QR right next to it, the match reveal and the dossier
+// below the mission card, and the share-profile QR at the bottom.
+func TestMatchPage_SectionOrder(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	seed(t, deps.db, "b", "The Crab", "ready")
+	pair(t, deps.db, "a", "b")
+	deps.events.Reveal()
+
+	body := readBody(t, get(t, srv, "/user/match/a"))
+
+	markers := []string{
+		"It's a match!",
+		`id="mission-card"`,
+		`id="meet-status"`,
+		"Find them in the room",
+		`id="dossier"`,
+		`id="showtell"`,
+		`id="settings"`,
+		`id="qr"`,
+		`id="recap"`,
+	}
+	last := -1
+	for _, m := range markers {
+		idx := strings.Index(body, m)
+		if idx < 0 {
+			t.Errorf("the match page should contain %q", m)
+			continue
+		}
+		if idx < last {
+			t.Errorf("%q appears out of order on the match page", m)
+		}
+		last = idx
+	}
+}
+
+// TestMatchPage_ShowsThePartnerAndTheLockedDossier covers the Reveal: the
+// Match page shows the partner's full persona card and the "find them in the
+// room" panel — personas only, never the partner's handle — while the
+// dossier (reason, flags, icebreakers) starts out locked, and Explore's
+// "Others at the event" section is gone.
+func TestMatchPage_ShowsThePartnerAndTheLockedDossier(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal() // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "a", "The Gopher", "ready")
@@ -183,9 +320,14 @@ func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
 	pair(t, deps.db, "a", "b")
 
 	body := readBody(t, get(t, srv, "/user/match/a"))
-	for _, want := range []string{"The Crab", "Both love tabs", "hogs the whiteboard", "Why tabs?", "The Snake"} {
+	for _, want := range []string{"The Crab", "Ships things", "91%", "Find them in the room", "🔒", "to unlock"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("match page should contain %q", want)
+		}
+	}
+	for _, absent := range []string{"@b", "Both love tabs", "hogs the whiteboard", "Why tabs?", "The Snake", "Others at the event", "/user/explore"} {
+		if strings.Contains(body, absent) {
+			t.Errorf("match page must not contain %q while the dossier is locked", absent)
 		}
 	}
 	if loc := get(t, srv, "/user/match/c").Header.Get("Location"); loc != "/user/wait/c" {
@@ -193,103 +335,6 @@ func TestMatchPage_ShowsThePartnerAndTheAssessment(t *testing.T) {
 	}
 	if resp := get(t, srv, "/user/match/nobody"); resp.StatusCode != 404 {
 		t.Errorf("unknown: want 404, got %d", resp.StatusCode)
-	}
-}
-
-func TestExplore_UnknownParticipantsAndFailedAssessments(t *testing.T) {
-	llm := newFakeLLM().onErr("matchmaker", fakeError("mistral HTTP 500"))
-	srv, deps := newTestServer(t, llm, nil)
-	seed(t, deps.db, "a", "A", "ready")
-	seed(t, deps.db, "b", "B", "ready")
-
-	if resp := get(t, srv, "/user/explore/nobody/b"); resp.StatusCode != 404 {
-		t.Errorf("unknown me: want 404, got %d", resp.StatusCode)
-	}
-	if resp := get(t, srv, "/user/explore/a/nobody"); resp.StatusCode != 404 {
-		t.Errorf("unknown other: want 404, got %d", resp.StatusCode)
-	}
-	if resp := get(t, srv, "/user/explore/a/b"); resp.StatusCode != 500 {
-		t.Errorf("failed assessment: want 500, got %d", resp.StatusCode)
-	}
-}
-
-// TestExplore_OnlyBetweenTwoReadyParticipants covers #47: Explore works
-// between any two different ready Participants, but exploring yourself or a
-// Participant who isn't ready is refused without ever calling the LLM or GitHub.
-func TestExplore_OnlyBetweenTwoReadyParticipants(t *testing.T) {
-	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
-	gh := newFakeGitHub()
-	srv, deps := newTestServer(t, llm, gh)
-	seed(t, deps.db, "a", "A", "ready")
-	seed(t, deps.db, "b", "B", "ready")
-	seed(t, deps.db, "c", "C", "interviewing")
-
-	if resp := get(t, srv, "/user/explore/a/a"); resp.StatusCode != 400 {
-		t.Errorf("exploring yourself: want 400, got %d", resp.StatusCode)
-	}
-	if resp := get(t, srv, "/user/explore/a/c"); resp.StatusCode != 400 {
-		t.Errorf("other not ready: want 400, got %d", resp.StatusCode)
-	}
-	if resp := get(t, srv, "/user/explore/c/a"); resp.StatusCode != 400 {
-		t.Errorf("me not ready: want 400, got %d", resp.StatusCode)
-	}
-	if calls := llm.callsMatching("matchmaker"); calls != 0 {
-		t.Errorf("refused explores should not call the LLM, got %d calls", calls)
-	}
-	if lookups := gh.followLookups(); lookups != 0 {
-		t.Errorf("refused explores should not call GitHub, got %d lookups", lookups)
-	}
-
-	body := readBody(t, get(t, srv, "/user/explore/a/b"))
-	if !strings.Contains(body, "80%") {
-		t.Errorf("explore page: want the score, got %q", body)
-	}
-}
-
-// TestExplore_ShowsPersonasOnlyNotHandlesOrNames locks in #47's identity
-// rule: the Explore page never reveals a handle or real name, before or
-// after the Reveal, even though it always renders the same template.
-func TestExplore_ShowsPersonasOnlyNotHandlesOrNames(t *testing.T) {
-	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
-	srv, deps := newTestServer(t, llm, nil)
-	deps.db.CreateParticipant("p1", "octocat-handle", "Real Name One", true)
-	setPersona(t, deps.db, "p1", "The Gopher", "Ships things")
-	forceStep(deps.db, "p1", StepReady)
-	deps.db.CreateParticipant("p2", "ferris-handle", "Real Name Two", true)
-	setPersona(t, deps.db, "p2", "The Crab", "Loves Rust")
-	forceStep(deps.db, "p2", StepReady)
-
-	body := readBody(t, get(t, srv, "/user/explore/p1/p2"))
-
-	for _, leak := range []string{"octocat-handle", "ferris-handle", "Real Name One", "Real Name Two"} {
-		if strings.Contains(body, leak) {
-			t.Errorf("explore page leaked identity %q:\n%s", leak, body)
-		}
-	}
-	if !strings.Contains(body, "The Crab") {
-		t.Errorf("explore page should show the other Participant's persona: %s", body)
-	}
-}
-
-// TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal covers
-// #47's acceptance criterion: after the Reveal, two ready Participants can
-// Explore each other, in either direction.
-func TestExplore_TwoReadyParticipantsCanExploreEachOtherAfterTheReveal(t *testing.T) {
-	llm := newFakeLLM().on("matchmaker", `{"score": 80, "reason": "great match"}`)
-	srv, deps := newTestServer(t, llm, nil)
-	deps.events.Reveal()
-	seed(t, deps.db, "a", "A", "ready")
-	seed(t, deps.db, "b", "B", "ready")
-
-	for _, path := range []string{"/user/explore/a/b", "/user/explore/b/a"} {
-		resp := get(t, srv, path)
-		if resp.StatusCode != 200 {
-			t.Errorf("%s: want 200, got %d", path, resp.StatusCode)
-			continue
-		}
-		if body := readBody(t, resp); !strings.Contains(body, "80%") {
-			t.Errorf("%s: explore page: want the score, got %q", path, body)
-		}
 	}
 }
 
@@ -338,12 +383,69 @@ func TestAdminRematch_PairsTheReadyParticipants(t *testing.T) {
 
 	resp := post(t, srv, "/admin/rematch", nil)
 
-	if resp.Header.Get("Location") != "/admin" {
-		t.Errorf("want redirect back to admin, got %q", resp.Header.Get("Location"))
+	// The host lands back on the console with a confirmation notice (#127).
+	loc := resp.Header.Get("Location")
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, "/admin?notice=") {
+		t.Errorf("want a redirect to the admin console with a notice, got %d %q", resp.StatusCode, loc)
 	}
 	eventually(t, "both matched", func() bool {
 		return reload(t, deps.db, "a").MatchedWith == "b" && reload(t, deps.db, "b").MatchedWith == "a"
 	})
+}
+
+// TestAdminRematch_IsRejectedOnceMatchingIsFrozen covers #115 and #127: from
+// the social onward the endpoint rejects the rematch — the host lands back on
+// the console with a notice explaining why, no matching runs and the frozen
+// pairs are left exactly as they were.
+func TestAdminRematch_IsRejectedOnceMatchingIsFrozen(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 70, "reason": "fine"}`)
+	srv, deps := newTestServer(t, llm, nil)
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+	seed(t, deps.db, "c", "C", "ready")
+	seed(t, deps.db, "d", "D", "ready")
+	pair(t, deps.db, "a", "b")
+	pair(t, deps.db, "c", "d")
+	if err := deps.events.Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := post(t, srv, "/admin/rematch", nil)
+
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("from the social onward: want a redirect, got %d", resp.StatusCode)
+	}
+	if loc, _ := url.QueryUnescape(resp.Header.Get("Location")); !strings.Contains(loc, "Matching is frozen") {
+		t.Errorf("the rejection should say why, got %q", loc)
+	}
+	// No matching ran: the pairs are final and nothing was logged.
+	if n := llm.callsMatching("matchmaker"); n != 0 {
+		t.Errorf("a rejected rematch must not assess any pair, got %d calls", n)
+	}
+	for id, want := range map[string]string{"a": "b", "b": "a", "c": "d", "d": "c"} {
+		if got := reload(t, deps.db, id).MatchedWith; got != want {
+			t.Errorf("%s matched with %q, want %q", id, got, want)
+		}
+	}
+	if msgs, _ := deps.db.GetRecentActivity(10); strings.Contains(strings.Join(msgs, "\n"), "ematch") {
+		t.Errorf("a rejected rematch should log nothing about rematching, got %v", msgs)
+	}
+}
+
+// TestAdmin_NoticeIsRendered covers #127: a notice query parameter (set by
+// host actions like the rematch) is shown on the console, HTML-escaped.
+func TestAdmin_NoticeIsRendered(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	if body := readBody(t, get(t, srv, "/admin")); strings.Contains(body, "border-indigo-700") {
+		t.Error("no notice box without the query parameter")
+	}
+
+	notice := "🔄 Rematch started — <b>the matchmaker</b>"
+	body := readBody(t, get(t, srv, "/admin?notice="+url.QueryEscape(notice)))
+	if !strings.Contains(body, "🔄 Rematch started — &lt;b&gt;the matchmaker&lt;/b&gt;") {
+		t.Errorf("the notice should be rendered HTML-escaped, got: %s", body)
+	}
 }
 
 func TestRematch_NeedsTwoReadyParticipants(t *testing.T) {
@@ -371,17 +473,6 @@ func TestAdminRevealAndDelete(t *testing.T) {
 	if _, err := deps.db.GetParticipant("a"); err == nil {
 		t.Error("participant should be gone after delete")
 	}
-}
-
-// stream runs an SSE handler until it returns or the timeout passes, and returns what it wrote.
-func stream(t *testing.T, srv *testSrv, path string, timeout time.Duration) string {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	req := httptest.NewRequest("GET", path, nil).WithContext(ctx)
-	w := &flusherRecorder{httptest.NewRecorder()}
-	srv.h.ServeHTTP(w, req)
-	return w.Body.String()
 }
 
 func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t *testing.T) {
@@ -433,7 +524,9 @@ func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 			t.Errorf("%s shows the generated handle", path)
 		}
 	}
-	if body := readBody(t, get(t, srv, "/bigscreen/graph-data")); !strings.Contains(body, `"handle": "Ada Lovelace"`) {
-		t.Errorf("after the Reveal, the Big Screen identifies a Non-GitHub User by name:\n%s", body)
+	// The Big Screen shows persona names only, in every phase — never the
+	// Non-GitHub User's real name or generated handle (#113's privacy baseline).
+	if body := readBody(t, get(t, srv, "/bigscreen/graph-data")); strings.Contains(body, "Ada Lovelace") || !strings.Contains(body, "The Analyst") {
+		t.Errorf("the Big Screen should show the persona, not the name:\n%s", body)
 	}
 }

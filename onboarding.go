@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/google/uuid"
 )
@@ -18,13 +17,15 @@ type Onboarding struct {
 	interview   *Interview
 	personas    *Personas
 	matchmaking *Matchmaking
+	missions    *Missions
 }
 
 // NewOnboarding creates the Onboarding module.
-func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding {
+func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking, missions *Missions) *Onboarding {
 	return &Onboarding{
 		db: db, store: NewParticipantStore(db),
 		github: github, interview: interview, personas: personas, matchmaking: matchmaking,
+		missions: missions,
 	}
 }
 
@@ -62,9 +63,10 @@ func (o *Onboarding) Answer(p *Participant, raw string) (done bool, err error) {
 
 // prepare fetches the GitHub profile (GitHub users only) and starts the Interview.
 func (o *Onboarding) prepare(participantID string) {
+	logger("onboarding").Debug("preparing participant", "participant", participantID)
 	p, err := o.store.Get(participantID)
 	if err != nil {
-		log.Printf("Onboarding: participant %s not found: %v", participantID, err)
+		logger("onboarding").Error("participant not found", "participant", participantID, "err", err)
 		return
 	}
 
@@ -77,9 +79,10 @@ func (o *Onboarding) prepare(participantID string) {
 	o.db.LogActivity("📝 Preparing interview questions...")
 
 	if err := o.interview.Start(p, profile); err != nil {
-		log.Printf("Starting interview for %s failed: %v", participantID, err)
+		logger("onboarding").Error("starting the interview failed", "participant", participantID, "err", err)
 		return
 	}
+	logger("onboarding").Debug("interview started", "participant", participantID)
 	o.db.LogActivity("✅ Ready for the interview!")
 }
 
@@ -90,7 +93,7 @@ func (o *Onboarding) githubProfile(p *Participant) *GitHubProfile {
 	o.db.LogActivity("🔍 Fetching a GitHub profile...")
 	fetched, err := o.github.FetchProfile(p.GitHubHandle)
 	if err != nil {
-		log.Printf("Failed to fetch GitHub profile for @%s: %v", p.GitHubHandle, err)
+		logger("onboarding").Warn("fetching the GitHub profile failed, falling back to the handle", "handle", p.GitHubHandle, "err", err)
 	} else if fetched != nil {
 		profile = fetched
 	}
@@ -102,7 +105,7 @@ func (o *Onboarding) githubProfile(p *Participant) *GitHubProfile {
 func (o *Onboarding) Resume() {
 	all, err := o.store.All()
 	if err != nil {
-		log.Printf("Onboarding: resume: %v", err)
+		logger("onboarding").Error("resume failed", "err", err)
 		return
 	}
 	for _, p := range all {
@@ -123,7 +126,7 @@ func (o *Onboarding) resume(p *Participant) {
 func (o *Onboarding) finish(p *Participant) {
 	// Only one finish per Participant: a second submit of the last answer stops here.
 	if err := o.store.Change(ParticipantChange{ID: p.ID, PipelineStep: stepPtr(StepCreatingPersona)}); err != nil {
-		log.Printf("Onboarding: %v", err)
+		logger("onboarding").Error("advancing to persona creation", "participant", p.ID, "err", err)
 		return
 	}
 	o.becomeReady(p)
@@ -139,19 +142,26 @@ func (o *Onboarding) becomeReady(p *Participant) {
 	}
 	persona := o.personas.Create(p)
 	if err := o.store.Change(ParticipantChange{ID: p.ID, Persona: &persona}); err != nil {
-		log.Printf("Onboarding: saving persona of %s: %v", p.ID, err)
+		logger("onboarding").Warn("saving the persona, continuing without it", "participant", p.ID, "err", err)
 	}
 	if err := o.store.Change(ParticipantChange{ID: p.ID, Interests: interestsOf(p.Profile)}); err != nil {
-		log.Printf("Onboarding: saving interests of %s: %v", p.ID, err)
+		logger("onboarding").Warn("saving the interests, continuing without them", "participant", p.ID, "err", err)
 	}
 	if err := o.store.Change(ParticipantChange{ID: p.ID, PipelineStep: stepPtr(StepReady)}); err != nil {
-		log.Printf("Onboarding: %v", err)
+		logger("onboarding").Error("becoming ready", "participant", p.ID, "err", err)
 		return
 	}
+	logger("onboarding").Debug("participant ready", "participant", p.ID, "persona", persona.Name)
 	o.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))
 
 	if err := o.matchmaking.MatchNewcomer(p); err != nil {
-		log.Printf("Continuous matching for %s failed: %v", p.ID, err)
+		logger("onboarding").Error("continuous matching", "participant", p.ID, "err", err)
+	}
+	// A latecomer reaching ready during the social or show & tell gets their
+	// Mission card straight away; during onboarding the card comes at the
+	// social transition, and never once the event is closed.
+	if _, err := o.missions.GenerateFor(p.ID); err != nil {
+		logger("onboarding").Warn("mission card", "participant", p.ID, "err", err)
 	}
 }
 

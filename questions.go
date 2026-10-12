@@ -14,8 +14,8 @@ const (
 type Question struct {
 	ID            string
 	Text          string
-	Options       []string // nil = free text input
-	MaxSelections int      // 0 or 1 = single select, >1 = multiselect
+	Options       []string      // nil = free text input
+	MaxSelections int           // 0 or 1 = single select, >1 = multiselect
 	Mode          SelectionMode // SingleSelect or MultiSelect
 }
 

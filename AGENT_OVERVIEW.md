@@ -54,6 +54,7 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 | **Matchmaking** | `matchmaking.go` | Continuous Matching and the admin Rematch; the Matcher (`matcher.go`) runs the 3-phase algorithm |
 | **Fixed Questions** | `questions.go` | 5 predefined opinionated questions |
 | **HTTP Handlers** | `handlers.go` | All route handlers, HTMX fragments, JSON endpoints |
+| **Closing Ceremony** | `closing.go` | The closing view's stats, the public event recap and the host export pack (personas and counts only) |
 | **Templates** | `templates/*.html` | Server-side rendered HTML with HTMX, Tailwind, D3.js |
 
 ---
@@ -64,12 +65,15 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 1. **Landing** (`/user`) → Enter name + GitHub handle
 2. **Onboarding** (`/user/onboard/{id}`) → Async AI pipeline runs in background
 3. **Interview** → Answer 8 questions (5 fixed + 3 custom) via HTMX forms
-4. **Waiting Room** (`/user/wait/{id}`) → See persona, profile summary, poll for reveal
-5. **Match Reveal** (`/user/match/{id}`) → See partner, score, flags, icebreakers
+4. **Waiting Room** (`/user/wait/{id}`) → See persona, profile summary, and a teaser of your future match (their emoji + colour + a disagreement hint)
+5. **Match Reveal** (`/user/match/{id}`) → See your match's persona card (no handle) and score; the dossier (reason, flags, icebreakers) stays locked until you meet
+6. **Social** (`/user/match/{id}` or `/user/wait/{id}`) → Meet people: your meet code + QR and "I met someone" during the social/show & tell; two-sided confirm completes a meeting and unlocks your dossier via push
 
 ### Admin Actions
-- **Trigger Reveal** (`POST /admin/reveal`) → Runs matching algorithm
-- **Reset Event** (`POST /admin/reset`) → Clears all data for new session
+- **Advance Phase** (`POST /admin/phase`) → Moves the event forward: `social` (the Big Reveal), `showtell`, `closed`
+- **Trigger Reveal** (`POST /admin/reveal`) → Alias for advancing to the social phase
+- **Export Pack** (`GET /admin/export`) → Download the post-meetup blast pack (JSON, or Markdown with `?format=md`) — personas and counts only
+- **Reset Event** (`POST /admin/reset`) → Clears all data and returns to `onboarding`
 
 ### Big Screen
 - **Projector View** (`/bigscreen`) → D3.js force-directed graph
@@ -132,12 +136,39 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/user/answer/{id}` | Store answer, next question |
 | GET | `/user/wait/{id}` | Waiting room |
 | GET | `/user/wait-status/{id}` | HTMX fragment (polled 3s) |
-| GET | `/user/match/{id}` | Match results |
-| GET | `/bigscreen` | Projector view with D3 graph |
+| GET | `/user/match/{id}` | Match reveal: persona card + locked dossier |
+| GET | `/user/dossier/{id}` | HTMX fragment: the dossier (locked until the pair's meeting completes) |
+| GET | `/user/match-stream/{id}` | SSE stream for the match page |
+| GET | `/user/m/{id}` | Meet page (target's persona card + confirm) |
+| POST | `/user/met/{id}` | Confirm a meeting (confirmer's id; target via `code` form value) |
+| GET | `/user/meet-status/{id}` | HTMX fragment: meet section (code, QR, "I met someone") |
+| GET | `/user/mission/{id}` | HTMX fragment: mission card section (3×3 grid, stamps, top connections) |
+| GET | `/user/settings/{id}` | HTMX fragment: contact-details settings section (channels off by default, github pre-filled) |
+| POST | `/user/settings/{id}` | Save the contact channels (entered once) |
+| GET | `/user/recap-link/{id}` | HTMX fragment: the recap link — the recap page as a QR during closed |
+| GET | `/user/recap/{token}` | Personal recap page (persona card, dossier, connections, show & tell items, stats) — unguessable UUID token |
+| POST | `/user/showtell/signup/{id}` | Sign up for show & tell (title, one-line description, optional repo link) — open during the social and show & tell |
+| GET | `/user/showtell/{id}` | HTMX fragment: the show & tell section (sign-up form, queue place, status, question form, the asker's questions) |
+| POST | `/user/showtell/question/{id}` | Ask the presenter on stage a question (through the asker's persona) — live during show & tell, needs no meeting, earns nothing |
+| GET | `/recap` | Public event recap (stats, top connectors, persona gallery, show & tell list) — available only when closed, personas only |
+| GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on; presenter mode at show & tell; closing view with champion, stats and recap QR at closed) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
-| GET | `/admin` | Host control panel |
-| POST | `/admin/reveal` | Start matching |
+| GET | `/admin` | Host control panel (phase, counts, transition buttons) |
+| GET | `/admin/export` | Host export pack download (JSON default, `?format=md` for Markdown) — personas and counts only |
+| POST | `/admin/phase` | Advance the event to a later phase |
+| POST | `/admin/reveal` | Reveal matches (alias for the social phase) |
 | POST | `/admin/reset` | Clear all data |
+| POST | `/admin/showtell/stage` | Presenter mode: put a sign-up on stage (with the Hype Agent's intro), reveal the presenter's identity, or mark the talk done |
+| POST | `/admin/showtell/move` | Reorder the show & tell queue (up/down) |
+| POST | `/admin/showtell/remove` | Remove a sign-up from the queue |
+| GET | `/admin/showtell-queue` | HTMX fragment: the show & tell queue (personas, status, reorder, remove, on stage, reveal, done) |
+| POST | `/admin/showtell/question` | Mark an audience question asked (the Big Screen's current question), answered, or dismissed |
+| GET | `/admin/showtell-questions` | HTMX fragment: the audience question queue (asker personas, status, actions) |
+| GET | `/admin/showtell-stream` | SSE stream for the host console's queues |
+| GET | `/data/meetings` | Debug: meetings (JSON) |
+| GET | `/data/leaderboard` | Debug: connection ranking derived from completed meetings (JSON) |
+| GET | `/data/channels` | Debug: per-participant opted-in contact-channel counts (JSON, counts only) |
+| GET | `/data/missioncard/{id}` | Debug: mission card (tiles, reasons, stamp state) |
 | GET | `/data/*` | Debug endpoints (JSON) |
 
 ---
@@ -151,12 +182,59 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 id, github_handle, name, persona_name, persona_color, persona_symbol,
 persona_tagline, profile_json, custom_questions, answers_json,
 pipeline_step, matched_with, compat_score, compat_reason,
-red_flags, green_flags, icebreakers, created_at
+red_flags, green_flags, icebreakers, created_at, meet_code
 ```
 
 **event_state:**
 ```sql
-key ('phase'), value ('onboarding' | 'matching' | 'revealed')
+key ('phase'), value ('onboarding' | 'social' | 'showtell' | 'closed')
+```
+
+**meetings:**
+```sql
+participant_a, participant_b, a_confirmed_at, b_confirmed_at,
+completed_at, origin ('match' | 'mission' | 'other'), created_at
+-- PRIMARY KEY (participant_a, participant_b); participant_a is the
+-- lexicographically lower id, one canonical row per pair
+```
+
+**mission_cards:**
+```sql
+participant_id (PRIMARY KEY), tiles (JSON: position, kind, person, reason), created_at
+-- one card per participant, fixed at generation; stamps derive from meetings
+```
+
+**contact_channels:**
+```sql
+participant_id, channel ('github'|'email'|'linkedin'|'instagram'|'mastodon'|'other'),
+value, enabled (0/1, off by default)
+-- PRIMARY KEY (participant_id, channel); entered once in the settings section,
+-- a value is revealed only under the mutual rule (opted in + completed meeting)
+```
+
+**recaps:**
+```sql
+participant_id (PRIMARY KEY), token (UUID, UNIQUE), created_at
+-- one unguessable recap token per participant; the recap page persists across restarts
+```
+
+**showtell_signups:**
+```sql
+id, participant_id (UNIQUE, REFERENCES participants), title, description,
+repo_url, status ('queued'|'on_stage'|'presented'), identity_revealed (0/1),
+hype, position, created_at
+-- one sign-up per participant; sign-up opens with the social; the host queue
+-- reorders by position; the identity reveal (the host's explicit action) is
+-- the only way a handle reaches the Big Screen's presenter card
+```
+
+**showtell_questions:**
+```sql
+id, participant_id (REFERENCES participants), signup_id (REFERENCES showtell_signups),
+text, status ('queued'|'asked'|'answered'|'dismissed'), created_at
+-- one row per audience question, bound to the on-stage sign-up at submission;
+-- asked is the current question on the Big Screen (one at a time, personas
+-- only); asking needs no meeting and earns nothing
 ```
 
 **activity_log:**
@@ -237,8 +315,8 @@ agentic_blind_date/
 └── templates/
     ├── landing.html      # Registration form
     ├── onboard.html      # Pipeline progress container
-    ├── wait.html         # Waiting room with persona preview
-    ├── match.html        # Match results with flags/icebreakers
+    ├── wait.html         # Waiting room with persona preview and match teaser
+    ├── match.html        # Match reveal: persona card + locked dossier (unlocks on meeting)
     ├── screen.html       # D3.js big screen visualization
     ├── admin.html        # Host controls
     ├── data.html         # Debug dashboard

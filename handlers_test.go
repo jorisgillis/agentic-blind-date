@@ -182,6 +182,30 @@ func TestReset(t *testing.T) {
 	}
 }
 
+// TestReset_ClearsTheFollowCache is #112: the event reset clears the
+// Matcher's in-memory follow cache together with the LLM/match caches, so the
+// next scoring round asks GitHub again.
+func TestReset_ClearsTheFollowCache(t *testing.T) {
+	gh := newFakeGitHub().withFollow("a", "b")
+	srv, deps := newTestServer(t, nil, gh)
+	a := testParticipant("a", "The Gopher", []string{"Go"})
+	b := testParticipant("b", "The Crab", []string{"Rust"})
+
+	deps.matcher.PairScore(a, b)
+	if n := gh.followLookups(); n != 1 {
+		t.Fatalf("warming the follow cache: want 1 lookup, got %d", n)
+	}
+
+	if resp := post(t, srv, "/admin/reset", url.Values{}); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /admin/reset: want 303, got %d", resp.StatusCode)
+	}
+
+	deps.matcher.PairScore(a, b)
+	if n := gh.followLookups(); n != 2 {
+		t.Errorf("after a reset the follow cache is cleared: want 2 lookups, got %d", n)
+	}
+}
+
 func TestGraphPayload_Top3Connections(t *testing.T) {
 	// This test verifies that buildGraphPayload includes top-3 connections per participant
 	// We can't easily test the full graph without setting up participants with proper data,
@@ -196,7 +220,7 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	m := NewMatcher(db, gh, llm)
 	rel := NewRelationships(db)
 	mm := NewMatchmaking(db, m, rel, defaultMaxChain)
-	h := NewHandler(db, NewOnboarding(db, gh, iv, NewPersonas(llm), mm), iv, m, rel, mm, nil)
+	h := NewHandler(db, NewOnboarding(db, gh, iv, NewPersonas(llm), mm, NewMissions(db, m, llm)), iv, m, rel, mm, NewMissions(db, m, llm), NewShowTell(db, llm), nil)
 
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()
@@ -276,9 +300,9 @@ func TestComputeBadges(t *testing.T) {
 	// Test multiple badges
 	p = GitHubProfile{
 		AccountAgeDays: 3650,
-		TotalStars:    100,
-		PublicRepos:   50,
-		Languages:     []string{"Go", "Python", "JavaScript", "TypeScript", "Java"},
+		TotalStars:     100,
+		PublicRepos:    50,
+		Languages:      []string{"Go", "Python", "JavaScript", "TypeScript", "Java"},
 	}
 	badges = computeBadges(p)
 	if len(badges) != 4 {
@@ -441,12 +465,12 @@ func (f *flusherRecorder) Flush() {
 
 func TestSseHeaders(t *testing.T) {
 	w := &flusherRecorder{httptest.NewRecorder()}
-	
+
 	result := sseHeaders(w)
 	if !result {
 		t.Error("expected sseHeaders to return true for Flusher")
 	}
-	
+
 	if w.Header().Get("Content-Type") != "text/event-stream" {
 		t.Error("expected Content-Type to be text/event-stream")
 	}
@@ -460,9 +484,9 @@ func TestSseHeaders(t *testing.T) {
 
 func TestSseRedirect(t *testing.T) {
 	w := &flusherRecorder{httptest.NewRecorder()}
-	
+
 	sseRedirect(w, "http://example.com")
-	
+
 	body := w.Body.String()
 	if !strings.Contains(body, "event: redirect") {
 		t.Error("expected event: redirect in body")

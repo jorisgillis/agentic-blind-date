@@ -47,19 +47,19 @@ func TestGitHubProfileSummary(t *testing.T) {
 
 	// Test with full profile
 	profile = &GitHubProfile{
-		Login:          "testuser",
-		Name:           "Test User",
-		Bio:            "A test user",
-		Company:        "Test Corp",
-		Location:       "Test City",
-		PublicRepos:    10,
-		Followers:      100,
-		TotalStars:     500,
-		Languages:      []string{"Go", "Python"},
-		TopTopics:      []string{"web", "api"},
-		TopRepos:       []RepoInfo{{Name: "repo1", Stars: 100}, {Name: "repo2", Stars: 50}},
+		Login:            "testuser",
+		Name:             "Test User",
+		Bio:              "A test user",
+		Company:          "Test Corp",
+		Location:         "Test City",
+		PublicRepos:      10,
+		Followers:        100,
+		TotalStars:       500,
+		Languages:        []string{"Go", "Python"},
+		TopTopics:        []string{"web", "api"},
+		TopRepos:         []RepoInfo{{Name: "repo1", Stars: 100}, {Name: "repo2", Stars: 50}},
 		HasProfileReadme: true,
-		AccountAgeDays: 365,
+		AccountAgeDays:   365,
 	}
 	summary = profile.Summary()
 	if summary == "" {

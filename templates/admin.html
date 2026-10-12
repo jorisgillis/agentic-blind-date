@@ -7,6 +7,7 @@
   <meta http-equiv="refresh" content="5">
   <title>Admin — Agentic Blind Date</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body class="bg-gray-950 text-white min-h-screen px-6 py-10">
   <div class="max-w-sm mx-auto space-y-6">
@@ -16,20 +17,62 @@
       <p class="text-gray-500 text-sm mt-1">Agentic Blind Date</p>
     </div>
 
+    {{if .Notice}}
+    <div class="bg-indigo-900/50 border border-indigo-700 text-indigo-100 rounded-xl p-4 text-sm text-center">
+      {{.Notice}}
+    </div>
+    {{end}}
+
     <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+      <div class="flex justify-between items-baseline text-sm">
+        <span class="text-gray-400">Phase</span>
+        <span class="font-bold">{{.Phase}} · {{.Phase.Label}}</span>
+      </div>
+      <p class="text-gray-500 text-xs">
+        {{if .Phase.IsOnboarding}}Onboarding: register, match, wait — matches stay hidden
+        {{else if .Phase.IsSocial}}Social: every match is revealed
+        {{else if .Phase.IsShowTell}}Show &amp; tell: everything in the social stays
+        {{else if .Phase.IsClosed}}Closed: final stats
+        {{end}}
+      </p>
       <div class="flex justify-between text-sm">
-        <span class="text-gray-400">Participants</span>
+        <span class="text-gray-400">Registered</span>
         <span class="font-bold">{{.Count}}</span>
       </div>
       <div class="flex justify-between text-sm">
         <span class="text-gray-400">Ready</span>
         <span class="font-bold">{{.Ready}}</span>
       </div>
+      <div class="flex justify-between text-sm">
+        <span class="text-gray-400">Matched</span>
+        <span class="font-bold">{{.Matched}}</span>
+      </div>
     </div>
+
+    {{if .ShowTell.Open}}
+    {{template "fragment-showtell-queue.html" .ShowTell}}
+    {{end}}
+
+    {{if .ShowTellQuestions.Open}}
+    {{template "fragment-showtell-questions.html" .ShowTellQuestions}}
+    {{end}}
 
     <div class="text-center py-4 text-indigo-400 font-bold">
       ✨ Continuous matching active
     </div>
+
+    {{range .Next}}
+    <form action="/admin/phase" method="POST">
+      <input type="hidden" name="to" value="{{.}}">
+      <button
+        type="submit"
+        class="w-full {{.ButtonClass}} text-white font-bold rounded-xl py-3 transition-colors text-sm"
+        onclick="return confirm('{{.AdvanceConfirm}}')"
+      >
+        {{.AdvanceLabel}}
+      </button>
+    </form>
+    {{end}}
 
     <form action="/admin/reset" method="POST">
       <button
@@ -41,17 +84,7 @@
       </button>
     </form>
 
-    <form action="/admin/reveal" method="POST">
-      <button
-        type="submit"
-        class="w-full bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-xl py-3 transition-colors text-sm disabled:opacity-50"
-        {{if .Event.IsRevealed}}disabled{{end}}
-        onclick="return confirm('Reveal every match now?')"
-      >
-        {{if .Event.IsRevealed}}🎉 Revealed{{else}}🎉 Reveal matches{{end}}
-      </button>
-    </form>
-
+    {{if .Phase.IsOnboarding}}
     <form action="/admin/rematch" method="POST">
       <button
         type="submit"
@@ -61,14 +94,31 @@
         🔄 Rematch
       </button>
     </form>
+    {{else}}
+    <p class="text-center text-gray-600 text-xs">🔒 Matching is frozen — pairs are final</p>
+    {{end}}
 
     <div class="text-center space-y-1">
       <a href="/bigscreen" target="_blank" class="block text-indigo-400 hover:text-indigo-300 text-sm">Open big screen →</a>
       <a href="/user" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open participant landing →</a>
       <a href="/data" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open debug data →</a>
+      <a href="/admin/export" class="block text-gray-600 hover:text-gray-400 text-sm">Download export pack (JSON) →</a>
+      <a href="/admin/export?format=md" class="block text-gray-600 hover:text-gray-400 text-sm">Download export pack (Markdown) →</a>
     </div>
 
   </div>
+  {{if or .ShowTell.Open .ShowTellQuestions.Open}}
+  <script>
+    // The show & tell queue and the audience questions arrive by push, not polling.
+    const _showtell = new EventSource('/admin/showtell-stream');
+    _showtell.addEventListener('refresh', () => {
+      htmx.trigger('#showtell-queue', 'refresh');
+      const questions = document.getElementById('showtell-questions');
+      if (questions) htmx.trigger(questions, 'refresh');
+    });
+    _showtell.onerror = () => _showtell.close();
+  </script>
+  {{end}}
 </body>
 </html>
 {{end}}

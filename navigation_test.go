@@ -5,7 +5,7 @@ import "testing"
 func TestDestination_EveryParticipantHasOnePlaceToBe(t *testing.T) {
 	const onboard, wait, match = "/user/onboard/p", "/user/wait/p", "/user/match/p"
 	questions := []Question{{ID: "q1"}, {ID: "q2"}}
-	// Expected destination per column: unmatched, unmatched+revealed, matched, matched+revealed.
+	// Expected destination per row, in every phase: onboarding, social, showtell, closed.
 	for _, row := range []struct {
 		name    string
 		step    Step
@@ -16,16 +16,26 @@ func TestDestination_EveryParticipantHasOnePlaceToBe(t *testing.T) {
 		{"interviewing, open questions", StepInterviewing, map[string]string{"q1": "x"}, [4]string{onboard, onboard, onboard, onboard}},
 		{"interviewing, all answered", StepInterviewing, map[string]string{"q1": "x", "q2": "y"}, [4]string{wait, wait, wait, wait}},
 		{"creating persona", StepCreatingPersona, nil, [4]string{wait, wait, wait, wait}},
-		{"ready", StepReady, nil, [4]string{wait, wait, wait, match}},
+		{"ready", StepReady, nil, [4]string{wait, wait, wait, wait}},
 	} {
-		for col, c := range []struct{ matched, revealed bool }{{false, false}, {false, true}, {true, false}, {true, true}} {
+		for col, phase := range phases {
 			p := &Participant{ID: "p", PipelineStep: row.step, Questions: questions, Answers: row.answers}
-			if c.matched {
-				p.MatchedWith = "q"
+			if got := destination(p, phase); got != row.want[col] {
+				t.Errorf("%s (%s): want %s, got %s", row.name, phase, row.want[col], got)
 			}
-			if got := destination(p, c.revealed); got != row.want[col] {
-				t.Errorf("%s (matched %v, revealed %v): want %s, got %s", row.name, c.matched, c.revealed, row.want[col], got)
-			}
+		}
+	}
+	// A matched Participant waits until the Social begins, then belongs on
+	// their match page — in the Social and in every later phase.
+	for _, phase := range phases {
+		p := &Participant{ID: "p", PipelineStep: StepReady, Questions: questions,
+			Answers: map[string]string{"q1": "x", "q2": "y"}, MatchedWith: "q"}
+		want := wait
+		if phase.AtLeast(PhaseSocial) {
+			want = match
+		}
+		if got := destination(p, phase); got != want {
+			t.Errorf("matched (%s): want %s, got %s", phase, want, got)
 		}
 	}
 }
