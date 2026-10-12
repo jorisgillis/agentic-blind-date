@@ -162,6 +162,80 @@ func TestWaitStream_RefreshesWhenThePersonaIsCrafted(t *testing.T) {
 	waitFor(t, s, "event: refresh")
 }
 
+// TestMatchStream_EmitsAPhaseEventWhenTheHostAdvancesThePhase covers #136's
+// push half on the match page's stream: a phase transition emits a distinct
+// 'phase' event — in addition to the 'refresh' the signature change already
+// causes — and unrelated changes emit nothing.
+func TestMatchStream_EmitsAPhaseEventWhenTheHostAdvancesThePhase(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+	pair(t, deps.db, "a", "b")
+
+	s := open(t, srv, "/user/match-stream/a")
+	sentNothingNew(t, s, 1, "", "nothing changed")
+
+	if err := deps.events.Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, s, "event: phase")
+	if !strings.Contains(s.String(), "event: refresh") {
+		t.Errorf("a phase change still changes the signature, so 'refresh' should fire too, got %q", s.String())
+	}
+
+	before := s.String()
+	deps.db.LogActivity("someone else did something")
+	sentNothingNew(t, s, 3, before, "a change that does not concern this Participant")
+
+	if err := deps.events.Advance(PhaseShowTell); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "a second phase event", func() bool {
+		return strings.Count(s.String(), "event: phase") >= 2
+	})
+}
+
+// TestWaitStream_EmitsAPhaseEventWhenTheHostAdvancesThePhase covers #136's
+// push half on the wait page's stream. The Participant stays on the wait page
+// — unmatched Participants do, in every phase — so the stream keeps tracking
+// the phase across the evening; a matched Participant would be redirected to
+// the match page on the reveal instead.
+func TestWaitStream_EmitsAPhaseEventWhenTheHostAdvancesThePhase(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "w", "W", "ready")
+
+	s := open(t, srv, "/user/wait-stream/w")
+	sentNothingNew(t, s, 1, "", "nothing changed")
+
+	if err := deps.events.Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, s, "event: phase")
+	if !strings.Contains(s.String(), "event: refresh") {
+		t.Errorf("a phase change still changes the signature, so 'refresh' should fire too, got %q", s.String())
+	}
+
+	before := s.String()
+	deps.db.LogActivity("someone else did something")
+	sentNothingNew(t, s, 3, before, "a change that does not concern this Participant")
+
+	if err := deps.events.Advance(PhaseShowTell); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "a second phase event", func() bool {
+		return strings.Count(s.String(), "event: phase") >= 2
+	})
+
+	// The unmatched Participant stays on the wait page once closed, so the
+	// stream keeps tracking the phase.
+	if err := deps.events.Advance(PhaseClosed); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "a third phase event", func() bool {
+		return strings.Count(s.String(), "event: phase") >= 3
+	})
+}
+
 func TestScreenStream_PushesTheGraphNowAndOnEveryChange(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")

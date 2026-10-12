@@ -1,0 +1,35 @@
+{{define "fragment-phase-header.html"}}
+{{/* The personal pages' persistent phase header — the wait page and the match
+     page. A progress strip of the evening's four phases with done / current /
+     upcoming states, the one-line "Tonight: …" summary, and the Participant's
+     own status woven in. Refreshed when the page's stream says so: on
+     'refresh' like every other fragment, and on the 'phase' event when the
+     host advances the evening. It renders from the phase machine's current
+     state, so a late joiner simply sees the earlier steps as done. */}}
+<div
+  id="phase-header"
+  hx-get="/user/phase-header/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="bg-black/15 border border-black/10 rounded-2xl p-4 space-y-3"
+>
+  {{/* The progress strip: onboarding → social → show & tell → closed */}}
+  <div class="flex items-center gap-2">
+    {{range $i, $s := .Steps}}
+    {{if $i}}<div aria-hidden="true" class="flex-1 h-0.5 rounded-full {{if or $s.Done $s.Current}}bg-indigo-600{{else}}bg-black/20{{end}}"></div>{{end}}
+    <div
+      data-phase="{{$s.Phase}}"
+      data-state="{{if $s.Done}}done{{else if $s.Current}}current{{else}}upcoming{{end}}"
+      {{if $s.Current}}aria-current="step"{{end}}
+      class="flex items-center gap-1.5 flex-shrink-0"
+    >
+      <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 {{if $s.Done}}bg-indigo-600{{else if $s.Current}}bg-indigo-600 animate-pulse{{else}}bg-black/20{{end}}"></span>
+      <span class="text-[10px] sm:text-xs whitespace-nowrap {{if $s.Current}}font-bold text-gray-900{{else if $s.Done}}text-gray-900{{else}}text-gray-500{{end}}">{{$s.Label}}</span>
+    </div>
+    {{end}}
+  </div>
+
+  <p class="text-sm font-semibold text-gray-900">{{.Summary}}</p>
+  <p class="text-xs text-gray-700">{{.Status}}</p>
+</div>
+{{end}}

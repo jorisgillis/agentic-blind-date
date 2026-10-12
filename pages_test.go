@@ -201,6 +201,45 @@ func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	}
 }
 
+// TestWaitPage_RendersThePhaseHeader covers #136: the wait page carries the
+// persistent phase header (ADR 0019) as its first card — the progress strip
+// of the evening's four phases, the one-line "Tonight: …" summary and the
+// Participant's own status — and the wait stream refreshes it on 'refresh'
+// like every other fragment, and on the 'phase' event when the host advances
+// the evening.
+func TestWaitPage_RendersThePhaseHeader(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "r", "The Gopher", "ready")
+
+	body := readBody(t, get(t, srv, "/user/wait/r"))
+
+	// The header is the page's first card, wired for a stream refresh.
+	if idx, persona := strings.Index(body, `id="phase-header"`), strings.Index(body, `id="persona-card"`); idx < 0 || idx > persona {
+		t.Errorf("the phase header should be the wait page's first card, got header at %d, persona card at %d", idx, persona)
+	}
+	for _, want := range []string{
+		`hx-get="/user/phase-header/r"`,
+		`hx-trigger="refresh"`,
+		`data-phase="onboarding"`, `data-phase="social"`, `data-phase="showtell"`, `data-phase="closed"`,
+		"Onboarding", "Social", "Show &amp; tell", "Closed",
+		`aria-current="step"`,
+		"Tonight: register, answer the interview, and wait for your match",
+		"Interview: 1 of 1 answered",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the wait page's phase header should contain %q", want)
+		}
+	}
+
+	// The stream refreshes the header on 'refresh' and on the 'phase' event.
+	if n := strings.Count(body, `htmx.trigger('#phase-header', 'refresh')`); n != 2 {
+		t.Errorf("want the header refreshed by both stream events, got %d triggers", n)
+	}
+	if !strings.Contains(body, `_es.addEventListener('phase', () => htmx.trigger('#phase-header', 'refresh'));`) {
+		t.Errorf("the wait page should listen for the 'phase' event")
+	}
+}
+
 func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal() // after the Reveal, matched Participants see their Match
@@ -303,6 +342,48 @@ func TestMatchPage_SectionOrder(t *testing.T) {
 			t.Errorf("%q appears out of order on the match page", m)
 		}
 		last = idx
+	}
+}
+
+// TestMatchPage_RendersThePhaseHeader covers #136: the match page carries the
+// same persistent phase header (ADR 0019) as its first card — a matched
+// Participant in the social sees the evening's progress strip, the social's
+// summary and their mission status — and the match stream refreshes it on
+// 'refresh' like every other fragment, and on the 'phase' event when the host
+// advances the evening.
+func TestMatchPage_RendersThePhaseHeader(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	seed(t, deps.db, "b", "The Crab", "ready")
+	pair(t, deps.db, "a", "b")
+	deps.events.Reveal() // the social begins: matched Participants see their Match
+
+	body := readBody(t, get(t, srv, "/user/match/a"))
+
+	// The header is the page's first card, above the match hero.
+	if idx, hero := strings.Index(body, `id="phase-header"`), strings.Index(body, "It's a match!"); idx < 0 || idx > hero {
+		t.Errorf("the phase header should be the match page's first card, got header at %d, hero at %d", idx, hero)
+	}
+	for _, want := range []string{
+		`hx-get="/user/phase-header/a"`,
+		`hx-trigger="refresh"`,
+		`data-phase="onboarding"`, `data-phase="social"`, `data-phase="showtell"`, `data-phase="closed"`,
+		"Onboarding", "Social", "Show &amp; tell", "Closed",
+		`aria-current="step"`,
+		"Tonight: the matches are revealed — meet the personas on your mission card",
+		"Mission: your card is being prepared",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the match page's phase header should contain %q", want)
+		}
+	}
+
+	// The stream refreshes the header on 'refresh' and on the 'phase' event.
+	if n := strings.Count(body, `htmx.trigger('#phase-header', 'refresh')`); n != 2 {
+		t.Errorf("want the header refreshed by both stream events, got %d triggers", n)
+	}
+	if !strings.Contains(body, `_mes.addEventListener('phase', () => htmx.trigger('#phase-header', 'refresh'));`) {
+		t.Errorf("the match page should listen for the 'phase' event")
 	}
 }
 

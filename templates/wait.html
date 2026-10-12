@@ -22,6 +22,12 @@
 
     {{$p := .Participant}}
 
+    {{/* Phase header — the evening's progress strip, persistent at the top
+         of the page, refreshed when the wait stream says so: on 'refresh'
+         like every other fragment, and on the 'phase' event when the host
+         advances the evening */}}
+    {{template "fragment-phase-header.html" .PhaseHeader}}
+
     {{/* Persona card — refreshed when the wait stream says so: the persona
          is crafted in the background after the last interview answer */}}
     {{template "fragment-persona-card.html" .Participant}}
@@ -115,7 +121,8 @@
     document.addEventListener('htmx:afterSwap', renderMd);
     const _es = new EventSource('/user/wait-stream/{{$p.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
-    _es.addEventListener('refresh', () => { htmx.trigger('#persona-card', 'refresh'); htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); htmx.trigger('#showtell', 'refresh'); htmx.trigger('#recap', 'refresh'); });
+    _es.addEventListener('refresh', () => { htmx.trigger('#phase-header', 'refresh'); htmx.trigger('#persona-card', 'refresh'); htmx.trigger('#wait-status', 'refresh'); htmx.trigger('#meet-status', 'refresh'); htmx.trigger('#mission-card', 'refresh'); htmx.trigger('#showtell', 'refresh'); htmx.trigger('#recap', 'refresh'); });
+    _es.addEventListener('phase', () => htmx.trigger('#phase-header', 'refresh'));
     _es.onerror = () => _es.close();
   </script>
 </body>

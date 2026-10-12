@@ -77,6 +77,34 @@ func (p Phase) Label() string {
 	return "Waiting for participants"
 }
 
+// StepLabel is the phase's short name on the personal pages' phase header
+// progress strip.
+func (p Phase) StepLabel() string {
+	switch p {
+	case PhaseSocial:
+		return "Social"
+	case PhaseShowTell:
+		return "Show & tell"
+	case PhaseClosed:
+		return "Closed"
+	}
+	return "Onboarding"
+}
+
+// Tonight is the phase header's one-line "Tonight: …" summary of the evening's
+// current phase.
+func (p Phase) Tonight() string {
+	switch p {
+	case PhaseSocial:
+		return "Tonight: the matches are revealed — meet the personas on your mission card"
+	case PhaseShowTell:
+		return "Tonight: show & tell — sign up to present, or ask the one on stage"
+	case PhaseClosed:
+		return "Tonight: the event is closed — your evening is kept in your recap"
+	}
+	return "Tonight: register, answer the interview, and wait for your match"
+}
+
 // Activity is the line logged when the event advances to this phase.
 func (p Phase) Activity() string {
 	switch p {
