@@ -1,10 +1,13 @@
 {{/* The match page's phase-content region (ADR 0019, step 2): the composition
      of per-card fragments the current phase calls for. The social leads with
      the mission card, then the meet section, then the match reveal; show &
-     tell adds its tooling after the dossier; once closed the recap leads. The
-     region is swapped live on the match stream's 'phase' event — a phase
-     change is the one moment a bigger visual beat is wanted — while the
-     per-card fragments inside it keep their own 'refresh' wiring, so a
+     tell adds its tooling after the reveal; once closed the match reveal
+     leads, then the mission card in its final stamped state. The evergreen
+     cards — the dossier, the settings, the share-profile QR and the recap
+     link — live in the page's "More" drawer (step 3, #138), outside this
+     region. The region is swapped live on the match stream's 'phase' event —
+     a phase change is the one moment a bigger visual beat is wanted — while
+     the per-card fragments inside it keep their own 'refresh' wiring, so a
      refresh never re-animates the region. */}}
 {{define "fragment-phase-content.html"}}
 <div
@@ -14,10 +17,10 @@
   hx-swap="outerHTML"
 >
   {{if .Phase.IsClosed}}
-  {{/* Closed: the recap leads, then the match reveal, then the mission card
-       in its final stamped state — no meet section and no show & tell once
-       closed (meetings are disabled; Phase.AllowsMeetings is false). */}}
-  {{template "fragment-recap-link.html" .RecapLink}}
+  {{/* Closed: the match reveal leads, then the mission card in its final
+       stamped state — no meet section and no show & tell once closed
+       (meetings are disabled; Phase.AllowsMeetings is false), and the recap
+       link lives in the More drawer. */}}
   {{template "fragment-match-reveal.html" .}}
   {{template "fragment-mission-card.html" .MissionCard}}
   {{else if .Phase.IsShowTell}}
@@ -25,12 +28,10 @@
   {{template "fragment-meet-status.html" .MeetStatus}}
   {{template "fragment-match-reveal.html" .}}
   {{template "fragment-showtell.html" .ShowTell}}
-  {{template "fragment-recap-link.html" .RecapLink}}
   {{else if .Phase.IsSocial}}
   {{template "fragment-mission-card.html" .MissionCard}}
   {{template "fragment-meet-status.html" .MeetStatus}}
   {{template "fragment-match-reveal.html" .}}
-  {{template "fragment-recap-link.html" .RecapLink}}
   {{else}}
   {{/* Onboarding — only reachable by direct URL; destination() sends everyone
        to wait/onboard: render the match reveal sanely. */}}
@@ -41,10 +42,10 @@
 
 
 {{/* The match reveal — the "It's a match!" hero, the compatibility meter and
-     the persona card with the find-them panel, moved verbatim from the match
-     page, with the no-match card when there is no match. The dossier rides
-     inside the reveal while there is a match — it stays in the region for
-     now; #138 moves it into the More drawer. */}}
+     the persona card with the find-them panel, with the no-match card when
+     there is no match. The dossier rides in the page's "More" drawer (step 3,
+     #138) — it never leads the phase content, but stays reachable from the
+     drawer in any phase. */}}
 {{define "fragment-match-reveal.html"}}
 <div class="text-center mt-5 mb-8 pop-in">
   <div class="text-8xl mb-3">{{.Me.PersonaSymbol}}</div>
@@ -91,10 +92,6 @@
     </div>
   </div>
 </div>
-
-{{/* Dossier — locked until the pair's Meeting completes, refreshed when
-     the match stream says so */}}
-{{template "fragment-dossier.html" .Dossier}}
 
 {{else}}
 <div class="text-center text-gray-700 py-12">

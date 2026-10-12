@@ -308,10 +308,11 @@ func TestPersonaCard(t *testing.T) {
 	}
 }
 
-// TestMatchPage_SectionOrder covers #137: the match page is the phase header,
-// then the phase-content region — the mission card first, the meet section
-// next, then the match reveal with the dossier, the recap link last — then the
-// bottom sections, the settings and the share-profile QR.
+// TestMatchPage_SectionOrder covers #137 and #138: the match page is the
+// phase header, then the phase-content region — the mission card first, the
+// meet section next, then the match reveal — then the bottom "More" drawer
+// holding the evergreen cards: the dossier, the settings, the share-profile
+// QR and the recap link.
 func TestMatchPage_SectionOrder(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
@@ -328,10 +329,12 @@ func TestMatchPage_SectionOrder(t *testing.T) {
 		`id="meet-status"`,
 		"It's a match!",
 		"Find them in the room",
+		`<details`,
+		"More",
 		`id="dossier"`,
-		`id="recap"`,
 		`id="settings"`,
 		`id="qr"`,
+		`id="recap"`,
 	}
 	last := -1
 	for _, m := range markers {
@@ -349,9 +352,13 @@ func TestMatchPage_SectionOrder(t *testing.T) {
 	if strings.Contains(body, `id="showtell"`) {
 		t.Error("the social's match page should not carry the show & tell section")
 	}
-	// Exactly one recap anchor: the region carries it in every phase.
-	if n := strings.Count(body, `id="recap"`); n != 1 {
-		t.Errorf("want exactly one recap anchor on the match page, got %d", n)
+	// Exactly one anchor per fragment id: each fragment lives in exactly one
+	// place — the phase cards in the region, the evergreen cards in the
+	// drawer.
+	for _, id := range []string{"phase-header", "phase-content", "mission-card", "meet-status", "dossier", "settings", "qr", "recap"} {
+		if n := strings.Count(body, `id="`+id+`"`); n != 1 {
+			t.Errorf("want exactly one %q anchor on the match page, got %d", id, n)
+		}
 	}
 }
 

@@ -482,11 +482,18 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The evergreen cards ride at the page's top level for the "More" drawer
+	// (ADR 0019, step 3): the dossier, the settings, the share-profile QR and
+	// the recap link — outside the phase-content region, so they survive
+	// phase swaps and keep their own refresh wiring.
+	dossier, _ := h.dossierData(p)
 	h.render(w, "match.html", map[string]any{
 		"Me":           p,
 		"PhaseHeader":  h.phaseHeaderData(p),
 		"PhaseContent": h.phaseContentData(p),
+		"Dossier":      dossier,
 		"Settings":     h.settingsData(p),
+		"RecapLink":    h.recapLinkData(p),
 	})
 }
 
@@ -514,7 +521,9 @@ func (h *Handler) PhaseContent(w http.ResponseWriter, r *http.Request) {
 // phaseContentData is the match page's phase-content region: the per-card
 // fragments the current phase calls for, composed around the match reveal —
 // the mission card and the meet section during the social, the show & tell
-// tooling from show & tell on, and the recap link leading once closed.
+// tooling from show & tell on. The evergreen cards — the dossier, the
+// settings, the share-profile QR and the recap link — live in the page's
+// "More" drawer instead (ADR 0019, step 3, #138), outside this region.
 func (h *Handler) phaseContentData(p *Participant) map[string]any {
 	dossier, match := h.dossierData(p)
 	return map[string]any{
@@ -522,11 +531,9 @@ func (h *Handler) phaseContentData(p *Participant) map[string]any {
 		"Phase":       h.events.State(),
 		"Match":       match,
 		"Score":       dossier["Score"],
-		"Dossier":     dossier,
 		"MeetStatus":  h.meetStatusData(p),
 		"MissionCard": h.missionCardData(p),
 		"ShowTell":    h.showtellData(p),
-		"RecapLink":   h.recapLinkData(p),
 	}
 }
 

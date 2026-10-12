@@ -315,8 +315,8 @@ agentic_blind_date/
 └── templates/
     ├── landing.html      # Registration form
     ├── onboard.html      # Pipeline progress container
-    ├── wait.html         # Waiting room with persona preview and match teaser
-    ├── match.html        # Match reveal: persona card + locked dossier (unlocks on meeting)
+    ├── wait.html         # Waiting room: persona, answers, wait status, mission, meet, show & tell + More drawer
+    ├── match.html        # Match page: phase header, phase content, More drawer (dossier, settings, share QR, recap)
     ├── screen.html       # D3.js big screen visualization
     ├── admin.html        # Host controls
     ├── data.html         # Debug dashboard

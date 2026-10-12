@@ -51,9 +51,11 @@ func seedMatchedPair(t *testing.T, deps *testDeps) {
 
 // TestPhaseContent_RendersTheCompositionPerPhase covers #137's per-phase
 // render: the region shows only what the current phase calls for — the social
-// leads with the mission card, then the meet section, then the match reveal
-// with the dossier and the recap link last; show & tell adds its tooling after
-// the dossier; closed leads with the recap.
+// leads with the mission card, then the meet section, then the match reveal;
+// show & tell adds its tooling after the reveal; closed leads with the
+// reveal, then the mission card. The evergreen cards (the dossier, the
+// settings, the share-profile QR, the recap link) are not part of the region
+// — they live in the page's More drawer (#138).
 func TestPhaseContent_RendersTheCompositionPerPhase(t *testing.T) {
 	t.Run(string(PhaseSocial), func(t *testing.T) {
 		srv, deps := newTestServer(t, missionLLM(), nil)
@@ -69,22 +71,17 @@ func TestPhaseContent_RendersTheCompositionPerPhase(t *testing.T) {
 
 		assertPhaseContentRegion(t, body)
 		// The social composition: the mission card first, then the meet
-		// section, then the match reveal with the dossier, the recap last.
+		// section, then the match reveal.
 		assertOrder(t, body,
 			`id="mission-card"`,
 			`id="meet-status"`,
 			"It's a match!",
 			"Find them in the room",
-			`id="dossier"`,
-			`id="recap"`,
 		)
+		assertRegionKeepsOutTheEvergreenCards(t, body)
 		// The show & tell tooling waits for the showtell phase.
 		if strings.Contains(body, `id="showtell"`) {
 			t.Error("the social's region should not carry the show & tell section")
-		}
-		// The dossier starts out locked.
-		if !strings.Contains(body, "🔒") {
-			t.Error("the social's dossier starts out locked")
 		}
 	})
 
@@ -101,16 +98,15 @@ func TestPhaseContent_RendersTheCompositionPerPhase(t *testing.T) {
 		body := readBody(t, get(t, srv, "/user/phase-content/me"))
 
 		assertPhaseContentRegion(t, body)
-		// The social composition plus the show & tell tooling, inserted after
-		// the dossier.
+		// The social composition plus the show & tell tooling, after the
+		// match reveal.
 		assertOrder(t, body,
 			`id="mission-card"`,
 			`id="meet-status"`,
 			"It's a match!",
-			`id="dossier"`,
 			`id="showtell"`,
-			`id="recap"`,
 		)
+		assertRegionKeepsOutTheEvergreenCards(t, body)
 		if !strings.Contains(body, "Sign me up") {
 			t.Error("the showtell region should carry the sign-up form")
 		}
@@ -132,16 +128,15 @@ func TestPhaseContent_RendersTheCompositionPerPhase(t *testing.T) {
 		body := readBody(t, get(t, srv, "/user/phase-content/me"))
 
 		assertPhaseContentRegion(t, body)
-		// Closed: the recap leads, then the match reveal, then the mission
-		// card in its final stamped state.
+		// Closed: the match reveal leads, then the mission card in its final
+		// stamped state.
 		assertOrder(t, body,
-			`id="recap"`,
 			"It's a match!",
 			`id="mission-card"`,
 		)
-		if !strings.Contains(body, `id="recap-qr"`) {
-			t.Error("closed leads with the recap QR")
-		}
+		// The recap link is an evergreen card — it lives in the More drawer
+		// (#138), so the region carries neither it nor the dossier.
+		assertRegionKeepsOutTheEvergreenCards(t, body)
 		if !strings.Contains(body, "Your mission — meet 8 personas") {
 			t.Error("closed keeps the mission card in its final stamped state")
 		}
@@ -151,11 +146,19 @@ func TestPhaseContent_RendersTheCompositionPerPhase(t *testing.T) {
 				t.Errorf("closed should not carry %s", absent)
 			}
 		}
-		// The dossier is unlocked once the event is closed.
-		if !strings.Contains(body, "Both love tabs") {
-			t.Error("the dossier is unlocked in closed")
-		}
 	})
+}
+
+// assertRegionKeepsOutTheEvergreenCards checks that no evergreen card remains
+// in the phase-content region: the dossier, the settings, the share-profile QR
+// and the recap link all live in the page's More drawer (#138).
+func assertRegionKeepsOutTheEvergreenCards(t *testing.T, region string) {
+	t.Helper()
+	for _, absent := range []string{`id="dossier"`, `id="settings"`, `id="qr"`, `id="recap"`, `<details`} {
+		if strings.Contains(region, absent) {
+			t.Errorf("the phase-content region should not carry %s — it lives in the More drawer", absent)
+		}
+	}
 }
 
 // TestPhaseContent_NoMatchStateRenders covers the region without a Match: the

@@ -34,21 +34,49 @@
     {{template "fragment-phase-header.html" .PhaseHeader}}
 
     {{/* Phase content — the region the current phase calls for (ADR 0019,
-         step 2): the mission card, the meet section, the match reveal and
-         the dossier during the social, the show & tell tooling from show &
-         tell on, the recap leading once closed. Swapped live on the 'phase'
-         event; the per-card fragments inside it keep their own 'refresh'
-         wiring, so a refresh never re-animates the region */}}
+         step 2): the mission card, the meet section and the match reveal
+         during the social, the show & tell tooling from show & tell on, the
+         reveal leading once closed. Swapped live on the 'phase' event; the
+         per-card fragments inside it keep their own 'refresh' wiring, so a
+         refresh never re-animates the region */}}
     {{template "fragment-phase-content.html" .PhaseContent}}
 
-    {{/* Settings — the Participant's contact channels, entered once */}}
-    {{template "fragment-settings.html" .Settings}}
+    {{/* More — the evergreen drawer (ADR 0019, step 3): the dossier, the
+         settings, the share-profile QR and the recap link behind a single
+         bottom toggle. It sits outside the phase-content region, so it
+         survives phase swaps, and its cards keep their own 'refresh'
+         wiring — the dossier unlocks live with its flourish, drawer open or
+         not. A browser-native details/summary toggle: no JS, no new stream */}}
+    <details class="group mt-5 bg-black/10 border border-black/10 rounded-2xl">
+      <summary class="flex cursor-pointer select-none items-center gap-2 px-4 py-3 list-none [&::-webkit-details-marker]:hidden">
+        <span class="text-gray-900 font-bold text-sm">More</span>
+        <span class="text-gray-600 text-xs">dossier · settings · share · recap</span>
+        <span class="ml-auto text-gray-500 text-xs transition-transform duration-200 motion-reduce:transition-none group-open:rotate-180" aria-hidden="true">▾</span>
+      </summary>
+      <div class="space-y-4 border-t border-black/10 p-4">
 
-    {{/* Share your profile — the page's only QR, at the bottom */}}
-    <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in mt-4 text-center" style="animation-delay:0.6s">
-      <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
-      <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
-    </div>
+        {{if .Dossier.Match}}
+        {{/* Dossier — locked until the pair's Meeting completes, refreshed
+             when the match stream says so; without a Match there is no
+             dossier */}}
+        {{template "fragment-dossier.html" .Dossier}}
+        {{end}}
+
+        {{/* Settings — the Participant's contact channels, entered once */}}
+        {{template "fragment-settings.html" .Settings}}
+
+        {{/* Share your profile */}}
+        <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in text-center" style="animation-delay:0.6s">
+          <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
+          <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
+        </div>
+
+        {{/* Recap link — during closed, the recap page as a QR, refreshed
+             when the match stream says so */}}
+        {{template "fragment-recap-link.html" .RecapLink}}
+
+      </div>
+    </details>
 
   </div>
 </div>
