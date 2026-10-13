@@ -81,6 +81,7 @@ type Handler struct {
 	missions    *Missions
 	showtell    *ShowTell
 	slides      *SlideDecks
+	board       *Board
 	closing     *Closing
 	onboarding  *Onboarding
 	interview   *Interview
@@ -111,6 +112,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		"colorName": paletteName,
 		"textColor": paletteText,
 		"fileSize":  formatFileSize,
+		"linkify":   linkify,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	events := NewEventStore(db)
@@ -118,7 +120,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	channels := NewContactChannels(db)
 	return &Handler{
 		db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
-		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell, slides: slides,
+		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell, slides: slides, board: NewBoard(db, events),
 		closing:    NewClosing(db, meetings, channels, showtell),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
@@ -325,6 +327,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	data["MissionCard"] = h.missionCardData(p)
 	data["ShowTell"] = h.showtellData(p)
 	data["Slides"] = h.slidesData(p)
+	data["Board"] = h.boardData(p)
 	data["Settings"] = h.settingsData(p)
 	data["RecapLink"] = h.recapLinkData(p)
 	data["PhaseHeader"] = h.phaseHeaderData(p)
@@ -540,6 +543,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		"PhaseHeader":  h.phaseHeaderData(p),
 		"PhaseContent": h.phaseContentData(p),
 		"Slides":       h.slidesData(p),
+		"Board":        h.boardData(p),
 		"Dossier":      dossier,
 		"Settings":     h.settingsData(p),
 		"RecapLink":    h.recapLinkData(p),
@@ -907,6 +911,7 @@ type meetSignature struct {
 	card      bool
 	showtell  string
 	slides    string
+	board     string
 }
 
 func (h *Handler) meetSignature(p *Participant) meetSignature {
@@ -917,7 +922,7 @@ func (h *Handler) meetSignature(p *Participant) meetSignature {
 			completed++
 		}
 	}
-	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID), h.showtell.Signature(p.ID), h.slides.Signature()}
+	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID), h.showtell.Signature(p.ID), h.slides.Signature(), h.board.Signature(p.ID)}
 }
 
 // ── contact exchange: settings + the post-meeting prompt ───────────────────
@@ -1590,7 +1595,42 @@ func (h *Handler) buildGraphPayload() map[string]any {
 			payload["presenter"] = presenter
 		}
 	}
+
+	// The Board: the newest approved Posts rotate on the screen in every phase,
+	// except while a presenter is on stage. Personas only.
+	if payload["presenter"] == nil {
+		if board := h.boardPayload(); len(board) > 0 {
+			payload["board"] = board
+		}
+	}
 	return payload
+}
+
+// boardPayloadLimit is how many of the newest approved Posts the Big Screen
+// rotates through.
+const boardPayloadLimit = 10
+
+// boardPayload is the Big Screen's Board: the newest approved Posts with their
+// poster's Persona and the first link of each (the QR's target, "" when the
+// Post has none). Only approved Posts ever reach the screen.
+func (h *Handler) boardPayload() []map[string]any {
+	posts, err := h.board.Approved(boardPayloadLimit)
+	if err != nil {
+		logger("handler").Warn("big screen board", "err", err)
+		return nil
+	}
+	out := make([]map[string]any, 0, len(posts))
+	for _, post := range posts {
+		out = append(out, map[string]any{
+			"id":             post.ID,
+			"text":           post.Text,
+			"link":           firstLink(post.Text),
+			"persona_name":   post.PersonaName,
+			"persona_symbol": post.PersonaSymbol,
+			"persona_color":  post.PersonaColor,
+		})
+	}
+	return out
 }
 
 // presenterPayload is the Big Screen's presenter mode: the on-stage sign-up
@@ -1826,6 +1866,7 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 		"Notice":            r.URL.Query().Get("notice"),
 		"ShowTell":          h.showtellQueueData(),
 		"ShowTellQuestions": h.showtellQuestionsData(),
+		"Board":             h.boardModerationData(),
 	})
 }
 
@@ -1951,6 +1992,10 @@ func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.showtell.RemoveParticipant(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := h.board.RemoveParticipant(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

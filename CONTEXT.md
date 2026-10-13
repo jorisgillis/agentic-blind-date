@@ -101,7 +101,7 @@ The network visualization shown on the big screen, consisting of:
   - **Potential edges**: Top-3 heuristic connections (dashed lines)
 
 ### Host
-The admin running the evening from the host console (`/admin`): advancing the Phase — the console's Reveal route stays as an alias for advancing to the Social — running the Show & Tell queue (staging the presenter, the Identity Reveal, marking talks done) and the audience question queue, plus the evening's other controls: the Rematch (onboarding only, disabled once matching freezes), the Host Export Pack and the Reset.
+The admin running the evening from the host console (`/admin`): advancing the Phase — the console's Reveal route stays as an alias for advancing to the Social — running the Show & Tell queue (staging the presenter, the Identity Reveal, marking talks done) and the audience question queue, plus the evening's other controls: approving the Board's Posts, the Rematch (onboarding only, disabled once matching freezes), the Host Export Pack and the Reset.
 
 ### Big Screen
 The public display for the event — the Graph, the activity ticker and the join QR — showing persona names only, in every phase. It is phase-aware:
@@ -109,6 +109,8 @@ The public display for the event — the Graph, the activity ticker and the join
 - From the **Social**: the connection leaderboard (the top 5 by connections) alongside the graph's match and meeting edges
 - During **Show & Tell**: presenter mode — the on-stage presenter's card with the Hype Agent's intro line and the current audience question
 - Once **closed**: the Closing Ceremony's view — the final leaderboard naming the Champion, the evening's stats, and the recap QR in place of the join QR
+
+In every phase the Big Screen also rotates the Board's newest approved Posts in a card with a QR of the Post's link — except while a presenter is on stage.
 
 ### Interview
 The question-and-answer process where participants provide information about themselves. Consists of:
@@ -214,14 +216,17 @@ A **Question** is one row per audience question in `showtell_questions` — the 
 ### Slide Deck
 A meet-up speaker's slides, as one PDF the Host uploads from the host console with a title and the speaker's name as plain text. A Slide Deck is not part of Show & Tell: the speaker is not a Participant, so the personas-only rule does not apply to the name, and the Host decides what to enter. Every Participant sees the Slide Decks on their personal page, in every phase, as soon as one is uploaded or removed (by push), and can open one in the browser or download it. Slide Decks are not shown on the Big Screen, the recaps or in the Host Export Pack, and a Reset deletes them.
 
+### Board and Post
+The **Board** is where Participants share useful links and information with the rest of the meet-up, in the manner of Twitter or Bluesky. A **Post** is one short plain-text message (1–280 characters) by a Participant, who must be `ready` and may post in every phase except `closed`. A Post may contain links: `http(s)` links become clickable (opening in a new tab, `noopener noreferrer`); nothing else is rendered, and there are no previews, replies, reactions or images. A Post is attributed to the poster's Persona only — never a handle or name. A Post's **Status** is `pending` → `approved` or `rejected`: nothing is visible to others until the Host approves it, rejected is final and carries no reason, and the Host can also take an approved Post down. The poster sees their own Posts with their status and can delete one; nobody can edit a Post. A Participant may hold at most 10 Posts, counting pending and approved ones. Approved Posts, newest first, appear on every Participant's personal page (by push), on the Big Screen as a rotating card with a QR of the Post's link — in every phase except while a presenter is on stage — and in the Public Event Recap and the Host Export Pack. A Reset deletes all Posts. The Board is separate from Show & Tell: a Sign-up's repo link stays part of the talk.
+
 ### Closing Ceremony
 When the event closes, the Big Screen's closing view shows the final leaderboard naming the Champion — the Merge Trophy winner — the event graph with all meeting edges, the evening's stats, and the recap QR linking to the public event recap. Meeting confirmation stays disabled. Everything arrives by push, like every other screen change.
 
 ### Public Event Recap
-`GET /recap` — the evening's public page, available only once the event is closed. It shows the evening's stats, the top connectors, the persona gallery and the show & tell list with links. Personas only — no contact data, no identities.
+`GET /recap` — the evening's public page, available only once the event is closed. It shows the evening's stats, the top connectors, the persona gallery, the show & tell list with links and the Board's approved Posts. Personas only — no contact data, no identities.
 
 ### Host Export Pack
-`GET /admin/export` — the host's post-meetup blast pack, downloaded as JSON (the default) or Markdown (`?format=md`). It carries the headline stats, the full connection leaderboard, the top personas, the best LLM-generated match reasons and icebreakers (anonymized to the pair's personas), the show & tell list, the question count and the success metrics. Personas and counts only: the pack never contains contact-channel values or GitHub identity mappings — the host pastes it into the post-meetup blast as it is.
+`GET /admin/export` — the host's post-meetup blast pack, downloaded as JSON (the default) or Markdown (`?format=md`). It carries the headline stats, the full connection leaderboard, the top personas, the best LLM-generated match reasons and icebreakers (anonymized to the pair's personas), the show & tell list, the Board's approved Posts, the question count and the success metrics. Personas and counts only: the pack never contains contact-channel values or GitHub identity mappings — the host pastes it into the post-meetup blast as it is.
 
 ### Success Metrics
 The evening's scorecard against the v2 goals, derived at the close — never stored: completed meetings, connections made (one per side per completed meeting), answered questions, and the audience-participation goal — met at ten or more answered questions.
@@ -294,7 +299,9 @@ The **Relationship module** owns Relationship State and enforces the Key Invaria
 | Closing Ceremony | The close of the event: the Big Screen's closing view — the final leaderboard naming the Champion, all meeting edges, the evening's stats, the recap QR |
 | Contact Channel | A contact detail (github, email, linkedin, instagram, mastodon, other) a Participant enters once in their settings, off by default, revealed only under the mutual rule |
 | Personal Recap | The Participant's persistent recap page at `/user/recap/{token}` — persona card, unlocked dossier, connections with revealed channels, personal stats — gated by an unguessable UUID token |
-| Public Event Recap | The evening's public page at `/recap`, available only once closed — stats, top connectors, the persona gallery, the show & tell list. Personas only |
-| Host Export Pack | The host's post-meetup blast pack at `/admin/export` (JSON or Markdown) — headline stats, leaderboard, top personas, best anonymized match reasons, show & tell list, question count, success metrics. Personas and counts only |
+| Public Event Recap | The evening's public page at `/recap`, available only once closed — stats, top connectors, the persona gallery, the show & tell list, the Board's approved Posts. Personas only |
+| Host Export Pack | The host's post-meetup blast pack at `/admin/export` (JSON or Markdown) — headline stats, leaderboard, top personas, best anonymized match reasons, show & tell list, the Board's approved Posts, question count, success metrics. Personas and counts only |
 | Success Metrics | The evening's derived scorecard: completed meetings, connections made, answered questions, and the audience-participation goal (≥10 answered questions) |
 | Slide Deck | A meet-up speaker's slides as one PDF, uploaded by the Host with a title and the speaker's name, shown to every Participant on their personal page in every phase. Not part of Show & Tell; deleted on Reset |
+| Board | The shared space where Participants post short messages and links, Bluesky-style; shown on personal pages, the Big Screen, the Public Event Recap and the Host Export Pack |
+| Post | One short plain-text message (≤280 characters) on the Board, attributed to the poster's Persona; `pending` → `approved` or `rejected` by the Host; max 10 per Participant; deleted on Reset |

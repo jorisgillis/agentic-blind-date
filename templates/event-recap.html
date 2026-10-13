@@ -93,6 +93,26 @@
     {{end}}
   </div>
 
+  {{/* The Board — the approved Posts, newest first, through their Personas */}}
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-400 text-xs uppercase tracking-widest">📣 Shared on the board</p>
+    {{if .Board}}
+    <ul class="space-y-3">
+      {{range .Board}}
+      <li class="flex gap-3">
+        <div class="w-9 h-9 rounded-lg {{.Poster.Color}} flex items-center justify-center text-lg flex-shrink-0">{{.Poster.Symbol}}</div>
+        <div class="min-w-0">
+          <p class="text-gray-500 text-xs font-bold">{{.Poster.Name}}</p>
+          <p class="text-sm text-gray-200 whitespace-pre-line break-words">{{linkify .Text}}</p>
+        </div>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="text-gray-500 text-sm">Nothing was posted.</p>
+    {{end}}
+  </div>
+
 </div>
 </body>
 </html>

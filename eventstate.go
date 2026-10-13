@@ -262,6 +262,9 @@ func (s *EventStore) Reset() error {
 		if _, err := tx.Exec(`DELETE FROM slide_decks`); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(`DELETE FROM board_posts`); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`DELETE FROM participants`); err != nil {
 			return err
 		}

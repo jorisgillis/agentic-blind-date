@@ -128,6 +128,9 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/showtell/{id}", h.ShowTellStatus)
 	mux.HandleFunc("GET /user/slides/{id}", h.Slides)
 	mux.HandleFunc("POST /user/showtell/question/{id}", h.ShowTellQuestion)
+	mux.HandleFunc("GET /user/board/{id}", h.BoardSection)
+	mux.HandleFunc("POST /user/board/{id}", h.BoardPost)
+	mux.HandleFunc("POST /user/board/{id}/delete", h.BoardDelete)
 
 	mux.HandleFunc("GET /slides/{id}", h.SlideDeckOpen)
 	mux.HandleFunc("GET /slides/{id}/download", h.SlideDeckDownload)
@@ -169,6 +172,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /admin/slides", h.AdminSlides)
 	mux.HandleFunc("POST /admin/slides", h.AdminSlidesUpload)
 	mux.HandleFunc("POST /admin/slides/remove", h.AdminSlidesRemove)
+	mux.HandleFunc("POST /admin/board", h.AdminBoard)
 
 	return mux
 }

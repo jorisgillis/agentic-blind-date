@@ -174,6 +174,14 @@ func NewDB(path string) (*DB, error) {
 			created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
+		CREATE TABLE IF NOT EXISTS board_posts (
+			id             INTEGER PRIMARY KEY AUTOINCREMENT,
+			participant_id TEXT NOT NULL REFERENCES participants(id),
+			text           TEXT NOT NULL,
+			status         TEXT NOT NULL DEFAULT 'pending',
+			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
 	`)
 	if err != nil {
 		return nil, err

@@ -152,12 +152,16 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/user/showtell/question/{id}` | Ask the presenter on stage a question (through the asker's persona) — live during show & tell, needs no meeting, earns nothing |
 | GET | `/user/slides/{id}` | HTMX fragment: the Slide Decks section (the speakers' PDFs, every phase) |
 | GET | `/slides/{id}` | A Slide Deck's PDF, inline (public; `/slides/{id}/download` serves it as a download) |
-| GET | `/recap` | Public event recap (stats, top connectors, persona gallery, show & tell list) — available only when closed, personas only |
+| GET | `/user/board/{id}` | HTMX fragment: the Board section (post form for a ready Participant until the close; approved Posts plus the Participant's own, newest first) |
+| POST | `/user/board/{id}` | Post to the Board (1–280 characters; max 10 pending or approved) — waits for the Host's approval; a refusal re-renders the section with status 400 |
+| POST | `/user/board/{id}/delete` | Delete one of your own Posts (`post` form value) |
+| GET | `/recap` | Public event recap (stats, top connectors, persona gallery, show & tell list, Board) — available only when closed, personas only |
 | GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on; presenter mode at show & tell; closing view with champion, stats and recap QR at closed) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel (phase, counts, transition buttons) |
 | GET | `/admin/slides` | Slide Decks page: upload form (PDF, title, speaker; max 100 MB) and the uploaded decks |
 | POST | `/admin/slides` | Upload a Slide Deck (multipart); `/admin/slides/remove` (POST, `id`) takes one down |
+| POST | `/admin/board` | The Host's decision on a Post (`id`, `action` = `approved` or `rejected`; rejecting an approved Post takes it down) |
 | GET | `/admin/export` | Host export pack download (JSON default, `?format=md` for Markdown) — personas and counts only |
 | POST | `/admin/phase` | Advance the event to a later phase |
 | POST | `/admin/reveal` | Reveal matches (alias for the social phase) |
@@ -247,6 +251,14 @@ id, title, speaker, filename, stored_name (UNIQUE), size, created_at
 -- a meet-up speaker's slides, uploaded by the Host; the PDF itself lives on the
 -- data volume (slides/ next to the database) under stored_name, never the
 -- uploaded filename; Reset deletes the rows and then sweeps the files
+```
+
+**board_posts:**
+```sql
+id, participant_id, text, status (pending|approved|rejected), created_at
+-- a Post on the Board: at most 280 characters, shown through the poster's persona;
+-- only approved Posts reach other Participants, the Big Screen, the recap and the
+-- export; Reset and deleting a Participant delete the rows
 ```
 
 **activity_log:**

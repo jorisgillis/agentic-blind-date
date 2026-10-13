@@ -50,6 +50,7 @@ Late joiners who arrive after the reveal see a "You just missed it!" message rat
 | `/bigscreen` | Projector | Live force graph + simultaneous reveal |
 | `/admin` | Host | Trigger reveal, reset event (auto-refreshes every 5 seconds) |
 | `/admin/slides` | Host | Upload the speakers' slides (PDF); Participants see them on their personal page |
+| `/admin` (Board section) | Host | Approve, reject or take down the Posts Participants share on the Board |
 | `/data` | Debug | Inspect all participants, activity log, event state |
 
 ## Running
