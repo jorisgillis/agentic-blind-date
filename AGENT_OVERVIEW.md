@@ -116,7 +116,7 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 |----------|------------|-------|
 | Backend | Go 1.26+ | Standard library `net/http` |
 | Database | SQLite3 | WAL mode, single file |
-| AI | Mistral AI | `mistral-small-latest` model |
+| AI | Mistral AI | `mistral-large-4` model |
 | Frontend | HTMX 1.9 | Dynamic updates without writing JS |
 | Styling | Tailwind CSS | CDN (Play), no build step |
 | Visualization | D3.js 7 | Force-directed graph |

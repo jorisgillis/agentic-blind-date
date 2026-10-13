@@ -107,7 +107,7 @@ The organiser picks the provider for the whole deployment with `LLM_PROVIDER`. E
 
 | Provider | Base URL default | Key | Default model | Default timeout |
 |---|---|---|---|---|
-| `mistral` (default) | `https://api.mistral.ai/v1` | required (`LLM_API_KEY` or legacy `MISTRAL_API_KEY`) | `mistral-medium-latest` | 30s |
+| `mistral` (default) | `https://api.mistral.ai/v1` | required (`LLM_API_KEY` or legacy `MISTRAL_API_KEY`) | `mistral-large-4` | 30s |
 | `scaleway` | `https://api.scaleway.ai/v1` | required — the secret key of a Scaleway IAM API key | `mistral-small-3.2-24b-instruct-2506` | 30s |
 | `ollama` | `http://localhost:11434/v1` | not needed | none — set `LLM_MODEL` yourself | 180s |
 
@@ -319,7 +319,7 @@ sqlite3 blind_date.db "SELECT github_handle, persona_name, pipeline_step, compat
 
 ### Mistral model
 
-The model is set in `main.go`, currently `mistral-medium-latest`. Swap to `mistral-large-latest` for more creative personas and match reasoning, at higher cost and latency.
+The default is set in `llmprovider.go`, currently `mistral-large-4`. Override it with `LLM_MODEL`; a smaller model such as `mistral-medium-latest` is cheaper and faster, at the cost of less creative personas and match reasoning.
 
 ## License
 
