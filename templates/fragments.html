@@ -806,3 +806,32 @@
   {{end}}
 </div>
 {{end}}
+
+
+{{/* The personal page's Slide Decks — the meet-up speakers' slides the Host
+     uploaded, in every phase, refreshed when the page's stream says a deck was
+     added or removed. Each deck opens inline in a new tab, with a download
+     link next to it. With no decks the section is empty. */}}
+{{define "fragment-slides.html"}}
+<div
+  id="slides"
+  hx-get="/user/slides/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+>
+  {{if .Decks}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-4 mb-4 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📑 Slides</p>
+    {{range .Decks}}
+    <div class="flex items-center gap-3">
+      <div class="min-w-0 flex-1">
+        <a href="/slides/{{.ID}}" target="_blank" rel="noopener" class="block font-bold text-gray-900 text-sm truncate underline decoration-black/30">{{.Title}}</a>
+        <p class="text-gray-700 text-xs truncate">{{.Speaker}} · {{fileSize .Size}}</p>
+      </div>
+      <a href="/slides/{{.ID}}/download" class="flex-shrink-0 text-xs font-bold text-gray-900 bg-black/10 hover:bg-black/20 rounded-lg px-3 py-1.5">⬇ PDF</a>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}

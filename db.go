@@ -164,6 +164,16 @@ func NewDB(path string) (*DB, error) {
 			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
+		CREATE TABLE IF NOT EXISTS slide_decks (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			title       TEXT NOT NULL,
+			speaker     TEXT NOT NULL,
+			filename    TEXT NOT NULL,
+			stored_name TEXT NOT NULL UNIQUE,
+			size        INTEGER NOT NULL,
+			created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
 	`)
 	if err != nil {
 		return nil, err

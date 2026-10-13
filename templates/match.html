@@ -41,6 +41,10 @@
          refresh never re-animates the region */}}
     {{template "fragment-phase-content.html" .PhaseContent}}
 
+    {{/* Slides — the speakers' slide decks the Host uploaded, in every phase,
+         refreshed when the match stream says so */}}
+    {{template "fragment-slides.html" .Slides}}
+
     {{/* More — the evergreen drawer (ADR 0019, step 3): the dossier, the
          settings, the share-profile QR and the recap link behind a single
          bottom toggle. It sits outside the phase-content region, so it
@@ -100,6 +104,7 @@
       refreshCard('#dossier');
       refreshCard('#mission-card');
       refreshCard('#showtell');
+      refreshCard('#slides');
       refreshCard('#recap');
     });
     _mes.addEventListener('phase', () => {

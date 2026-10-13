@@ -23,10 +23,10 @@ import (
 // "recap_read", "recap_token_read", "showtell_insert", "showtell_update",
 // "showtell_delete", "showtell_read", "showtell_question_insert",
 // "showtell_question_update", "showtell_question_delete",
-// "showtell_question_read", "participant_read", "presenter_identity_read",
+// "showtell_question_read", "slide_insert", "slide_delete", "participant_read", "presenter_identity_read",
 // "reset_participants", "reset_activity", "reset_event_state",
 // "reset_meetings", "reset_mission_cards", "reset_contact_channels",
-// "reset_recaps", "reset_showtell_signups" and "reset_showtell_questions".
+// "reset_recaps", "reset_showtell_signups", "reset_showtell_questions" and "reset_slide_decks".
 // Each tag maps to exactly the write it names, so a test can fail one write
 // and leave the others alone.
 
@@ -134,6 +134,8 @@ func writeFaults(message string) map[string][2]string {
 		"showtell_question_insert": trigger("showtell_question_insert", "INSERT", "showtell_questions", ""),
 		"showtell_question_update": trigger("showtell_question_update", "UPDATE", "showtell_questions", ""),
 		"showtell_question_delete": trigger("showtell_question_delete", "DELETE", "showtell_questions", ""),
+		"slide_insert":             trigger("slide_insert", "INSERT", "slide_decks", ""),
+		"slide_delete":             trigger("slide_delete", "DELETE", "slide_decks", ""),
 		"reset_participants":       trigger("reset_participants", "DELETE", "participants", ""),
 		"reset_activity":           trigger("reset_activity", "DELETE", "activity_log", ""),
 		"reset_event_state":        trigger("reset_event_state", "INSERT", "event_state", ""),
@@ -143,6 +145,7 @@ func writeFaults(message string) map[string][2]string {
 		"reset_recaps":             trigger("reset_recaps", "DELETE", "recaps", ""),
 		"reset_showtell_signups":   trigger("reset_showtell_signups", "DELETE", "showtell_signups", ""),
 		"reset_showtell_questions": trigger("reset_showtell_questions", "DELETE", "showtell_questions", ""),
+		"reset_slide_decks":        trigger("reset_slide_decks", "DELETE", "slide_decks", ""),
 		"persona_lookup": {
 			`CREATE TEMP VIEW participants AS SELECT json(persona_color) AS persona_color, persona_symbol FROM main.participants`,
 			`DROP VIEW IF EXISTS temp.participants`,

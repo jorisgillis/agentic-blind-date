@@ -80,6 +80,7 @@ type Handler struct {
 	recaps      *Recaps
 	missions    *Missions
 	showtell    *ShowTell
+	slides      *SlideDecks
 	closing     *Closing
 	onboarding  *Onboarding
 	interview   *Interview
@@ -100,7 +101,7 @@ type StreamObserver interface {
 // NewHandler creates a new Handler with the given dependencies.
 // It initializes the templates and takes the modules the pages use.
 // streams may be nil: production observes nothing.
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, missions *Missions, showtell *ShowTell, streams StreamObserver) *Handler {
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, missions *Missions, showtell *ShowTell, slides *SlideDecks, streams StreamObserver) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -109,6 +110,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		"divInt":    func(a, b int) int { return a / b },
 		"colorName": paletteName,
 		"textColor": paletteText,
+		"fileSize":  formatFileSize,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	events := NewEventStore(db)
@@ -116,7 +118,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	channels := NewContactChannels(db)
 	return &Handler{
 		db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
-		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell,
+		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell, slides: slides,
 		closing:    NewClosing(db, meetings, channels, showtell),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
@@ -124,6 +126,12 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
+	h.renderStatus(w, http.StatusOK, name, data)
+}
+
+// renderStatus renders a page with the given status: a rejected form re-renders
+// its page with the reason.
+func (h *Handler) renderStatus(w http.ResponseWriter, status int, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Pages are revalidated on every load: the app can be updated while an
 	// event is running, and a cached page would keep running its old scripts.
@@ -136,6 +144,7 @@ func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 		http.Error(w, "render error", 500)
 		return
 	}
+	w.WriteHeader(status)
 	_, _ = w.Write(buf.Bytes())
 }
 
@@ -315,6 +324,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	data["MeetStatus"] = h.meetStatusData(p)
 	data["MissionCard"] = h.missionCardData(p)
 	data["ShowTell"] = h.showtellData(p)
+	data["Slides"] = h.slidesData(p)
 	data["Settings"] = h.settingsData(p)
 	data["RecapLink"] = h.recapLinkData(p)
 	data["PhaseHeader"] = h.phaseHeaderData(p)
@@ -529,6 +539,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		"Me":           p,
 		"PhaseHeader":  h.phaseHeaderData(p),
 		"PhaseContent": h.phaseContentData(p),
+		"Slides":       h.slidesData(p),
 		"Dossier":      dossier,
 		"Settings":     h.settingsData(p),
 		"RecapLink":    h.recapLinkData(p),
@@ -895,6 +906,7 @@ type meetSignature struct {
 	completed int
 	card      bool
 	showtell  string
+	slides    string
 }
 
 func (h *Handler) meetSignature(p *Participant) meetSignature {
@@ -905,7 +917,7 @@ func (h *Handler) meetSignature(p *Participant) meetSignature {
 			completed++
 		}
 	}
-	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID), h.showtell.Signature(p.ID)}
+	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID), h.showtell.Signature(p.ID), h.slides.Signature()}
 }
 
 // ── contact exchange: settings + the post-meeting prompt ───────────────────
@@ -1883,6 +1895,10 @@ func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
 	if err := h.events.Reset(); err != nil {
 		http.Error(w, "reset failed: "+err.Error(), 500)
 		return
+	}
+	// The Slide Deck rows went with the reset; their files go now.
+	if err := h.slides.Sweep(); err != nil {
+		logger("handler").Warn("removing the slide files after the reset", "err", err)
 	}
 	// Clear LLM cache when resetting event
 	h.matcher.ClearCache()

@@ -4,7 +4,7 @@ services:
     container_name: agentic-blind-date
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080" # only Caddy (on this host) may reach the app, so its basic auth cannot be bypassed
     volumes:
       - ./data:/data
     env_file:

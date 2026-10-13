@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -64,6 +65,10 @@ func main() {
 	matcher := NewMatcher(db, github, llm)
 	missions := NewMissions(db, matcher, llm)
 	showtell := NewShowTell(db, llm)
+	slides := NewSlideDecks(db, filepath.Join(filepath.Dir(dbPath), "slides"))
+	if err := slides.Sweep(); err != nil {
+		logger("main").Warn("sweeping orphan slide files", "err", err)
+	}
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
@@ -71,7 +76,7 @@ func main() {
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, nil)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, slides, nil)
 
 	addr := "0.0.0.0:8080"
 	srv := &http.Server{
@@ -121,7 +126,11 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/recap/{token}", h.Recap)
 	mux.HandleFunc("POST /user/showtell/signup/{id}", h.ShowTellSignup)
 	mux.HandleFunc("GET /user/showtell/{id}", h.ShowTellStatus)
+	mux.HandleFunc("GET /user/slides/{id}", h.Slides)
 	mux.HandleFunc("POST /user/showtell/question/{id}", h.ShowTellQuestion)
+
+	mux.HandleFunc("GET /slides/{id}", h.SlideDeckOpen)
+	mux.HandleFunc("GET /slides/{id}/download", h.SlideDeckDownload)
 
 	mux.HandleFunc("GET /recap", h.EventRecap)
 	mux.HandleFunc("GET /qr", h.QR)
@@ -157,6 +166,9 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /admin/showtell-questions", h.ShowTellQuestions)
 	mux.HandleFunc("GET /admin/showtell-stream", h.ShowTellStream)
 	mux.HandleFunc("GET /admin/export", h.AdminExport)
+	mux.HandleFunc("GET /admin/slides", h.AdminSlides)
+	mux.HandleFunc("POST /admin/slides", h.AdminSlidesUpload)
+	mux.HandleFunc("POST /admin/slides/remove", h.AdminSlidesRemove)
 
 	return mux
 }

@@ -326,6 +326,18 @@ func TestDifferenceScore(t *testing.T) {
 			1, // only q1 differs; q3 is unanswered on a's side
 		},
 		{
+			"free-text and custom answers are not compared",
+			testParticipant("a", "A", nil, participantOpts{answers: map[string]string{"fixed_1": "Go", "custom_0": "x", "fixed_0": "Tabs"}}),
+			testParticipant("b", "B", nil, participantOpts{answers: map[string]string{"fixed_1": "Rust", "custom_0": "y", "fixed_0": "Spaces"}}),
+			1, // only the single-choice fixed_0 differs
+		},
+		{
+			"free-text and custom answers are not compared",
+			testParticipant("a", "A", nil, participantOpts{answers: map[string]string{"fixed_1": "Go", "custom_0": "x", "fixed_0": "Tabs"}}),
+			testParticipant("b", "B", nil, participantOpts{answers: map[string]string{"fixed_1": "Rust", "custom_0": "y", "fixed_0": "Spaces"}}),
+			1, // only the single-choice fixed_0 differs
+		},
+		{
 			"no profiles at all",
 			&Participant{ID: "a"},
 			&Participant{ID: "b"},
@@ -1248,7 +1260,7 @@ func TestMissionCardData_RanksAgainstTheTop5(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
+	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, NewSlideDecks(deps.db, t.TempDir()), nil)
 
 	data := h.missionCardData(reload(t, deps.db, "p1"))
 	if data["Connections"].(int) != 3 {
@@ -1286,7 +1298,7 @@ func TestMissionCardData_WithFewParticipantsTheTopIsTheWholeBoard(t *testing.T) 
 	if _, err := deps.missions.GenerateFor("p00"); err != nil {
 		t.Fatal(err)
 	}
-	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
+	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, NewSlideDecks(deps.db, t.TempDir()), nil)
 
 	data := h.missionCardData(reload(t, deps.db, "p00"))
 
@@ -1307,7 +1319,7 @@ func TestMissionCardData_ReportsReadFailures(t *testing.T) {
 		if _, err := deps.missions.GenerateFor("me"); err != nil {
 			t.Fatal(err)
 		}
-		return deps, NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
+		return deps, NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, NewSlideDecks(deps.db, t.TempDir()), nil)
 	}
 
 	t.Run("the card cannot be read", func(t *testing.T) {

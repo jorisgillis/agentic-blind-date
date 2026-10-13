@@ -52,7 +52,7 @@ The reveal happens simultaneously for all participants on a big screen with a vi
 | **LLM Client** | `llm.go` | OpenAI-compatible chat completions adapter (`OpenAIClient`) for Mistral, Scaleway and Ollama |
 | **Onboarding** | `onboarding.go` | Per-Participant preparation and Interview: GitHub fetch, questions, Persona, ready |
 | **Matchmaking** | `matchmaking.go` | Continuous Matching and the admin Rematch; the Matcher (`matcher.go`) runs the 3-phase algorithm |
-| **Fixed Questions** | `questions.go` | 5 predefined opinionated questions |
+| **Fixed Questions** | `questions.go` | 6 predefined opinionated questions |
 | **HTTP Handlers** | `handlers.go` | All route handlers, HTMX fragments, JSON endpoints |
 | **Closing Ceremony** | `closing.go` | The closing view's stats, the public event recap and the host export pack (personas and counts only) |
 | **Templates** | `templates/*.html` | Server-side rendered HTML with HTMX, Tailwind, D3.js |
@@ -150,10 +150,14 @@ The Matcher (`matcher.go`) decides who fits in three phases; Matchmaking (`match
 | POST | `/user/showtell/signup/{id}` | Sign up for show & tell (title, one-line description, optional repo link) — open during the social and show & tell |
 | GET | `/user/showtell/{id}` | HTMX fragment: the show & tell section (sign-up form, queue place, status, question form, the asker's questions) |
 | POST | `/user/showtell/question/{id}` | Ask the presenter on stage a question (through the asker's persona) — live during show & tell, needs no meeting, earns nothing |
+| GET | `/user/slides/{id}` | HTMX fragment: the Slide Decks section (the speakers' PDFs, every phase) |
+| GET | `/slides/{id}` | A Slide Deck's PDF, inline (public; `/slides/{id}/download` serves it as a download) |
 | GET | `/recap` | Public event recap (stats, top connectors, persona gallery, show & tell list) — available only when closed, personas only |
 | GET | `/bigscreen` | Projector view with D3 graph (phase-aware: meeting edges + connection leaderboard from the social on; presenter mode at show & tell; closing view with champion, stats and recap QR at closed) |
 | GET | `/bigscreen/graph-data` | JSON for D3 (polled 5s) |
 | GET | `/admin` | Host control panel (phase, counts, transition buttons) |
+| GET | `/admin/slides` | Slide Decks page: upload form (PDF, title, speaker; max 100 MB) and the uploaded decks |
+| POST | `/admin/slides` | Upload a Slide Deck (multipart); `/admin/slides/remove` (POST, `id`) takes one down |
 | GET | `/admin/export` | Host export pack download (JSON default, `?format=md` for Markdown) — personas and counts only |
 | POST | `/admin/phase` | Advance the event to a later phase |
 | POST | `/admin/reveal` | Reveal matches (alias for the social phase) |
@@ -237,6 +241,14 @@ text, status ('queued'|'asked'|'answered'|'dismissed'), created_at
 -- only); asking needs no meeting and earns nothing
 ```
 
+**slide_decks:**
+```sql
+id, title, speaker, filename, stored_name (UNIQUE), size, created_at
+-- a meet-up speaker's slides, uploaded by the Host; the PDF itself lives on the
+-- data volume (slides/ next to the database) under stored_name, never the
+-- uploaded filename; Reset deletes the rows and then sweeps the files
+```
+
 **activity_log:**
 ```sql
 id, message, created_at
@@ -304,7 +316,7 @@ agentic_blind_date/
 ├── llm.go               # OpenAI-compatible chat completions adapter (Mistral, Scaleway, Ollama)
 ├── onboarding.go        # Per-Participant pipeline: GitHub fetch, Interview, Persona
 ├── matchmaking.go       # Continuous Matching + admin Rematch
-├── questions.go         # 5 fixed questions + constants
+├── questions.go         # 6 fixed questions + extra questions + constants
 ├── handlers.go          # All HTTP handlers
 ├── AGENTS.md            # Project instructions for coding agents
 ├── AGENT_OVERVIEW.md    # This document

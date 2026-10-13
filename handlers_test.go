@@ -220,7 +220,7 @@ func TestGraphPayload_Top3Connections(t *testing.T) {
 	m := NewMatcher(db, gh, llm)
 	rel := NewRelationships(db)
 	mm := NewMatchmaking(db, m, rel, defaultMaxChain)
-	h := NewHandler(db, NewOnboarding(db, gh, iv, NewPersonas(llm), mm, NewMissions(db, m, llm)), iv, m, rel, mm, NewMissions(db, m, llm), NewShowTell(db, llm), nil)
+	h := NewHandler(db, NewOnboarding(db, gh, iv, NewPersonas(llm), mm, NewMissions(db, m, llm)), iv, m, rel, mm, NewMissions(db, m, llm), NewShowTell(db, llm), NewSlideDecks(db, t.TempDir()), nil)
 
 	// Call buildGraphPayload with empty participants
 	payload := h.buildGraphPayload()
