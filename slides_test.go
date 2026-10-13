@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 var samplePDF = []byte("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n")
@@ -367,6 +369,7 @@ func TestSlideDecks_AResetDeletesThemAndTheirFiles(t *testing.T) {
 
 func TestSlideDecks_SweepRemovesFilesNoDeckPointsAt(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
+	deps.slides.dir = filepath.Join(deps.slides.dir, "slides") // not created yet
 
 	if err := deps.slides.Sweep(); err != nil {
 		t.Errorf("sweeping a volume without a slides directory: %v", err)
@@ -411,5 +414,150 @@ func TestSlideDecks_AreNotOnTheOtherSurfaces(t *testing.T) {
 	recap := readBody(t, get(t, srv, "/user/recap-link/a"))
 	if strings.Contains(recap, "Secret Slides Title") {
 		t.Errorf("the recap link should not show the Slide Decks")
+	}
+}
+
+func TestSlideDecks_DatabaseReadFailuresAreReported(t *testing.T) {
+	for _, tag := range []string{"slide_read", "slide_query_read"} {
+		t.Run(tag, func(t *testing.T) {
+			srv, deps := newTestServer(t, nil, nil)
+			seed(t, deps.db, "a", "The Gopher", "ready")
+			deck := addDeck(t, deps, "A talk title", "Ada")
+			breakOnFault(t, deps.db, tag)
+
+			if _, err := deps.slides.List(); err == nil {
+				t.Error("List should report the failure")
+			}
+			if _, err := deps.slides.Get(deck.ID); err == nil || errors.Is(err, ErrSlideDeckNotFound) {
+				t.Errorf("Get should report the failure, got %v", err)
+			}
+			if _, _, err := deps.slides.Open(deck.ID); err == nil {
+				t.Error("Open should report the failure")
+			}
+			if err := deps.slides.Remove(deck.ID); err == nil {
+				t.Error("Remove should report the failure")
+			}
+			if err := deps.slides.Sweep(); err == nil {
+				t.Error("Sweep should report the failure, not delete files it cannot account for")
+			}
+			if sig := deps.slides.Signature(); sig != "" {
+				t.Errorf("the signature should be empty, got %q", sig)
+			}
+
+			// The pages carry on without decks; the file link is a server error.
+			for _, path := range []string{"/user/slides/a", "/admin/slides"} {
+				resp := get(t, srv, path)
+				if resp.StatusCode != 200 {
+					t.Errorf("%s: want 200, got %d", path, resp.StatusCode)
+				}
+				if body := readBody(t, resp); strings.Contains(body, "A talk title") {
+					t.Errorf("%s should show no decks while they cannot be read", path)
+				}
+			}
+			if resp := get(t, srv, deckPath(deck, "")); resp.StatusCode != 500 {
+				t.Errorf("the deck link: want 500, got %d", resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestSlideDecks_AVolumeThatCannotBeUsed(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	good := deps.slides.dir
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The slides directory cannot be created or read: it is a file.
+	deps.slides.dir = blocker
+	if _, err := deps.slides.Add("Talk", "Ada", "a.pdf", bytes.NewReader(samplePDF)); err == nil {
+		t.Error("Add should report a directory it cannot create")
+	}
+	if err := deps.slides.Sweep(); err == nil {
+		t.Error("Sweep should report a directory it cannot read")
+	}
+	if resp := uploadSlides(t, srv, "Talk", "Ada", "a.pdf", samplePDF); resp.StatusCode != 500 {
+		t.Errorf("an upload the volume cannot take: want 500, got %d", resp.StatusCode)
+	}
+	// A reset still succeeds: the rows are gone, the file cleanup is logged.
+	if resp := post(t, srv, "/admin/reset", url.Values{}); resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("a reset with an unreadable slides directory: want a redirect, got %d", resp.StatusCode)
+	}
+	deps.slides.dir = good
+
+	// The directory exists but nothing can be written into it.
+	if os.Geteuid() == 0 {
+		t.Skip("permissions do not bind root")
+	}
+	if err := os.MkdirAll(good, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(good, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(good, 0o755)
+	if _, err := deps.slides.Add("Talk", "Ada", "a.pdf", bytes.NewReader(samplePDF)); err == nil {
+		t.Error("Add should report a directory it cannot write to")
+	}
+}
+
+func TestSlideDecks_AFileThatCannotBeOpenedOrRemoved(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deck := addDeck(t, deps, "Talk", "Ada")
+	// A stored name no file system accepts: the file is neither missing nor usable.
+	if _, err := deps.db.db.Exec(`UPDATE slide_decks SET stored_name = ? WHERE id = ?`, strings.Repeat("a", 300), deck.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := deps.slides.Open(deck.ID); err == nil || errors.Is(err, ErrSlideDeckNotFound) {
+		t.Errorf("Open should report the failure, got %v", err)
+	}
+	if resp := get(t, srv, deckPath(deck, "")); resp.StatusCode != 500 {
+		t.Errorf("the deck link: want 500, got %d", resp.StatusCode)
+	}
+	if resp := post(t, srv, "/admin/slides/remove", url.Values{"id": {strconv.FormatInt(deck.ID, 10)}}); resp.StatusCode != 500 {
+		t.Errorf("removing a deck whose file cannot be removed: want 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestSlideDecks_AnUploadThatBreaksOffLeavesNothing(t *testing.T) {
+	_, deps := newTestServer(t, nil, nil)
+	broken := io.MultiReader(strings.NewReader(pdfMagic), iotest.ErrReader(errors.New("connection reset")))
+
+	_, err := deps.slides.Add("Talk", "Ada", "a.pdf", broken)
+	var invalid *InvalidSlideDeckError
+	if err == nil || errors.As(err, &invalid) {
+		t.Errorf("a broken upload is a server error, not an invalid deck, got %v", err)
+	}
+	if files := filesOnTheVolume(t, deps); len(files) != 0 {
+		t.Errorf("no file should be left behind, got %v", files)
+	}
+}
+
+func TestSlideDecks_AnUploadThatIsNotAFormIsRejected(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+	resp := post(t, srv, "/admin/slides", url.Values{"title": {"Talk"}})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+	if body := readBody(t, resp); !strings.Contains(body, "could not be read") {
+		t.Errorf("the page should say the upload could not be read")
+	}
+}
+
+func TestSlideDecks_TheHostPageShowsLargeDecksInMegabytes(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	big := append(append([]byte{}, samplePDF...), bytes.Repeat([]byte("x"), 1<<20)...)
+	if _, err := deps.slides.Add("Big", "Ada", "big.pdf", bytes.NewReader(big)); err != nil {
+		t.Fatal(err)
+	}
+	addDeck(t, deps, "Small", "Grace")
+
+	body := readBody(t, get(t, srv, "/admin/slides"))
+	for _, want := range []string{"1.0 MB", "1 KB"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the slides page should show a size of %q", want)
+		}
 	}
 }

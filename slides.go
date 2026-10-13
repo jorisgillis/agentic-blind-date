@@ -214,7 +214,7 @@ func (s *SlideDecks) Signature() string {
 
 // Sweep removes every file in the slides directory that no Slide Deck points
 // at: the files of a Reset, and any leftover of a crash between a write and a
-// delete. A missing directory is fine.
+// delete (best effort). A missing directory is fine.
 func (s *SlideDecks) Sweep() error {
 	decks, err := s.List()
 	if err != nil {
@@ -231,14 +231,11 @@ func (s *SlideDecks) Sweep() error {
 	if err != nil {
 		return err
 	}
-	var errs []error
 	for _, e := range entries {
-		if e.IsDir() || keep[e.Name()] {
-			continue
-		}
-		if err := os.Remove(filepath.Join(s.dir, e.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
-			errs = append(errs, err)
+		if !e.IsDir() && !keep[e.Name()] {
+			// Best effort: a file that will not go is tried again at the next sweep.
+			os.Remove(filepath.Join(s.dir, e.Name()))
 		}
 	}
-	return errors.Join(errs...)
+	return nil
 }

@@ -23,7 +23,7 @@ import (
 // "recap_read", "recap_token_read", "showtell_insert", "showtell_update",
 // "showtell_delete", "showtell_read", "showtell_question_insert",
 // "showtell_question_update", "showtell_question_delete",
-// "showtell_question_read", "slide_insert", "slide_delete", "participant_read", "presenter_identity_read",
+// "showtell_question_read", "slide_insert", "slide_delete", "slide_read", "slide_query_read", "participant_read", "presenter_identity_read",
 // "reset_participants", "reset_activity", "reset_event_state",
 // "reset_meetings", "reset_mission_cards", "reset_contact_channels",
 // "reset_recaps", "reset_showtell_signups", "reset_showtell_questions" and "reset_slide_decks".
@@ -201,6 +201,17 @@ func writeFaults(message string) map[string][2]string {
 		},
 		// The sign-up's select still matches (the join keeps working), but
 		// NULLs title, so scanning a row fails.
+		// The Slide Decks query still prepares, but NULLs title, so scanning a row
+		// fails.
+		"slide_read": {
+			`CREATE TEMP VIEW slide_decks AS SELECT id, NULL AS title, speaker, filename, stored_name, size, created_at FROM main.slide_decks`,
+			`DROP VIEW IF EXISTS temp.slide_decks`,
+		},
+		// The Slide Decks query itself fails to prepare: the view lacks columns.
+		"slide_query_read": {
+			`CREATE TEMP VIEW slide_decks AS SELECT id FROM main.slide_decks`,
+			`DROP VIEW IF EXISTS temp.slide_decks`,
+		},
 		"showtell_read": {
 			`CREATE TEMP VIEW showtell_signups AS SELECT id, participant_id, NULL AS title, description, repo_url, status, identity_revealed, hype, position, created_at FROM main.showtell_signups`,
 			`DROP VIEW IF EXISTS temp.showtell_signups`,

@@ -63,11 +63,7 @@ func (h *Handler) serveSlideDeck(w http.ResponseWriter, r *http.Request, disposi
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-cache")
-	header := mime.FormatMediaType(disposition, map[string]string{"filename": deck.Filename})
-	if header == "" {
-		header = disposition
-	}
-	w.Header().Set("Content-Disposition", header)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": deck.Filename}))
 	http.ServeContent(w, r, deck.Filename, deck.CreatedAt, file)
 }
 
