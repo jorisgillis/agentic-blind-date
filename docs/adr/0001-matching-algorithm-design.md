@@ -20,7 +20,7 @@ For each participant, compute a fast heuristic score against all other participa
 
 The heuristic score (`pairScore`) considers:
 - Shared languages: +3 per match (strong signal of technical compatibility)
-- Shared interview answers: +1 per match (alignment on preferences)
+- Shared interview answers: +1 per identical answer to the same question (alignment on preferences). Free-text answers and Custom Question answers are skipped, since they rarely match exactly and Custom Questions differ per participant
 - Shared GitHub topics: +2 per match (shared technical interests)
 - Shared project types: +2 if same (similar work domains)
 - GitHub follow relationships: +5 if mutual, +3 if one-way (existing social connection)
@@ -29,7 +29,7 @@ The heuristic score (`pairScore`) considers:
 ### Phase 2: LLM Scoring
 For each candidate pair from Phase 1, invoke the Mistral LLM to compute a rich compatibility score. The LLM receives:
 - Both participants' GitHub profile summaries
-- Both participants' interview answers
+- Both participants' interview answers, each shown next to its question text
 - Both participants' interests (languages, tools, domains)
 - GitHub follow relationship status
 

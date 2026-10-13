@@ -150,11 +150,7 @@ func describeDeveloper(n int, p *Participant) string {
 	if profile == nil {
 		profile = &GitHubProfile{}
 	}
-	answers := p.Answers
-	if answers == nil {
-		answers = map[string]string{}
-	}
-	s := fmt.Sprintf("DEVELOPER %d (%s):\n%s\nInterview answers: %v", n, p.PersonaName, p.Summary(), answers)
+	s := fmt.Sprintf("DEVELOPER %d (%s):\n%s\nInterview answers:\n%s", n, p.PersonaName, p.Summary(), interviewText(p))
 	if interests := fmtInterests(p.Interests); interests != "" {
 		s += "\nInterests: " + interests
 	}
@@ -309,7 +305,7 @@ func (m *Matcher) PairScore(a, b *Participant) int {
 	}
 
 	for k, av := range aAns {
-		if bv, ok := bAns[k]; ok && av == bv {
+		if bv, ok := bAns[k]; ok && comparableAnswer(k) && av == bv {
 			score++
 		}
 	}

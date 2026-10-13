@@ -122,6 +122,23 @@ func TestMatcherScorePair_FailuresAreNotCached(t *testing.T) {
 	}
 }
 
+func TestMatcherScorePair_PromptShowsAnswersWithTheirQuestions(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", matchReply)
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	a := testParticipant("a", "The Gopher", []string{"Go"}, participantOpts{answers: map[string]string{"fixed_0": "Tabs"}})
+	a.Questions = []Question{{ID: "fixed_0", Text: "Tabs or spaces?"}}
+
+	m.ScorePair(a, testParticipant("b", "The Crab", []string{"Rust"}))
+
+	call, _ := llm.lastCallMatching("matchmaker")
+	if !strings.Contains(call.User, "- Tabs or spaces? → Tabs") {
+		t.Errorf("prompt should pair the answer with its question:\n%s", call.User)
+	}
+	if !strings.Contains(call.User, "Interview answers:\n(none)") {
+		t.Errorf("a Developer without answers should say so:\n%s", call.User)
+	}
+}
+
 func TestMatcherScorePair_PromptDescribesEachDeveloperWithTheirOwnInterestsAndFollows(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", matchReply)
 	gh := newFakeGitHub().withFollow("a", "b")

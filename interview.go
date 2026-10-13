@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -206,4 +207,55 @@ func validateAnswer(q Question, answer string) error {
 		return &InvalidAnswerError{fmt.Sprintf("Too many selections. Maximum %d allowed.", q.MaxSelections)}
 	}
 	return nil
+}
+
+// freeTextAnswerIDs are the built-in questions answered in free text.
+var freeTextAnswerIDs = func() map[string]bool {
+	ids := map[string]bool{}
+	for _, q := range append(append([]Question{}, FixedQuestions...), ExtraQuestions...) {
+		if q.Options == nil {
+			ids[q.ID] = true
+		}
+	}
+	return ids
+}()
+
+// comparableAnswer reports whether two Participants' answers to the question id
+// can be compared for equality. Free-text answers rarely match exactly, and
+// Custom Questions differ per Participant under the same id.
+func comparableAnswer(id string) bool {
+	return !freeTextAnswerIDs[id] && !strings.HasPrefix(id, "custom_")
+}
+
+// interviewText renders the Participant's answers for an LLM as "question →
+// answer" lines in interview order, so the answers make sense without the
+// question ids. Answers with no stored question fall back to their id.
+func interviewText(p *Participant) string {
+	var lines []string
+	seen := map[string]bool{}
+	for _, q := range p.Questions {
+		if a, ok := p.Answers[q.ID]; ok {
+			lines = append(lines, fmt.Sprintf("- %s → %s", q.Text, a))
+			seen[q.ID] = true
+		}
+	}
+	var rest []string
+	for id := range p.Answers {
+		if !seen[id] {
+			rest = append(rest, id)
+		}
+	}
+	sort.Strings(rest)
+	for _, id := range rest {
+		lines = append(lines, fmt.Sprintf("- %s → %s", id, p.Answers[id]))
+	}
+	if len(lines) == 0 {
+		return "(none)"
+	}
+	return strings.Join(lines, "\n")
+}
+
+// indent prefixes every line of s.
+func indent(s, prefix string) string {
+	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
 }

@@ -52,11 +52,11 @@ This ensures:
 - 3 personalized questions based on GitHub profile
 
 ### Combined Interview
-- **GitHub users (LLM success)**: FixedQuestions + CustomQuestions (6 total)
+- **GitHub users (LLM success)**: FixedQuestions + CustomQuestions (9 total)
 - **GitHub users (LLM failure)**: FixedQuestions + ExtraQuestions (11 total)
-- **Non-GitHub users**: ExtraQuestions + FixedQuestions (11 total)
+- **Non-GitHub users**: ExtraQuestions + FixedQuestions without "go-to language" (10 total)
 
-Note: GitHub users with LLM success get fewer questions (6) than others (11). This is intentional as the custom questions are designed to be more informative and replace the need for some of the ExtraQuestions.
+Note: GitHub users with LLM success get fewer questions (9) than GitHub users after a failure (11) or non-GitHub users (10). This is intentional as the custom questions are designed to be more informative and replace the need for some of the ExtraQuestions.
 
 ## Consequences
 

@@ -2,9 +2,7 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
-	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -57,15 +55,7 @@ func personaPrompt(p *Participant) string {
 	if summary := p.Summary(); summary != "" {
 		parts = append(parts, summary)
 	}
-	parts = append(parts, "\nInterview answers:")
-	ids := make([]string, 0, len(p.Answers))
-	for id := range p.Answers {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		parts = append(parts, fmt.Sprintf("Q[%s]: %s", id, p.Answers[id]))
-	}
+	parts = append(parts, "\nInterview answers:", interviewText(p))
 	return strings.Join(parts, "\n")
 }
 

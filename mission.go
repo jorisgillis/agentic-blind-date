@@ -378,7 +378,7 @@ func differenceScore(a, b *Participant) int {
 		bAnswers = map[string]string{}
 	}
 	for k, av := range aAnswers {
-		if bv, ok := bAnswers[k]; ok && av != bv {
+		if bv, ok := bAnswers[k]; ok && comparableAnswer(k) && av != bv {
 			score++
 		}
 	}
@@ -467,13 +467,13 @@ func missionPrompt(me *Participant, tiles []MissionTile, others []*Participant) 
 		byID[o.ID] = o
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "MISSION FOR %s %s\nInterests: %s\nInterview answers: %v\n",
-		me.PersonaSymbol, me.PersonaName, fmtInterests(me.Interests), me.Answers)
+	fmt.Fprintf(&b, "MISSION FOR %s %s\nInterests: %s\nInterview answers:\n%s\n",
+		me.PersonaSymbol, me.PersonaName, fmtInterests(me.Interests), interviewText(me))
 	b.WriteString("\nTILES (one reason each, in this order):\n")
 	for i, t := range tiles {
 		fmt.Fprintf(&b, "%d. [%s] %s %s\n", i+1, t.Kind, t.Symbol, t.Name)
 		if p, ok := byID[t.PersonID]; ok {
-			fmt.Fprintf(&b, "   Interests: %s\n   Interview answers: %v\n", fmtInterests(p.Interests), p.Answers)
+			fmt.Fprintf(&b, "   Interests: %s\n   Interview answers:\n%s\n", fmtInterests(p.Interests), indent(interviewText(p), "   "))
 		}
 	}
 	return b.String()
