@@ -228,6 +228,131 @@ func TestContactChannels_RevealedIsTheMutualRule(t *testing.T) {
 	})
 }
 
+// TestContactChannels_ExchangedTakesTheMeetingInHand covers the exchange
+// join's seam: the mutual rule applied to the Meeting the caller already
+// holds — both channel sets under one operation, without the pair's row
+// being re-queried.
+func TestContactChannels_ExchangedTakesTheMeetingInHand(t *testing.T) {
+	newPair := func(t *testing.T) (*DB, *EventStore, *ContactChannels) {
+		db := newTestDB(t)
+		events := NewEventStore(db)
+		seed(t, db, "a", "The Gopher", "ready")
+		seed(t, db, "b", "The YAML Wrangler", "ready")
+		if err := events.Advance(PhaseSocial); err != nil {
+			t.Fatal(err)
+		}
+		return db, events, NewContactChannels(db)
+	}
+	optIn := func(t *testing.T, channels *ContactChannels, id, value string, enabled bool) {
+		t.Helper()
+		if err := channels.Save(id, []ContactChannel{{Channel: "email", Value: value, Enabled: enabled}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	complete := func(t *testing.T, db *DB, events *EventStore) *Meeting {
+		t.Helper()
+		ms := NewMeetings(db, events)
+		if _, _, err := ms.Confirm(reload(t, db, "a"), reload(t, db, "b"), OriginOther); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := ms.Confirm(reload(t, db, "b"), reload(t, db, "a"), OriginOther); err != nil {
+			t.Fatal(err)
+		}
+		m, err := ms.Between("a", "b")
+		if err != nil || m == nil {
+			t.Fatalf("the pair's meeting: got %v, err %v", m, err)
+		}
+		return m
+	}
+
+	t.Run("a missing meeting shares nothing", func(t *testing.T) {
+		_, _, channels := newPair(t)
+		if ex, err := channels.Exchanged(nil, "a"); err != nil || len(ex.Revealed) != 0 || len(ex.Shared) != 0 {
+			t.Errorf("without a meeting nothing is shared, got %+v (err %v)", ex, err)
+		}
+	})
+
+	t.Run("a pending meeting shares nothing", func(t *testing.T) {
+		db, events, channels := newPair(t)
+		optIn(t, channels, "a", "a@example.com", true)
+		optIn(t, channels, "b", "b@example.com", true)
+		// One side only: the meeting is pending, not completed.
+		if _, _, err := NewMeetings(db, events).Confirm(reload(t, db, "a"), reload(t, db, "b"), OriginOther); err != nil {
+			t.Fatal(err)
+		}
+		m, err := NewMeetings(db, events).Between("a", "b")
+		if err != nil || m == nil {
+			t.Fatalf("the pair's meeting: got %v, err %v", m, err)
+		}
+		if ex, err := channels.Exchanged(m, "a"); err != nil || len(ex.Revealed) != 0 || len(ex.Shared) != 0 {
+			t.Errorf("a pending meeting shares nothing, got %+v (err %v)", ex, err)
+		}
+	})
+
+	t.Run("a completed meeting returns both channel sets", func(t *testing.T) {
+		db, events, channels := newPair(t)
+		optIn(t, channels, "a", "a@example.com", true)
+		optIn(t, channels, "b", "b@example.com", true)
+		m := complete(t, db, events)
+		for _, tc := range []struct{ id, revealed, shared string }{
+			{"a", "b@example.com", "a@example.com"},
+			{"b", "a@example.com", "b@example.com"},
+		} {
+			ex, err := channels.Exchanged(m, tc.id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ex.Revealed) != 1 || ex.Revealed[0].Value != tc.revealed {
+				t.Errorf("Exchanged(m, %s).Revealed: want the email %q, got %+v", tc.id, tc.revealed, ex.Revealed)
+			}
+			if len(ex.Shared) != 1 || ex.Shared[0].Value != tc.shared {
+				t.Errorf("Exchanged(m, %s).Shared: want the email %q, got %+v", tc.id, tc.shared, ex.Shared)
+			}
+		}
+	})
+
+	t.Run("the meeting in hand is not re-queried", func(t *testing.T) {
+		db, events, channels := newPair(t)
+		optIn(t, channels, "a", "a@example.com", true)
+		optIn(t, channels, "b", "b@example.com", true)
+		m := complete(t, db, events)
+		// The fault fails any read of the meetings table: the operation must
+		// manage on the Meeting it was handed, not re-fetch the pair's row.
+		breakOnFault(t, db, "meet_read")
+		ex, err := channels.Exchanged(m, "a")
+		if err != nil {
+			t.Fatalf("the meeting in hand must not be re-queried: %v", err)
+		}
+		if len(ex.Revealed) != 1 || ex.Revealed[0].Value != "b@example.com" {
+			t.Errorf("the exchange still works, got %+v", ex)
+		}
+	})
+
+	t.Run("a channels read failure is reported", func(t *testing.T) {
+		t.Run("the other side's channels", func(t *testing.T) {
+			db, events, channels := newPair(t)
+			// Only b carries a channel row: the fault fails on that read.
+			optIn(t, channels, "b", "b@example.com", true)
+			m := complete(t, db, events)
+			breakOnFault(t, db, "channel_read")
+			if _, err := channels.Exchanged(m, "a"); err == nil {
+				t.Error("want an error when the other side's channels cannot be read")
+			}
+		})
+		t.Run("the participant's own channels", func(t *testing.T) {
+			db, events, channels := newPair(t)
+			// Only a carries a channel row: the other side's read succeeds
+			// (no rows), the participant's own fails.
+			optIn(t, channels, "a", "a@example.com", true)
+			m := complete(t, db, events)
+			breakOnFault(t, db, "channel_read")
+			if _, err := channels.Exchanged(m, "a"); err == nil {
+				t.Error("want an error when the participant's own channels cannot be read")
+			}
+		})
+	})
+}
+
 // TestSettings_ShowTheChannelsOffByDefaultWithGitHubPrefilled covers the
 // settings section: every channel is listed off by default, and the github
 // channel is pre-filled from the Participant's GitHub profile.

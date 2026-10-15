@@ -87,23 +87,52 @@ func (c *ContactChannels) Save(id string, channels []ContactChannel) error {
 	})
 }
 
+// ChannelExchange is what a completed Meeting's two sides share under the
+// mutual rule, from one Participant's side of the pair.
+type ChannelExchange struct {
+	Revealed []ContactChannel // what the other side shares with me
+	Shared   []ContactChannel // what I share with the other side
+}
+
+// Exchanged applies the mutual rule to the Meeting the caller already holds:
+// the pair's two channel sets — what the other side shares with the
+// Participant and what the Participant shares with the other side — without
+// re-querying the pair's Meeting. An incomplete (or missing) Meeting shares
+// nothing: no contact data is ever visible without the completed meeting.
+func (c *ContactChannels) Exchanged(m *Meeting, id string) (ChannelExchange, error) {
+	var ex ChannelExchange
+	if m == nil || !m.Completed() {
+		return ex, nil
+	}
+	theirs, err := c.Channels(m.Other(id))
+	if err != nil {
+		return ex, err
+	}
+	mine, err := c.Channels(id)
+	if err != nil {
+		return ex, err
+	}
+	ex.Revealed = shared(theirs)
+	ex.Shared = shared(mine)
+	return ex, nil
+}
+
 // Revealed returns the channels owner shares with viewer — the mutual rule,
 // in the one place it lives: a channel is revealed to the other side only if
 // the owner opted in to it AND the pair's meeting is completed. No contact
-// data is ever visible without the completed meeting.
+// data is ever visible without the completed meeting. Callers that already
+// hold the pair's Meeting call Exchanged instead — the same rule without the
+// fetch.
 func (c *ContactChannels) Revealed(owner, viewer string) ([]ContactChannel, error) {
 	m, err := c.meetings.Between(owner, viewer)
 	if err != nil {
 		return nil, err
 	}
-	if m == nil || !m.Completed() {
-		return nil, nil
-	}
-	channels, err := c.Channels(owner)
+	ex, err := c.Exchanged(m, viewer)
 	if err != nil {
 		return nil, err
 	}
-	return shared(channels), nil
+	return ex.Revealed, nil
 }
 
 // shared filters a channel list to what it shares: an opted-in channel with

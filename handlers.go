@@ -860,18 +860,16 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 			if err != nil {
 				continue // the other side left the event; the row is debug-only
 			}
-			view := meetingView{Other: other, Status: m.StatusFor(p.ID)}
-			revealed, err := h.channels.Revealed(other.ID, p.ID)
+			ex, err := h.channels.Exchanged(&m, p.ID)
 			if err != nil {
-				logger("handler").Warn("channels revealed", "participant", p.ID, "by", other.ID, "err", err)
+				logger("handler").Warn("channels exchanged", "participant", p.ID, "with", other.ID, "err", err)
 			}
-			shared, err := h.channels.Revealed(p.ID, other.ID)
-			if err != nil {
-				logger("handler").Warn("channels shared", "participant", p.ID, "with", other.ID, "err", err)
-			}
-			view.Revealed = revealed
-			view.Shared = shared
-			meetings = append(meetings, view)
+			meetings = append(meetings, meetingView{
+				Other:    other,
+				Status:   m.StatusFor(p.ID),
+				Revealed: ex.Revealed,
+				Shared:   ex.Shared,
+			})
 		}
 	}
 	return map[string]any{
@@ -1093,11 +1091,11 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 		if err != nil {
 			continue // the other side left the event
 		}
-		revealed, err := h.channels.Revealed(other.ID, p.ID)
+		ex, err := h.channels.Exchanged(&m, p.ID)
 		if err != nil {
 			logger("handler").Warn("recap channels revealed", "participant", p.ID, "by", other.ID, "err", err)
 		}
-		connections = append(connections, connectionView{Other: other, Revealed: revealed})
+		connections = append(connections, connectionView{Other: other, Revealed: ex.Revealed})
 	}
 
 	mine, err := h.channels.Channels(p.ID)
