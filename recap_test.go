@@ -516,6 +516,31 @@ func TestRecapData_TheLeaderboardFailureIsLogged(t *testing.T) {
 	}
 }
 
+// TestChampionOf covers the recap's champion derivation: the top of the
+// leaderboard the recap already fetched, in the board's own order — ties
+// behave exactly like the board's tie-break — and no champion without a
+// board.
+func TestChampionOf(t *testing.T) {
+	// A tie at the top, ordered the way the leaderboard orders it: persona
+	// name first, so The Crab ranks ahead of The Gopher.
+	board := []ConnectionStanding{
+		{ID: "b", Name: "The Crab", Connections: 1},
+		{ID: "a", Name: "The Gopher", Connections: 1},
+	}
+	if c := championOf(board); c == nil || c.ID != "b" || c.Name != "The Crab" {
+		t.Errorf("the champion is whatever the board ranks first, got %+v", c)
+	}
+	// The board's order decides, never a re-sort: whatever stands first wins,
+	// even when the raw numbers would order it otherwise.
+	board[0], board[1] = board[1], board[0]
+	if c := championOf(board); c == nil || c.ID != "a" {
+		t.Errorf("the derivation reuses the fetched order exactly, got %+v", c)
+	}
+	if c := championOf(nil); c != nil {
+		t.Errorf("an empty board has no champion, got %+v", c)
+	}
+}
+
 // TestRecap_GitHubHandlesAppearOnlyAsRevealedChannels covers the handle rule:
 // on the owner's own recap a GitHub handle appears only as a revealed github
 // contact channel — the owner opted in — and nowhere else outside stage.

@@ -745,6 +745,17 @@ func rankOf(board []ConnectionStanding, id string) int {
 	return 0
 }
 
+// championOf names the Merge Trophy winner from the leaderboard the caller
+// already fetched — the board's top, reusing its order exactly (the same
+// deterministic tie-break the board was ordered by), never re-sorting and
+// never re-querying. Nil when the board is empty.
+func championOf(board []ConnectionStanding) *ConnectionStanding {
+	if len(board) == 0 {
+		return nil
+	}
+	return &board[0]
+}
+
 // ── meetings: the confirm handshake ────────────────────────────────────────
 
 // GET /user/m/{id} — the meet page: the target's persona card and the confirm
@@ -1118,10 +1129,7 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 	if err != nil {
 		logger("handler").Warn("recap leaderboard", "participant", p.ID, "err", err)
 	}
-	champion, err := h.meetings.Champion()
-	if err != nil {
-		logger("handler").Warn("recap champion", "participant", p.ID, "err", err)
-	}
+	champion := championOf(board)
 
 	return map[string]any{
 		"Me":                p,
