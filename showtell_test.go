@@ -1284,12 +1284,14 @@ func TestWaitStream_RefreshesTheShowTellSection(t *testing.T) {
 	}
 
 	s := open(t, srv, "/user/wait-stream/a")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	signUp(t, deps, "a", "A")
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
-	before := s.String()
+	before = s.String()
 	stageSignup(t, deps, "a")
 	eventually(t, "staging to refresh the section", func() bool {
 		return len(s.String()) > len(before)

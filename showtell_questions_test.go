@@ -925,12 +925,14 @@ func TestWaitStream_RefreshesTheQuestionFormWhenTheStageChanges(t *testing.T) {
 	}
 
 	s := open(t, srv, "/user/wait-stream/b")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	stagePresenter(t, deps, "a")
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
-	before := s.String()
+	before = s.String()
 	askQuestion(t, deps, "b", "Why?")
 	eventually(t, "the question to refresh the section", func() bool {
 		return len(s.String()) > len(before)

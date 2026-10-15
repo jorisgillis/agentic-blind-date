@@ -672,12 +672,14 @@ func TestMatchStream_PushesTheRecapLinkWhenTheEventCloses(t *testing.T) {
 	deps.events.Reveal()
 
 	s := open(t, srv, "/user/match-stream/aaa")
-	sentNothingNew(t, s, 1, "", "before the close")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "before the close")
 
 	if err := deps.events.Advance(PhaseClosed); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
 	// The refresh the stream pushed re-renders the recap link — with the QR.
 	if body := readBody(t, get(t, srv, "/user/recap-link/aaa")); !strings.Contains(body, "recap-qr") {
@@ -693,12 +695,14 @@ func TestWaitStream_PushesTheRecapLinkWhenTheEventCloses(t *testing.T) {
 	deps.events.Reveal()
 
 	s := open(t, srv, "/user/wait-stream/solo")
-	sentNothingNew(t, s, 1, "", "before the close")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "before the close")
 
 	if err := deps.events.Advance(PhaseClosed); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
 	if body := readBody(t, get(t, srv, "/user/recap-link/solo")); !strings.Contains(body, "recap-qr") {
 		t.Errorf("after the push the recap link shows the QR, got: %s", body)

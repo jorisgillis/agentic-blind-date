@@ -1447,12 +1447,14 @@ func TestWaitStream_TheCardAppearsViaPush(t *testing.T) {
 	seedReady(t, deps.db, 9)
 
 	s := open(t, srv, "/user/wait-stream/zz")
-	sentNothingNew(t, s, 1, "", "before the card exists")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "before the card exists")
 
 	if _, err := deps.missions.GenerateFor("zz"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
 	body := readBody(t, get(t, srv, "/user/mission/zz"))
 	if !strings.Contains(body, "Your mission") {
@@ -1473,7 +1475,9 @@ func TestMatchStream_TheStampsArriveViaPush(t *testing.T) {
 	pair(t, deps.db, "zz", "p00")
 
 	s := open(t, srv, "/user/match-stream/zz")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	// Completing a meeting with a tile person stamps the tile — the push
 	// re-renders the section.
@@ -1488,7 +1492,7 @@ func TestMatchStream_TheStampsArriveViaPush(t *testing.T) {
 	if _, _, err := ms.Confirm(them, me, OriginMission); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
 	body := readBody(t, get(t, srv, "/user/mission/zz"))
 	if !strings.Contains(body, "stamp-in") {

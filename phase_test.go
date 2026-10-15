@@ -393,7 +393,9 @@ func TestPhase_TheWaitStreamRedirectsToTheMatchPageWhenTheSocialBegins(t *testin
 	pair(t, deps.db, "a", "b")
 
 	s := open(t, srv, "/user/wait-stream/a")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	post(t, srv, "/admin/phase", url.Values{"to": {"social"}})
 	waitFor(t, s, "event: redirect\ndata: /user/match/a")

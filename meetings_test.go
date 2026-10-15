@@ -1025,16 +1025,18 @@ func TestMatchStream_RefreshesWhenTheMeetingsChange(t *testing.T) {
 	ms := NewMeetings(deps.db, deps.events)
 
 	s := open(t, srv, "/user/match-stream/a")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	// A meeting appears: the initiator's phone refreshes.
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
 	// The completion: both phones celebrate.
-	before := s.String()
+	before = s.String()
 	if _, _, err := ms.Confirm(reload(t, deps.db, "b"), reload(t, deps.db, "a"), OriginOther); err != nil {
 		t.Fatal(err)
 	}
@@ -1059,10 +1061,12 @@ func TestWaitStream_RefreshesTheMeetSection(t *testing.T) {
 	seed(t, deps.db, "a", "The Gopher", "ready")
 
 	s := open(t, srv, "/user/wait-stream/a")
-	sentNothingNew(t, s, 1, "", "during onboarding")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "during onboarding")
 
 	post(t, srv, "/admin/reveal", nil)
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 }
 
 func TestMatchStream_UnknownParticipantIs404AndEndsWhenRemoved(t *testing.T) {
@@ -1076,9 +1080,12 @@ func TestMatchStream_UnknownParticipantIs404AndEndsWhenRemoved(t *testing.T) {
 	}
 
 	s = open(t, srv, "/user/match-stream/a")
-	// Wait until the stream is established: only then can the removal be
-	// observed by an in-watch check (and not by the handler's initial lookup).
-	sentNothingNew(t, s, 1, "", "while the stream settles")
+	// Wait until the stream is established — its connect sync proves the
+	// first check ran — only then can the removal be observed by an
+	// in-watch check (and not by the handler's initial lookup).
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "while the stream settles")
 	if err := NewRelationships(deps.db).Remove("a"); err != nil {
 		t.Fatal(err)
 	}

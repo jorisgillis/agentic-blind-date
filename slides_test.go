@@ -326,12 +326,14 @@ func TestSlideDecks_PersonalStreamsRefreshWhenADeckIsAddedOrRemoved(t *testing.T
 			srv, deps := newTestServer(t, nil, nil)
 			seed(t, deps.db, "w", "W", "ready")
 			s := open(t, srv, path)
-			sentNothingNew(t, s, 1, "", "nothing changed")
+			waitFor(t, s, "event: refresh") // the sync on connect
+			before := s.String()
+			sentNothingNew(t, s, 1, before, "nothing changed")
 
 			deck := addDeck(t, deps, "Talk", "Ada")
-			waitFor(t, s, "event: refresh")
+			waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
-			before := s.String()
+			before = s.String()
 			if err := deps.slides.Remove(deck.ID); err != nil {
 				t.Fatal(err)
 			}

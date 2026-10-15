@@ -254,7 +254,9 @@ func TestMatchStream_PhaseEventSwapsTheRegion(t *testing.T) {
 	}
 
 	s := open(t, srv, "/user/match-stream/me")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	if err := deps.events.Advance(PhaseShowTell); err != nil {
 		t.Fatal(err)

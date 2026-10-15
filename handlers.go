@@ -887,7 +887,9 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 // Tells the match page to refresh its meet section and its dossier when the
 // Participant's meetings or the phase change — the pair's Meeting completing
 // unlocks the dossier. A phase transition additionally emits a distinct
-// 'phase' event, so the phase header updates live.
+// 'phase' event, so the phase header updates live. Like the pipeline stream,
+// it syncs once on connect, so a page that rendered before the stream opened
+// catches up.
 func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -900,6 +902,7 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	}
 	last := h.meetSignature(first)
 	lastPhase := h.events.State()
+	synced := false
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
@@ -908,6 +911,16 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 		if now := h.events.State(); now != lastPhase {
 			lastPhase = now
 			sseEvent(w, "phase")
+		}
+		// One sync refresh on connect, like the pipeline stream: a page that
+		// rendered before the stream opened may have missed the only change
+		// it will ever see (a meeting completing between render and connect),
+		// and the opening signature already carries it — push would never
+		// fire on its own.
+		if !synced {
+			synced = true
+			sseEvent(w, "refresh")
+			return false
 		}
 		if now := h.meetSignature(p); now != last {
 			last = now
@@ -2111,7 +2124,9 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 // Tells the wait page to refresh when what it shows changes (the ready count,
 // being matched, the persona being crafted, the meet section) and redirects
 // once the Participant belongs elsewhere. A phase transition additionally
-// emits a distinct 'phase' event, so the phase header updates live.
+// emits a distinct 'phase' event, so the phase header updates live. Like the
+// pipeline stream, it syncs once on connect, so a page that rendered before
+// the stream opened catches up.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -2130,6 +2145,7 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	}
 	last := shown{h.db.ReadyCount(), first.IsMatched(), h.meetSignature(first), first.PersonaName}
 	lastPhase := h.events.State()
+	synced := false
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
@@ -2142,6 +2158,16 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 		if dest := h.destination(p); dest != "/user/wait/"+id {
 			sseRedirect(w, dest)
 			return true
+		}
+		// One sync refresh on connect, like the pipeline stream: a page that
+		// rendered before the stream opened may have missed the only change
+		// it will ever see (the persona landing between render and connect),
+		// and the opening snapshot already carries it — push would never
+		// fire on its own.
+		if !synced {
+			synced = true
+			sseEvent(w, "refresh")
+			return false
 		}
 		if now := (shown{h.db.ReadyCount(), p.IsMatched(), h.meetSignature(p), p.PersonaName}); now != last {
 			last = now

@@ -393,17 +393,19 @@ func TestBoard_PersonalStreamsRefreshWhenWhatIsVisibleChanges(t *testing.T) {
 			seed(t, deps.db, "w", "W", "ready")
 			seed(t, deps.db, "x", "X", "ready")
 			s := open(t, srv, path)
-			sentNothingNew(t, s, 1, "", "nothing changed")
+			waitFor(t, s, "event: refresh") // the sync on connect
+			before := s.String()
+			sentNothingNew(t, s, 1, before, "nothing changed")
 
 			// Somebody else's pending post is invisible to w: nothing to refresh.
 			postTo(t, srv, "x", "hello")
-			sentNothingNew(t, s, 2, "", "a pending post of another")
+			sentNothingNew(t, s, 2, before, "a pending post of another")
 
 			id := postID(t, deps, "x", 0)
 			moderate(t, srv, id, "approved")
-			waitFor(t, s, "event: refresh")
+			waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
-			before := s.String()
+			before = s.String()
 			moderate(t, srv, id, "rejected")
 			eventually(t, "the take-down to refresh the page", func() bool { return len(s.String()) > len(before) })
 
