@@ -36,12 +36,15 @@ All components will have explicit constructor functions:
 func NewDB(path string) (*DB, error)
 
 // External service clients
-func NewGitHubClient(token string) *GitHubClient
-func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *http.Client) *OpenAIClient
+func NewGitHubClient(token, baseURL string) *GitHubClient
+func NewOpenAIClient(baseURL, apiKey, model string, jsonMode bool, httpClient *http.Client, clock Clock) *OpenAIClient
 
 // Provider selection: reads the LLM_* settings through an injected lookup
-// (never the process environment directly) and returns a configured LLM
+// (never the process environment directly) and returns a configured LLM.
+// NewGatedLLM wraps it in the one shared bound on concurrent LLM calls
+// (ADR-0020).
 func SelectLLM(lookup func(string) string) (LLM, error)
+func NewGatedLLM(llm LLM, limit int) LLM
 
 // Participant store: the only component other modules use to read or write Participants
 func NewParticipantStore(db *DB) *ParticipantStore
@@ -50,61 +53,115 @@ func NewParticipantStore(db *DB) *ParticipantStore
 func NewEventStore(db *DB) *EventStore
 
 // Domain modules: upstream services are accepted through the LLM and GitHubAPI seams;
-// each builds its own Participant store from db rather than taking one as a parameter
+// each builds its own stores from db rather than taking them as parameters
+// (Meetings and Board take the event-state store as a parameter — see below)
 func NewInterview(db *DB, llm LLM) *Interview
 func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher
 func NewRelationships(db *DB) *Relationships
 func NewPersonas(llm LLM) *Personas
 func NewMatchmaking(db *DB, matcher *Matcher, relations *Relationships, maxChain int) *Matchmaking
-func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking) *Onboarding
+func NewOnboarding(db *DB, github GitHubAPI, interview *Interview, personas *Personas, matchmaking *Matchmaking, missions *Missions) *Onboarding
+func NewMissions(db *DB, matcher *Matcher, llm LLM) *Missions
+func NewShowTell(db *DB, llm LLM) *ShowTell
+func NewSlideDecks(db *DB, dir string) *SlideDecks
+func NewMeetings(db *DB, events *EventStore) *Meetings
+func NewContactChannels(db *DB) *ContactChannels
+func NewRecaps(db *DB) *Recaps
+func NewBoard(db *DB, events *EventStore) *Board
+func NewClosing(db *DB, meetings *Meetings, channels *ContactChannels, showtell *ShowTell) *Closing
+func NewEvening(db *DB, missions *Missions, meetings *Meetings, slides *SlideDecks, matcher *Matcher) *Evening
+func NewScreen(db *DB, matcher *Matcher, meetings *Meetings, showtell *ShowTell, closing *Closing) *Screen
 
-// HTTP handlers
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking) *Handler
+// HTTP handler
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, missions *Missions, showtell *ShowTell, slides *SlideDecks, streams StreamObserver) *Handler
 ```
 
 #### Composition Root
 
-The `main()` function serves as the composition root where all dependencies are wired together:
+The `main()` function serves as the composition root where all dependencies are wired together. It owns the process-wide services (logging, the LLM, the database, GitHub) and the domain modules of the pipeline; the page-facing modules are wired inside `NewHandler`, a second composition point (below):
 
 ```go
 func main() {
-    // Initialize external dependencies
-    db, err := NewDB(dbPath)
-    if err != nil {
-        log.Fatal("DB init:", err)
-    }
-    defer db.Close()
+    loadDotEnv(".env")                   // a KEY=value file; never overrides what is set
+    setupLogging(os.Getenv, os.Stderr)   // leveled slog (ADR-0017)
 
     llm, err := SelectLLM(os.Getenv)
     if err != nil {
-        log.Fatal("LLM provider: ", err)
+        logger("main").Error("selecting the LLM provider", "err", err)
+        os.Exit(1)
     }
-    github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
+    // One shared bound on concurrent LLM calls across the whole app, so a
+    // rush of registrations queues instead of storming the provider (ADR-0020).
+    llm = NewGatedLLM(llm, LLMConcurrency(os.Getenv))
 
-    // Initialize application components
+    dbPath := os.Getenv("DB_PATH") // "blind_date.db" when unset
+    db, err := NewDB(dbPath)
+    defer db.Close()
+    github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"), GitHubBaseURL(os.Getenv))
+
+    // The domain modules
     matcher := NewMatcher(db, github, llm)
+    missions := NewMissions(db, matcher, llm)
+    showtell := NewShowTell(db, llm)
+    slides := NewSlideDecks(db, filepath.Join(filepath.Dir(dbPath), "slides"))
+    slides.Sweep() // remove slide files no row points at
     interview := NewInterview(db, llm)
     relations := NewRelationships(db)
     matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
-    onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking)
-    h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking)
+    onboarding := NewOnboarding(db, github, interview, NewPersonas(llm), matchmaking, missions)
+    onboarding.Resume() // pick up onboarding interrupted by a restart
 
-    // Start server
-    log.Fatal(http.ListenAndServe(addr, buildMux(h)))
+    h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, slides, nil)
+
+    srv := &http.Server{Addr: addr, Handler: buildMux(h),
+        ErrorLog: slog.NewLogLogger(logger("server").Handler(), slog.LevelError)}
+    if err := srv.ListenAndServe(); err != nil { /* ... */ }
 }
 ```
 
+#### What NewHandler builds itself
+
+`NewHandler` receives the domain modules `main()` built — `onboarding`, `interview`, `matcher`, `relations`, `matchmaking`, `missions`, `showtell`, `slides` — plus the `StreamObserver` (nil in production: nothing observes streams outside tests). Everything else the pages need it builds itself, from the `*DB` and the injected modules:
+
+```go
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher,
+    relations *Relationships, matchmaking *Matchmaking, missions *Missions,
+    showtell *ShowTell, slides *SlideDecks, streams StreamObserver) *Handler {
+    tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
+    events := NewEventStore(db)
+    meetings := NewMeetings(db, events)
+    channels := NewContactChannels(db)
+    closing := NewClosing(db, meetings, channels, showtell)
+    return &Handler{
+        db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
+        evening:  NewEvening(db, missions, meetings, slides, matcher),
+        channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell,
+        slides: slides, board: NewBoard(db, events), closing: closing,
+        screen:     NewScreen(db, matcher, meetings, showtell, closing),
+        onboarding: onboarding, interview: interview, matcher: matcher,
+        relations: relations, matchmaking: matchmaking,
+        tmpl: tmpl, streams: streams,
+    }
+}
+```
+
+So the handler owns the templates, its Participant store and event-state store for reads, `Meetings`, `ContactChannels`, `Recaps`, the `Board`, the `Evening` module (#148 — the host's phase transitions and reset, and every consequence they fire) and the `Screen` (the Big Screen's payload), with the `Closing` feeding the `Screen`. The module wave (#148–#156) kept the rule this ADR set: every module that needs a store builds it from the `*DB` it already receives rather than taking one as a parameter — `Evening`, `Screen` and `Closing` build their own event-state store (and `Screen` and `Closing` their own `Board`), and `Missions` builds its own `Meetings`; only `Meetings` and `Board` take the event-state store as a parameter, and the handler passes its own instance to both.
+
+#### The card registry
+
+The personal pages' card registry (ADR 0019, `cards.go`) is the one piece of wiring that is not a constructor: a package-level table with one entry per card — its placement on the wait and match page shells, the fragment that renders it, its data function and the signature source its push watches. The page data maps, the phase-content region and the streams' diff key derive from it (#154, #155), so adding a card is one registry entry plus one fragment. The final derivation step — deriving the page shells' own markup from the registry — was stopped at its escape clause because of three Go `html/template` blockers (the decision is recorded on #156), so the page shells' fragment includes and their JavaScript trigger lists stay hand-kept: the registry decides what each page shows and what its stream watches, while each shell still names its own includes and refresh targets.
+
 #### Seams for upstream services
 
-`LLM` (one method: `Chat(system, user)`) and `GitHubAPI` (`FetchProfile`, `CheckMutualFollow`) are the only interfaces. Each has two adapters: the production client (`OpenAIClient`, `GitHubClient`) and an in-memory fake used by tests, so the test suite never reaches the real APIs. `OpenAIClient` is one OpenAI-compatible chat completions adapter, configured here for Mistral.
+`LLM` (one method: `Chat(system, user)`) and `GitHubAPI` (`FetchProfile`, `CheckMutualFollow`) are the seams for upstream services. Each has two adapters: the production client (`OpenAIClient`, `GitHubClient`) and an in-memory fake used by tests, so the test suite never reaches the real APIs. `OpenAIClient` is one OpenAI-compatible chat completions adapter, configured here for Mistral. The LLM seam composes in `main()`: the provider `SelectLLM` returns is wrapped in `NewGatedLLM`, the one shared bound on concurrent LLM calls (ADR-0020), so every module's `llm` sits behind the same gate. Two small interfaces serve cross-cutting concerns: `Clock` (paces the retry wait; production sleeps for real, tests return at once) and `StreamObserver` (told each time an SSE stream looks at the current state, so a test can wait for a stream to catch up; production wires nil).
 
 #### The Participant store
 
-`ParticipantStore` (`participantstore.go`) is the only component other modules use to read or write Participants: a small, typed interface (`Get`, `All`, `AllByStep`, `GetByHandle`, `Create`, `Change`, `StartInterview`) instead of one method per column. `DB` still holds the underlying SQL and scanning for those reads (`GetParticipant`, `GetAllParticipants`, ...) and for `Create`, but no other module calls them directly any more — every domain module that changes a Participant — `Relationships`, `Onboarding`, `Interview`, `Matchmaking` — builds its own store from the `*DB` it already receives, the same way each builds nothing else: `NewParticipantStore(db)` is called once per constructor, not threaded through as its own parameter. `Handler` does the same for reads. `DB` keeps the schema, the LLM cache and the remaining non-Participant concerns (activity, the change feed); it no longer has per-column Participant setters (`SetProfile`, `SetPersona`, `AdvanceStep`, ... — removed, #53). This was an expand–migrate–contract refactor (#49–#53, see `docs/adr/` commit history): the store was added beside the old methods, every caller migrated across, and the old methods were deleted last.
+`ParticipantStore` (`participantstore.go`) is the only component other modules use to read or write Participants: a small, typed interface (`Get`, `All`, `AllByStep`, `GetByHandle`, `GetByMeetCode`, `Create`, `Change`, `StartInterview`) instead of one method per column. `DB` still holds the underlying SQL and scanning for those reads (`GetParticipant`, `GetAllParticipants`, ...) and for `Create`, but only the store calls them now — every module that reads or changes a Participant builds its own store from the `*DB` it already receives: the originals (`Relationships`, `Onboarding`, `Interview`, `Matchmaking`) and, since the module wave, also `Missions`, `Recaps`, `Closing` and `Screen`, with `Handler` doing the same for reads — `NewParticipantStore(db)` is called once per constructor, not threaded through as its own parameter. `DB` keeps the schema, the change feed, the activity log, the LLM cache and the aggregate counts (`ParticipantCount`, `ReadyCount`, `MatchedCount`) that the debug endpoints, the closing stats and the page signatures read; it no longer has per-column Participant setters (`SetProfile`, `SetPersona`, `AdvanceStep`, ... — removed, #53). This was an expand–migrate–contract refactor (#49–#53, see `docs/adr/` commit history): the store was added beside the old methods, every caller migrated across, and the old methods were deleted last.
 
 #### The event-state store
 
-`EventStore` (`eventstate.go`) owns the `event_state` table: `State` (anything unreadable counts as before the Reveal), `Reveal` (announcing the change on the change feed, so the streams refresh) and `Reset`. Spec #51 moved Participant writes onto the Participant store and named the Event State as one of the remaining pieces, suggesting the Participant store as its home; what was built instead — and what this ADR now ratifies, closing the #53 divergence — is a dedicated store (#106): the Event State is not a Participant, so it gets its own typed operations rather than methods on the Participant store. `Reset` is the one operation that spans tables — Participants, activity and the Event State — and stays a single transaction on the store, so a failure leaves everything as it was. The final store/database boundary is therefore: the Participant store owns Participant SQL, the event-state store owns event_state SQL, and `DB` keeps the schema, the change feed, the activity log and the LLM cache — it no longer carries any raw SQL for the Event State (`EventState`, `Reveal`, `setEventState` and `Reset` — removed, #106). Like the Participant store, the event-state store is built from the `*DB` a module already receives (`NewEventStore(db)`, called once per constructor, not threaded through as its own parameter); `Handler` does the same for reads.
+`EventStore` (`eventstate.go`) owns the `event_state` table: `State` (anything unreadable counts as onboarding), `Advance` (the forward-only phase machine, ADR-0010, announcing the change on the change feed, so the streams refresh), `Reveal` (an alias for advancing to the Social) and `Reset`. Spec #51 moved Participant writes onto the Participant store and named the Event State as one of the remaining pieces, suggesting the Participant store as its home; what was built instead — and what this ADR now ratifies, closing the #53 divergence — is a dedicated store (#106): the Event State is not a Participant, so it gets its own typed operations rather than methods on the Participant store. `Reset` is the one operation that spans tables — now every table the event owns: Participants, activity, meetings, mission cards, contact channels, recap tokens, show & tell sign-ups and questions, slide decks, board posts and the Event State — and stays a single transaction on the store, so a failure leaves everything as it was. What the transaction cannot reach is sequenced by the `Evening` module (#148), built inside the handler: the reset sweeps the slide files and clears the LLM matcher cache, and a phase transition fires the ticker line, mission-card generation at the social and the champion at the close. The final store/database boundary is therefore: the Participant store owns Participant SQL, the event-state store owns event_state SQL, and `DB` keeps the schema, the change feed, the activity log and the LLM cache — it no longer carries any raw SQL for the Event State (`EventState`, `Reveal`, `setEventState` and `Reset` — removed, #106). Like the Participant store, the event-state store is built from the `*DB` a module already receives rather than threaded through as its own parameter: `Handler`, `Evening`, `Missions`, `Matchmaking`, `ShowTell` and `Screen` each call `NewEventStore(db)` inside their constructors (`Screen` and `Closing` also build their own `Board` this way, and `ContactChannels` its own `Meetings`); the two exceptions are `Meetings` and `Board`, which take the store as a parameter — the handler passes its own instance to both, and `Missions` shares one store between itself and the `Meetings` it builds.
 
 ## Consequences
 
