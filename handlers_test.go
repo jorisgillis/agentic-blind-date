@@ -206,40 +206,6 @@ func TestReset_ClearsTheFollowCache(t *testing.T) {
 	}
 }
 
-func TestGraphPayload_Top3Connections(t *testing.T) {
-	// This test verifies that buildGraphPayload includes top-3 connections per participant
-	// We can't easily test the full graph without setting up participants with proper data,
-	// but we can verify the constant is set to 3
-
-	// Create a handler with empty database
-	db, _ := NewDB(":memory:")
-	defer db.Close()
-	gh := newFakeGitHub()
-	llm := newFakeLLM()
-	iv := NewInterview(db, llm)
-	m := NewMatcher(db, gh, llm)
-	rel := NewRelationships(db)
-	mm := NewMatchmaking(db, m, rel, defaultMaxChain)
-	h := NewHandler(db, NewOnboarding(db, gh, iv, NewPersonas(llm), mm, NewMissions(db, m, llm)), iv, m, rel, mm, NewMissions(db, m, llm), NewShowTell(db, llm), NewSlideDecks(db, t.TempDir()), nil)
-
-	// Call buildGraphPayload with empty participants
-	payload := h.buildGraphPayload()
-
-	// Verify structure
-	if payload["nodes"] == nil {
-		t.Error("payload should have nodes")
-	}
-	if payload["edges"] == nil {
-		t.Error("payload should have edges")
-	}
-	if payload["phase"] == nil {
-		t.Error("payload should have phase")
-	}
-	if payload["activity"] == nil {
-		t.Error("payload should have activity")
-	}
-}
-
 func TestComputeBadges(t *testing.T) {
 	// Test GitHub Dinosaur badge (10+ years)
 	p := GitHubProfile{AccountAgeDays: 3650}

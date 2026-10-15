@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -52,24 +51,6 @@ func computeBadges(p GitHubProfile) []Badge {
 	return out
 }
 
-type graphNode struct {
-	ID          string `json:"id"`
-	PersonaName string `json:"persona_name"`
-	Color       string `json:"color"`
-	Symbol      string `json:"symbol"`
-	Step        string `json:"step"`
-	Ready       bool   `json:"ready"`
-	Matched     bool   `json:"matched"`
-}
-
-type graphEdge struct {
-	Source  string `json:"source"`
-	Target  string `json:"target"`
-	Score   int    `json:"score"`
-	Matched bool   `json:"matched"`
-	Meeting bool   `json:"meeting"`
-}
-
 // Handler handles HTTP requests for the web application.
 type Handler struct {
 	db          *DB
@@ -83,6 +64,7 @@ type Handler struct {
 	slides      *SlideDecks
 	board       *Board
 	closing     *Closing
+	screen      *Screen
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -118,10 +100,12 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	events := NewEventStore(db)
 	meetings := NewMeetings(db, events)
 	channels := NewContactChannels(db)
+	closing := NewClosing(db, meetings, channels, showtell)
 	return &Handler{
 		db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
 		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell, slides: slides, board: NewBoard(db, events),
-		closing:    NewClosing(db, meetings, channels, showtell),
+		closing:    closing,
+		screen:     NewScreen(db, matcher, meetings, showtell, closing),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
 	}
@@ -1474,249 +1458,9 @@ func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "screen.html", map[string]any{"Palette": paletteHex()})
 }
 
-func (h *Handler) buildGraphPayload() map[string]any {
-	phase := h.events.State()
-	participants, _ := h.store.All()
-	activity, _ := h.db.GetRecentActivity(3)
-
-	nodes := make([]graphNode, 0, len(participants))
-	for _, p := range participants {
-		// The Big Screen shows persona names only, in every phase — identities
-		// never leave the server in the graph payload.
-		nodes = append(nodes, graphNode{
-			ID:          p.ID,
-			PersonaName: p.PersonaName,
-			Color:       p.PersonaColor,
-			Symbol:      p.PersonaSymbol,
-			Step:        string(p.PipelineStep),
-			Ready:       p.PipelineStep.IsReady(),
-			Matched:     p.IsMatched(),
-		})
-	}
-
-	edges := make([]graphEdge, 0)
-	seen := map[string]bool{}
-
-	for _, p := range participants {
-		if p.MatchedWith == "" {
-			continue
-		}
-		key := p.ID + ":" + p.MatchedWith
-		rev := p.MatchedWith + ":" + p.ID
-		if seen[key] || seen[rev] {
-			continue
-		}
-		seen[key] = true
-		edges = append(edges, graphEdge{
-			Source:  p.ID,
-			Target:  p.MatchedWith,
-			Score:   p.Assessment.Score,
-			Matched: true,
-		})
-	}
-
-	// Meeting edges: every completed meeting joins the graph alongside the
-	// match edges. A pair that are matched and met keeps one edge, flagged as
-	// both — the meeting is the stronger fact on the screen. The map holds
-	// edge indexes, not pointers: appending below may reallocate the slice.
-	byPair := map[string]int{}
-	for i := range edges {
-		byPair[edges[i].Source+":"+edges[i].Target] = i
-		byPair[edges[i].Target+":"+edges[i].Source] = i
-	}
-	meetings, _ := h.meetings.All()
-	for _, m := range meetings {
-		if !m.Completed() {
-			continue
-		}
-		key := m.A + ":" + m.B
-		if i, ok := byPair[key]; ok {
-			edges[i].Meeting = true
-			continue
-		}
-		seen[key] = true
-		edges = append(edges, graphEdge{Source: m.A, Target: m.B, Meeting: true})
-	}
-
-	type scored struct {
-		id    string
-		score int
-	}
-	topEdges := map[string][]scored{}
-	for i, a := range participants {
-		for j, b := range participants {
-			if i >= j {
-				continue
-			}
-			key := a.ID + ":" + b.ID
-			rev := b.ID + ":" + a.ID
-			if seen[key] || seen[rev] {
-				continue
-			}
-			s := h.matcher.PairScore(a, b)
-			topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, s})
-			topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, s})
-		}
-	}
-	for _, p := range participants {
-		candidates := topEdges[p.ID]
-		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
-		if len(candidates) > 3 {
-			candidates = candidates[:3]
-		}
-		for _, c := range candidates {
-			key := p.ID + ":" + c.id
-			rev := c.id + ":" + p.ID
-			if seen[key] || seen[rev] {
-				continue
-			}
-			seen[key] = true
-			edges = append(edges, graphEdge{
-				Source:  p.ID,
-				Target:  c.id,
-				Score:   c.score,
-				Matched: false,
-			})
-		}
-	}
-
-	payload := map[string]any{
-		"phase":       phase,
-		"phase_label": phase.Label(),
-		"revealed":    phase.AtLeast(PhaseSocial),
-		"nodes":       nodes,
-		"edges":       edges,
-		"activity":    activity,
-	}
-
-	// The social scoreboard: the top 5 by connections, from the social on.
-	// During onboarding the Big Screen is the graph and the ticker only.
-	if phase.AtLeast(PhaseSocial) {
-		board, err := h.meetings.Leaderboard()
-		if err != nil {
-			logger("handler").Warn("connection leaderboard", "err", err)
-		} else {
-			top := board
-			if len(top) > 5 {
-				top = top[:5]
-			}
-			payload["leaderboard"] = top
-			// The champion is named at the close: the Merge Trophy winner,
-			// the top of the final leaderboard.
-			if phase == PhaseClosed && len(top) > 0 {
-				payload["champion"] = &top[0]
-			}
-		}
-	}
-
-	// The closing view: from closed on, the Big Screen also carries the
-	// evening's stats and the recap QR — alongside the final leaderboard,
-	// the champion and the graph with all meeting edges.
-	if phase == PhaseClosed {
-		payload["stats"] = h.closing.Stats()
-		payload["recap_url"] = "/recap"
-	}
-
-	// Presenter mode: from show & tell on, the Big Screen shows the on-stage
-	// presenter's card with the hype intro — personas only, until the host's
-	// explicit identity reveal flips the card to the GitHub handle/name.
-	if phase == PhaseShowTell {
-		if presenter := h.presenterPayload(); presenter != nil {
-			payload["presenter"] = presenter
-		}
-	}
-
-	// The Board: the newest approved Posts rotate on the screen in every phase,
-	// except while a presenter is on stage. Personas only.
-	if payload["presenter"] == nil {
-		if board := h.boardPayload(); len(board) > 0 {
-			payload["board"] = board
-		}
-	}
-	return payload
-}
-
-// boardPayloadLimit is how many of the newest approved Posts the Big Screen
-// rotates through.
-const boardPayloadLimit = 10
-
-// boardPayload is the Big Screen's Board: the newest approved Posts with their
-// poster's Persona and the first link of each (the QR's target, "" when the
-// Post has none). Only approved Posts ever reach the screen.
-func (h *Handler) boardPayload() []map[string]any {
-	posts, err := h.board.Approved(boardPayloadLimit)
-	if err != nil {
-		logger("handler").Warn("big screen board", "err", err)
-		return nil
-	}
-	out := make([]map[string]any, 0, len(posts))
-	for _, post := range posts {
-		out = append(out, map[string]any{
-			"id":             post.ID,
-			"text":           post.Text,
-			"link":           firstLink(post.Text),
-			"persona_name":   post.PersonaName,
-			"persona_symbol": post.PersonaSymbol,
-			"persona_color":  post.PersonaColor,
-		})
-	}
-	return out
-}
-
-// presenterPayload is the Big Screen's presenter mode: the on-stage sign-up
-// with its presenter's Persona, the talk and the hype intro. Personas only —
-// the identity (the GitHub handle/name) is carried only once the host's
-// explicit reveal action set IdentityRevealed; it is the only place a handle
-// reaches the screen besides the owner's own recap.
-func (h *Handler) presenterPayload() map[string]any {
-	signup, err := h.showtell.OnStage()
-	if err != nil {
-		logger("handler").Warn("on-stage presenter", "err", err)
-		return nil
-	}
-	if signup == nil {
-		return nil
-	}
-	payload := map[string]any{
-		"signup_id":         signup.ID,
-		"title":             signup.Title,
-		"description":       signup.Description,
-		"repo_url":          signup.RepoURL,
-		"persona_name":      signup.PersonaName,
-		"persona_symbol":    signup.PersonaSymbol,
-		"persona_color":     signup.PersonaColor,
-		"persona_tagline":   signup.PersonaTagline,
-		"hype":              signup.Hype,
-		"identity_revealed": signup.IdentityRevealed,
-	}
-	if signup.IdentityRevealed {
-		p, err := h.store.Get(signup.ParticipantID)
-		if err != nil {
-			logger("handler").Warn("revealed presenter", "participant", signup.ParticipantID, "err", err)
-			return payload
-		}
-		payload["handle"] = p.DisplayHandle()
-		payload["name"] = p.Name
-	}
-	// The current audience question rides with the presenter card — an
-	// extension of presenter mode. The asker's persona and the text only:
-	// personas, never identities.
-	if question, err := h.showtell.CurrentQuestion(); err != nil {
-		logger("handler").Warn("current show & tell question", "err", err)
-	} else if question != nil {
-		payload["question"] = map[string]any{
-			"text":           question.Text,
-			"persona_name":   question.PersonaName,
-			"persona_symbol": question.PersonaSymbol,
-			"persona_color":  question.PersonaColor,
-		}
-	}
-	return payload
-}
-
 // GET /bigscreen/graph-data  — kept as fallback; big screen now uses /bigscreen/stream
 func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, h.buildGraphPayload())
+	writeJSON(w, h.screen.Payload())
 }
 
 // ── /data ──────────────────────────────────────────────────────────────────
@@ -2172,7 +1916,7 @@ func (h *Handler) ScreenStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.watch(w, r, func() bool {
-		data, _ := json.Marshal(h.buildGraphPayload())
+		data, _ := json.Marshal(h.screen.Payload())
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		w.(http.Flusher).Flush()
 		return false
