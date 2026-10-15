@@ -96,7 +96,7 @@ func (p Phase) StepLabel() string {
 func (p Phase) Tonight() string {
 	switch p {
 	case PhaseSocial:
-		return "Tonight: the matches are revealed — meet the personas on your mission card"
+		return "Tonight: the matches are revealed — meet your match, hunt your mission card, sign up for show & tell"
 	case PhaseShowTell:
 		return "Tonight: show & tell — sign up to present, or ask the one on stage"
 	case PhaseClosed:

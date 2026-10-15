@@ -39,6 +39,7 @@ Each ADR follows this structure:
 | [0018](0018-server-side-qr-generation.md) | Server-Side QR Generation | Accepted | 2026-10-11 |
 
 | [0019](0019-participant-page-layout.md) | Participant Page Layout — Phase-Progressive Disclosure with a Persistent Phase Header | Accepted | 2026-10-11 |
+| [0020](0020-shared-llm-concurrency-bound.md) | Shared LLM Concurrency Bound | Accepted | 2026-10-14 |
 
 ## When to Create an ADR
 

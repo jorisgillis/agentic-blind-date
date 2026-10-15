@@ -86,11 +86,12 @@ func TestMatchPage_MoreDrawer(t *testing.T) {
 				}
 			}
 			// The phase cards come and go with the phase; the drawer's cards
-			// stay.
+			// stay. The show & tell sign-up rides the region from the social
+			// on — sign-up is open during the social and the show & tell.
 			for id, present := range map[string]bool{
 				"mission-card": true,
 				"meet-status":  phase != PhaseClosed,
-				"showtell":     phase == PhaseShowTell,
+				"showtell":     phase != PhaseClosed,
 			} {
 				if n := strings.Count(body, `id="`+id+`"`); (n == 1) != present {
 					t.Errorf("phase %s: the %q anchor should be present=%v, got %d", phase, id, present, n)
@@ -131,10 +132,11 @@ func TestMatchPage_MoreDrawerWithoutAMatch(t *testing.T) {
 }
 
 // TestWaitPage_MoreDrawer covers #138 on the wait page: the body keeps its
-// cards — the persona card, the Q&A recap, the wait status, the mission card,
+// cards — the persona card, the slides, the wait status, the mission card,
 // the meet section and the show & tell section — and the bottom "More" drawer
-// holds the evergreen content: the GitHub summary, the settings and the recap
-// link. Each fragment lives in exactly one place.
+// holds the evergreen content: the Q&A recap, the GitHub summary, the settings
+// and the recap link. The Q&A recap rides the drawer so the live event's
+// cards keep the page's attention. Each fragment lives in exactly one place.
 func TestWaitPage_MoreDrawer(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "r", "The Gopher", "ready")
@@ -143,21 +145,26 @@ func TestWaitPage_MoreDrawer(t *testing.T) {
 	body := readBody(t, get(t, srv, "/user/wait/r"))
 	drawer := drawerOf(t, body)
 
-	// The body keeps its cards, in order, before the drawer.
+	// The body keeps its cards, in order, before the drawer: the slides sit
+	// high so the room finds them, and the Q&A recap is not among them.
 	assertOrder(t, body,
 		`id="phase-header"`,
 		`id="persona-card"`,
-		"Your answers",
+		`id="slides"`,
 		`id="wait-status"`,
 		`id="mission-card"`,
 		`id="meet-status"`,
 		`id="showtell"`,
 		"<details",
 	)
+	if strings.Index(body, "Your answers") < strings.Index(body, "<details") {
+		t.Error("the Q&A recap should live in the More drawer, not the body")
+	}
 
-	// The drawer holds the evergreen content, in order: the GitHub summary,
-	// the settings and the recap link.
+	// The drawer holds the evergreen content, in order: the Q&A recap, the
+	// GitHub summary, the settings and the recap link.
 	assertOrder(t, drawer,
+		"Your answers",
 		"Your GitHub",
 		`id="settings"`,
 		`id="recap"`,
@@ -165,7 +172,7 @@ func TestWaitPage_MoreDrawer(t *testing.T) {
 
 	// Exactly one anchor per fragment id, and the GitHub summary lives in
 	// exactly one place: the drawer.
-	for _, id := range []string{"phase-header", "persona-card", "wait-status", "mission-card", "meet-status", "showtell", "settings", "recap"} {
+	for _, id := range []string{"phase-header", "persona-card", "slides", "wait-status", "mission-card", "meet-status", "showtell", "settings", "recap"} {
 		if n := strings.Count(body, `id="`+id+`"`); n != 1 {
 			t.Errorf("want exactly one %q anchor on the wait page, got %d", id, n)
 		}

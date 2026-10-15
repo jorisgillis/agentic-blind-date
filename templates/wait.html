@@ -32,20 +32,10 @@
          is crafted in the background after the last interview answer */}}
     {{template "fragment-persona-card.html" .Participant}}
 
-    {{/* Q&A recap */}}
-    {{if .QAPairs}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-4">
-      <p class="text-gray-700 text-xs uppercase tracking-widest mb-3">Your answers</p>
-      <div class="space-y-3">
-        {{range .QAPairs}}
-        <div>
-          <p class="text-gray-600 text-xs leading-snug">{{.Question}}</p>
-          <p class="text-gray-900 text-sm mt-0.5 font-medium">→ {{.Answer}}</p>
-        </div>
-        {{end}}
-      </div>
-    </div>
-    {{end}}
+    {{/* Slides — the speakers' slide decks the Host uploaded, in every phase,
+         kept high on the page so the room finds them; refreshed when the
+         wait stream says so */}}
+    {{template "fragment-slides.html" .Slides}}
 
     {{template "fragment-wait-status.html" .}}
 
@@ -59,25 +49,38 @@
          refreshed when the wait stream says so */}}
     {{template "fragment-showtell.html" .ShowTell}}
 
-    {{/* Slides — the speakers' slide decks the Host uploaded, in every phase,
-         refreshed when the wait stream says so */}}
-    {{template "fragment-slides.html" .Slides}}
-
     {{/* Board — the Posts the Host approved, plus the post form; refreshed
          when the wait stream says so */}}
     {{template "fragment-board.html" .Board}}
 
-    {{/* More — the evergreen drawer (ADR 0019, step 3): the GitHub summary,
-         the settings and the recap link behind a single bottom toggle. Its
-         cards keep their own refresh wiring. A browser-native
+    {{/* More — the evergreen drawer (ADR 0019, step 3): the Q&A recap, the
+         GitHub summary, the settings and the recap link behind a single
+         bottom toggle, so the page above stays on what is happening now.
+         Its cards keep their own refresh wiring. A browser-native
          details/summary toggle: no JS, no new stream */}}
     <details class="group bg-black/10 border border-black/10 rounded-2xl">
       <summary class="flex cursor-pointer select-none items-center gap-2 px-4 py-3 list-none [&::-webkit-details-marker]:hidden">
         <span class="text-gray-900 font-bold text-sm">More</span>
-        <span class="text-gray-600 text-xs">github · settings · recap</span>
+        <span class="text-gray-600 text-xs">answers · github · settings · recap</span>
         <span class="ml-auto text-gray-500 text-xs transition-transform duration-200 motion-reduce:transition-none group-open:rotate-180" aria-hidden="true">▾</span>
       </summary>
       <div class="space-y-4 border-t border-black/10 p-4">
+
+        {{/* Q&A recap — the Participant's own answers, kept for reference
+             but out of the way of the live event */}}
+        {{if .QAPairs}}
+        <div class="bg-black/15 border border-black/10 rounded-2xl p-4">
+          <p class="text-gray-700 text-xs uppercase tracking-widest mb-3">Your answers</p>
+          <div class="space-y-3">
+            {{range .QAPairs}}
+            <div>
+              <p class="text-gray-600 text-xs leading-snug">{{.Question}}</p>
+              <p class="text-gray-900 text-sm mt-0.5 font-medium">→ {{.Answer}}</p>
+            </div>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
 
         {{/* GitHub summary */}}
         {{$prof := .Profile}}

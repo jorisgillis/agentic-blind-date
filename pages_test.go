@@ -309,10 +309,11 @@ func TestPersonaCard(t *testing.T) {
 }
 
 // TestMatchPage_SectionOrder covers #137 and #138: the match page is the
-// phase header, then the phase-content region — the mission card first, the
-// meet section next, then the match reveal — then the bottom "More" drawer
-// holding the evergreen cards: the dossier, the settings, the share-profile
-// QR and the recap link.
+// phase header, then the owner's identity line and the slides — kept high so
+// the room finds them — then the phase-content region (the mission card
+// first, the meet section next, then the match reveal), then the bottom
+// "More" drawer holding the evergreen cards: the dossier, the settings, the
+// share-profile QR and the recap link.
 func TestMatchPage_SectionOrder(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
@@ -324,6 +325,8 @@ func TestMatchPage_SectionOrder(t *testing.T) {
 
 	markers := []string{
 		`id="phase-header"`,
+		"This is you:",
+		`id="slides"`,
 		`id="phase-content"`,
 		`id="mission-card"`,
 		`id="meet-status"`,
@@ -348,14 +351,16 @@ func TestMatchPage_SectionOrder(t *testing.T) {
 		}
 		last = idx
 	}
-	// The show & tell section joins the region in the showtell phase.
-	if strings.Contains(body, `id="showtell"`) {
-		t.Error("the social's match page should not carry the show & tell section")
+	// The show & tell sign-up is open from the social on, and the matched
+	// Participants on this page must reach it — the sign-up form rides the
+	// region in the social and the show & tell alike.
+	if !strings.Contains(body, `id="showtell"`) || !strings.Contains(body, "Sign me up") {
+		t.Error("the social's match page should carry the show & tell sign-up form")
 	}
 	// Exactly one anchor per fragment id: each fragment lives in exactly one
 	// place — the phase cards in the region, the evergreen cards in the
 	// drawer.
-	for _, id := range []string{"phase-header", "phase-content", "mission-card", "meet-status", "dossier", "settings", "qr", "recap"} {
+	for _, id := range []string{"phase-header", "phase-content", "mission-card", "meet-status", "showtell", "slides", "dossier", "settings", "qr", "recap"} {
 		if n := strings.Count(body, `id="`+id+`"`); n != 1 {
 			t.Errorf("want exactly one %q anchor on the match page, got %d", id, n)
 		}
@@ -387,7 +392,7 @@ func TestMatchPage_RendersThePhaseHeader(t *testing.T) {
 		`data-phase="onboarding"`, `data-phase="social"`, `data-phase="showtell"`, `data-phase="closed"`,
 		"Onboarding", "Social", "Show &amp; tell", "Closed",
 		`aria-current="step"`,
-		"Tonight: the matches are revealed — meet the personas on your mission card",
+		"Tonight: the matches are revealed — meet your match, hunt your mission card, sign up for show &amp; tell",
 		"Mission: your card is being prepared",
 	} {
 		if !strings.Contains(body, want) {
@@ -637,5 +642,165 @@ func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 	// Non-GitHub User's real name or generated handle (#113's privacy baseline).
 	if body := readBody(t, get(t, srv, "/bigscreen/graph-data")); strings.Contains(body, "Ada Lovelace") || !strings.Contains(body, "The Analyst") {
 		t.Errorf("the Big Screen should show the persona, not the name:\n%s", body)
+	}
+}
+
+// TestLanding_ExplainsWhatTheAppIsAndWhyTheQuestions covers the landing
+// page's one-paragraph answer to "what is this and why the questions": what
+// happens tonight, what the answers are for, and the anonymity promise.
+func TestLanding_ExplainsWhatTheAppIsAndWhyTheQuestions(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	body := readBody(t, get(t, srv, "/user"))
+	for _, want := range []string{
+		"anonymous persona",
+		"technical soulmate",
+		"Why the questions?",
+		"never appears on the big screen",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the landing page should contain %q", want)
+		}
+	}
+}
+
+// TestOnboardPage_ExplainsItselfWhileWaitingAndInterviewing covers the onboarding page's header:
+// while the agents prepare the interview it says so and counts the wait; once
+// the interview runs it says why the questions are asked.
+func TestOnboardPage_ExplainsItselfWhileWaitingAndInterviewing(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.CreateParticipant("prep", "prep", "Prep", true)
+	forceStep(deps.db, "prep", StepFetchingGitHub)
+	seed(t, deps.db, "iv", "The Bard", "interviewing")
+
+	// The assertions target the rendered header elements — the page's script
+	// carries both variants' strings as literals.
+	body := readBody(t, get(t, srv, "/user/onboard/prep"))
+	for _, want := range []string{
+		`<h1 class="text-2xl font-black" id="onboard-title">The agents are on it</h1>`,
+		`id="onboard-sub">Fetching your profile and preparing your questions`,
+		`id="wait-elapsed"`,
+		"Agent pipeline running...",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the preparing onboard page should contain %q", want)
+		}
+	}
+	if strings.Contains(body, `id="onboard-title">Quick interview<`) {
+		t.Error("the preparing onboard page should not claim the interview has started")
+	}
+
+	body = readBody(t, get(t, srv, "/user/onboard/iv"))
+	for _, want := range []string{
+		`<h1 class="text-2xl font-black" id="onboard-title">Quick interview</h1>`,
+		`id="onboard-sub">A few quick questions — your answers decide who you meet tonight`,
+		"data-question",
+		"Tabs or spaces?",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the interviewing onboard page should contain %q", want)
+		}
+	}
+	if strings.Contains(body, `id="onboard-title">The agents are on it<`) {
+		t.Error("the interviewing onboard page should not claim the agents are still preparing")
+	}
+}
+
+// TestAgentQueue_ShowsThePositionWhileWaiting covers the wait feedback: while
+// Participants wait on the agents, the pipeline-step fragment and the wait
+// status name how many registered before them are still waiting too — a busy
+// night reads as a queue, not a hang.
+func TestAgentQueue_ShowsThePositionWhileWaiting(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.CreateParticipant("first", "first", "First", true)
+	forceStep(deps.db, "first", StepFetchingGitHub)
+	deps.db.CreateParticipant("second", "second", "Second", true)
+	forceStep(deps.db, "second", StepFetchingGitHub)
+
+	if body := readBody(t, get(t, srv, "/user/pipeline/second")); !strings.Contains(body, "1 person ahead of you in the agent queue") {
+		t.Errorf("the pipeline fragment should show the queue position, got:\n%s", body)
+	}
+	if body := readBody(t, get(t, srv, "/user/pipeline/first")); strings.Contains(body, "ahead of you in the agent queue") {
+		t.Errorf("the first in line should see nobody ahead, got:\n%s", body)
+	}
+
+	// The wait page's status carries the queue line too, while the persona is
+	// being crafted.
+	forceStep(deps.db, "second", StepCreatingPersona)
+	if body := readBody(t, get(t, srv, "/user/wait-status/second")); !strings.Contains(body, "1 person ahead of you in the agent queue") {
+		t.Errorf("the wait status should show the queue position, got:\n%s", body)
+	}
+}
+
+// TestPersonalPages_SayThisIsYou covers the identity line: the personal pages
+// are the one place a Participant finds their real name again — the persona
+// card on the wait page, a line under the header on the Match page — while
+// the meet page shows the target's persona only, never their real name.
+func TestPersonalPages_SayThisIsYou(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.CreateParticipant("ada", "ada", "Ada Lovelace", true)
+	setProfile(t, deps.db, "ada", &GitHubProfile{Login: "ada", Languages: []string{"Go"}})
+	setPersona(t, deps.db, "ada", "The Analyst", "Computes")
+	forceStep(deps.db, "ada", StepReady)
+	deps.db.CreateParticipant("octo", "octo", "Octavia", true)
+	setProfile(t, deps.db, "octo", &GitHubProfile{Login: "octo", Languages: []string{"Go"}})
+	setPersona(t, deps.db, "octo", "The Gopher", "Ships things")
+	forceStep(deps.db, "octo", StepReady)
+	pair(t, deps.db, "ada", "octo")
+	deps.events.Reveal()
+
+	// The Match page names the owner — the persona on the big screen maps
+	// back to a person.
+	body := readBody(t, get(t, srv, "/user/match/ada"))
+	for _, want := range []string{"This is you:", "Ada Lovelace", "@ada"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the match page should contain %q", want)
+		}
+	}
+	if strings.Contains(body, "Octavia") {
+		t.Error("the match page must not show the partner's real name")
+	}
+
+	// The wait page's persona card names the owner too — an unmatched
+	// Participant belongs there once the social begins.
+	deps.db.CreateParticipant("zed", "zed", "Zed", true)
+	setProfile(t, deps.db, "zed", &GitHubProfile{Login: "zed", Languages: []string{"Go"}})
+	setPersona(t, deps.db, "zed", "The Lone Wolf", "Lurks")
+	forceStep(deps.db, "zed", StepReady)
+	if body := readBody(t, get(t, srv, "/user/wait/zed")); !strings.Contains(body, "This is you:") || !strings.Contains(body, "Zed") {
+		t.Errorf("the wait page's persona card should say this is you, got:\n%s", body)
+	}
+
+	// The meet page shows personas only — neither side's real name leaves
+	// their own page.
+	if body := readBody(t, withCookie(t, srv, "/user/m/octo", "ada")); strings.Contains(body, "Ada Lovelace") || strings.Contains(body, "Octavia") {
+		t.Errorf("the meet page must not show real names, got:\n%s", body)
+	}
+
+	// A Non-GitHub User sees their name only — the generated handle never shows.
+	deps.db.CreateParticipant("grace", "no-github-1234abcd", "Grace Hopper", false)
+	setProfile(t, deps.db, "grace", &GitHubProfile{})
+	setPersona(t, deps.db, "grace", "The Compiler", "Compiles")
+	forceStep(deps.db, "grace", StepReady)
+	body = readBody(t, get(t, srv, "/user/wait/grace"))
+	if !strings.Contains(body, "This is you:") || !strings.Contains(body, "Grace Hopper") {
+		t.Errorf("the wait page should say this is you for a Non-GitHub User, got:\n%s", body)
+	}
+	if strings.Contains(body, "no-github-") {
+		t.Error("the generated handle must never show")
+	}
+}
+
+// TestAdmin_ShowsTheAgentQueueLength covers the host console's view of the
+// agent queue: how many Participants are waiting on the agents tonight, so
+// the host can explain a busy pipeline to the room.
+func TestAdmin_ShowsTheAgentQueueLength(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	deps.db.CreateParticipant("a", "a", "A", true)
+	forceStep(deps.db, "a", StepFetchingGitHub)
+	seed(t, deps.db, "b", "The Gopher", "ready")
+
+	if body := readBody(t, get(t, srv, "/admin")); !strings.Contains(body, "Waiting for the agents") {
+		t.Errorf("the admin console should show the agent queue length, got:\n%s", body)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -307,4 +308,122 @@ func TestOpenAIClient_Ollama(t *testing.T) {
 			t.Errorf("want success after a retried 503, got %q after %d attempts (err %v)", got, attempts, err)
 		}
 	})
+}
+
+// blockingLLM counts how many calls run at once and blocks every call until
+// released, so a gate's bound is observable.
+type blockingLLM struct {
+	mu      sync.Mutex
+	running int
+	maxSeen int
+	release chan struct{}
+}
+
+func newBlockingLLM() *blockingLLM { return &blockingLLM{release: make(chan struct{})} }
+
+func (b *blockingLLM) Chat(system, user string) (string, error) {
+	b.mu.Lock()
+	b.running++
+	if b.running > b.maxSeen {
+		b.maxSeen = b.running
+	}
+	b.mu.Unlock()
+	<-b.release
+	b.mu.Lock()
+	b.running--
+	b.mu.Unlock()
+	return "ok", nil
+}
+
+func (b *blockingLLM) maxConcurrent() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.maxSeen
+}
+
+// TestGatedLLM_BoundsConcurrentCalls covers the shared LLM call bound: with
+// a limit of 2, six parallel calls never run more than two at once — the
+// rush of registrations queues instead of storming the provider.
+func TestGatedLLM_BoundsConcurrentCalls(t *testing.T) {
+	inner := newBlockingLLM()
+	gated := NewGatedLLM(inner, 2)
+
+	const calls = 6
+	done := make(chan struct{}, calls)
+	for i := 0; i < calls; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			if _, err := gated.Chat("s", "u"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+
+	// Two calls run; the rest wait at the gate.
+	eventually(t, "two calls running", func() bool {
+		inner.mu.Lock()
+		defer inner.mu.Unlock()
+		return inner.running == 2
+	})
+	if got := inner.maxConcurrent(); got != 2 {
+		t.Fatalf("want at most 2 concurrent calls, saw %d", got)
+	}
+
+	close(inner.release)
+	for i := 0; i < calls; i++ {
+		<-done
+	}
+	if got := inner.maxConcurrent(); got != 2 {
+		t.Errorf("the bound held after the release: saw %d", got)
+	}
+}
+
+// TestGatedLLM_ALimitBelowOneIsOne covers the clamp: a misconfigured bound
+// still serializes instead of panicking or blocking forever.
+func TestGatedLLM_ALimitBelowOneIsOne(t *testing.T) {
+	inner := newBlockingLLM()
+	gated := NewGatedLLM(inner, 0)
+
+	done := make(chan struct{}, 3)
+	for i := 0; i < 3; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			_, _ = gated.Chat("s", "u")
+		}()
+	}
+	eventually(t, "one call running", func() bool {
+		inner.mu.Lock()
+		defer inner.mu.Unlock()
+		return inner.running == 1
+	})
+	close(inner.release)
+	for i := 0; i < 3; i++ {
+		<-done
+	}
+	if got := inner.maxConcurrent(); got != 1 {
+		t.Errorf("a limit below 1 is 1: saw %d concurrent", got)
+	}
+}
+
+func TestLLMConcurrency_ReadsTheEnvAndDefaults(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string {
+			if k == "LLM_CONCURRENCY" {
+				return v
+			}
+			return ""
+		}
+	}
+	if got := LLMConcurrency(env("")); got != defaultLLMConcurrency {
+		t.Errorf("unset: want the default %d, got %d", defaultLLMConcurrency, got)
+	}
+	if got := LLMConcurrency(env("7")); got != 7 {
+		t.Errorf("LLM_CONCURRENCY=7: want 7, got %d", got)
+	}
+	if got := LLMConcurrency(env("nope")); got != defaultLLMConcurrency {
+		t.Errorf("malformed: want the default %d, got %d", defaultLLMConcurrency, got)
+	}
+	if got := LLMConcurrency(env("-3")); got != defaultLLMConcurrency {
+		t.Errorf("non-positive: want the default %d, got %d", defaultLLMConcurrency, got)
+	}
 }

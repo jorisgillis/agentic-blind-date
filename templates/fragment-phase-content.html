@@ -1,8 +1,11 @@
 {{/* The match page's phase-content region (ADR 0019, step 2): the composition
      of per-card fragments the current phase calls for. The social leads with
-     the mission card, then the meet section, then the match reveal; show &
-     tell adds its tooling after the reveal; once closed the match reveal
-     leads, then the mission card in its final stamped state. The evergreen
+     the mission card, then the meet section, then the match reveal, then the
+     show & tell sign-up — sign-up is open from the social on, and the matched
+     Participants who live on this page during the social must reach it; the
+     fragment gates itself (the sign-up form from the social on, the question
+     form in the show & tell only). Once closed the match reveal leads, then
+     the mission card in its final stamped state. The evergreen
      cards — the dossier, the settings, the share-profile QR and the recap
      link — live in the page's "More" drawer (step 3, #138), outside this
      region. The region is swapped live on the match stream's 'phase' event —
@@ -32,6 +35,7 @@
   {{template "fragment-mission-card.html" .MissionCard}}
   {{template "fragment-meet-status.html" .MeetStatus}}
   {{template "fragment-match-reveal.html" .}}
+  {{template "fragment-showtell.html" .ShowTell}}
   {{else}}
   {{/* Onboarding — only reachable by direct URL; destination() sends everyone
        to wait/onboard: render the match reveal sanely. */}}

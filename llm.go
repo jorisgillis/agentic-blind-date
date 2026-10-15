@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -241,4 +242,50 @@ func (c *OpenAIClient) Chat(system, user string) (string, error) {
 		}
 	}
 	return "", lastErr
+}
+
+// defaultLLMConcurrency is the shared bound on concurrent LLM calls across
+// the whole app, overridable with LLM_CONCURRENCY. Onboarding starts a
+// goroutine per Participant and each one calls the LLM (custom questions,
+// persona), so without a shared ceiling a rush of registrations fires dozens
+// of parallel calls into the provider, which rate-limits — and every call
+// then fails into retries: the long, silent wait the first live event saw,
+// and the failed match assessments behind every 42% score. The Matcher's
+// two-at-a-time pool and the Mission Agent's workers keep their own bounds;
+// this gate is the ceiling under them all.
+var defaultLLMConcurrency = 4
+
+// gatedLLM wraps an LLM with a shared concurrency bound: at most limit calls
+// run at once, the rest wait their turn in arrival order.
+type gatedLLM struct {
+	llm LLM
+	sem chan struct{}
+}
+
+// NewGatedLLM wraps llm so at most limit calls run concurrently. A limit
+// below 1 is treated as 1.
+func NewGatedLLM(llm LLM, limit int) LLM {
+	if limit < 1 {
+		limit = 1
+	}
+	return &gatedLLM{llm: llm, sem: make(chan struct{}, limit)}
+}
+
+// Chat runs the wrapped LLM once a slot is free.
+func (g *gatedLLM) Chat(system, user string) (string, error) {
+	g.sem <- struct{}{}
+	defer func() { <-g.sem }()
+	return g.llm.Chat(system, user)
+}
+
+// LLMConcurrency reads the shared LLM call bound through lookup (never the
+// process environment directly, so this stays testable), defaulting to
+// defaultLLMConcurrency. main() calls this once.
+func LLMConcurrency(lookup func(string) string) int {
+	if v := lookup("LLM_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultLLMConcurrency
 }

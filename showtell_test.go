@@ -801,9 +801,10 @@ func TestShowTellStatus_Fragment(t *testing.T) {
 
 // TestPersonalPages_ShowTheSignUpFormDuringSocialAndShowTell covers the
 // personal pages carrying the sign-up form while it is open: the wait page
-// from the social on, and the Match page's phase-content region from show &
-// tell on (#137: the region adds the show & tell section in the showtell
-// phase).
+// and the Match page's phase-content region from the social on — sign-up is
+// open during the social and the show & tell, and the matched Participants
+// who live on the Match page during the social must reach it there too (the
+// first live event's "the register show & tell was gone").
 func TestPersonalPages_ShowTheSignUpFormDuringSocialAndShowTell(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
@@ -821,8 +822,8 @@ func TestPersonalPages_ShowTheSignUpFormDuringSocialAndShowTell(t *testing.T) {
 	if body := readBody(t, get(t, srv, "/user/wait/c")); !strings.Contains(body, "/user/showtell/signup/c") {
 		t.Errorf("during the social the wait page should show the sign-up form")
 	}
-	if body := readBody(t, get(t, srv, "/user/match/a")); strings.Contains(body, "/user/showtell/signup/a") {
-		t.Errorf("during the social the Match page's region should not show the sign-up form yet")
+	if body := readBody(t, get(t, srv, "/user/match/a")); !strings.Contains(body, `hx-post="/user/showtell/signup/a"`) {
+		t.Errorf("during the social the Match page should show the sign-up form")
 	}
 
 	if err := deps.events.Advance(PhaseShowTell); err != nil {

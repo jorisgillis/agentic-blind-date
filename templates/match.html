@@ -33,6 +33,18 @@
          'phase' event when the host advances the evening */}}
     {{template "fragment-phase-header.html" .PhaseHeader}}
 
+    {{/* This is you — the owner's own page names them, so the persona on the
+         big screen maps back to a person; everywhere else they are their
+         persona only */}}
+    <div class="text-center -mt-1">
+      {{template "fragment-this-is-you.html" .Me}}
+    </div>
+
+    {{/* Slides — the speakers' slide decks the Host uploaded, in every phase,
+         kept high on the page so the room finds them; refreshed when the
+         match stream says so */}}
+    {{template "fragment-slides.html" .Slides}}
+
     {{/* Phase content — the region the current phase calls for (ADR 0019,
          step 2): the mission card, the meet section and the match reveal
          during the social, the show & tell tooling from show & tell on, the
@@ -40,10 +52,6 @@
          per-card fragments inside it keep their own 'refresh' wiring, so a
          refresh never re-animates the region */}}
     {{template "fragment-phase-content.html" .PhaseContent}}
-
-    {{/* Slides — the speakers' slide decks the Host uploaded, in every phase,
-         refreshed when the match stream says so */}}
-    {{template "fragment-slides.html" .Slides}}
 
     {{/* Board — the Posts the Host approved, plus the post form; refreshed
          when the match stream says so */}}

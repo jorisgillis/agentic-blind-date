@@ -64,6 +64,33 @@ func (s *ParticipantStore) AllByStep(step Step) ([]*Participant, error) {
 	return p, nil
 }
 
+// agentSteps are the Pipeline Steps whose work is done by agents in the
+// background: fetching_github (the GitHub profile and the custom questions)
+// and creating_persona (the persona, then Continuous Matching). A Participant
+// in the Interview is answering at their own pace — not waiting on an agent.
+const agentSteps = "('fetching_github', 'creating_persona')"
+
+// AgentQueueAhead counts the Participants registered before id who are still
+// waiting on an agent. It is the queue position the onboarding and wait pages
+// show while a Participant waits: the agents work through the registrations
+// in order, so the count is how far ahead of them the queue is. Like the
+// other counters, a failed read counts as zero.
+func (s *ParticipantStore) AgentQueueAhead(id string) int {
+	var n int
+	s.db.db.QueryRow(`SELECT COUNT(*) FROM participants
+		WHERE pipeline_step IN `+agentSteps+` AND id != ?
+		AND rowid < (SELECT rowid FROM participants WHERE id = ?)`, id, id).Scan(&n)
+	return n
+}
+
+// AgentQueueWaiting counts the Participants still waiting on an agent, for
+// the host console: how long the agent queue is tonight.
+func (s *ParticipantStore) AgentQueueWaiting() int {
+	var n int
+	s.db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step IN ` + agentSteps).Scan(&n)
+	return n
+}
+
 // GetByHandle reads one Participant by their GitHub handle.
 func (s *ParticipantStore) GetByHandle(handle string) (*Participant, error) {
 	p, err := s.db.GetParticipantByHandle(handle)

@@ -44,15 +44,27 @@ func NewMatcher(db *DB, github GitHubAPI, llm LLM) *Matcher {
 	}
 }
 
-// defaultMatchResult returns a default match result when LLM scoring fails.
-func defaultMatchResult() *matchResult {
+// heuristicMatchResult is the fallback assessment when the LLM scoring
+// fails — a rate-limited provider under a rush of registrations. The score is
+// the PairScore heuristic mapped onto the 0-100 scale, so the fallback still
+// discriminates between pairs instead of presenting one constant, and the
+// reason says honestly that the score is an estimate. The generic flags and
+// icebreakers keep the dossier payload complete.
+func (m *Matcher) heuristicMatchResult(a, b *Participant) *matchResult {
 	return &matchResult{
-		Score:       42,
-		Reason:      "The algorithm has spoken. We cannot explain.",
+		Score:       heuristicScore(m.PairScore(a, b)),
+		Reason:      "Estimated from your shared languages, tools and answers — the matchmaker agent is catching up.",
 		RedFlags:    []string{},
 		GreenFlags:  []string{"You're both here tonight"},
 		Icebreakers: []string{"What brings you to this meetup?", "What are you currently building?", "Best tech talk you've seen recently?"},
 	}
+}
+
+// heuristicScore maps the PairScore heuristic onto the compatibility scale:
+// a Pair with nothing in common lands at 30, every shared language, topic,
+// answer, environment or follow adds 2, and the scale caps at 100.
+func heuristicScore(raw int) int {
+	return min(100, 30+raw*2)
 }
 
 // ScorePair returns the LLM compatibility assessment for a Pair, in either
@@ -336,7 +348,8 @@ type Match struct {
 //  3. greedy: Pairs are taken by descending LLM score while both Participants are free
 //
 // Participants left over are paired by heuristic and assessed. Each Participant
-// ends up in at most one Match. When the LLM fails, the default assessment is used.
+// ends up in at most one Match. When the LLM fails, the heuristic-derived
+// fallback assessment is used.
 func (m *Matcher) MatchPool(participants []*Participant) []Match {
 	if len(participants) < 2 {
 		return nil
@@ -434,7 +447,7 @@ func (m *Matcher) assessOrDefault(a, b *Participant) *matchResult {
 	result, err := m.ScorePair(a, b)
 	if err != nil {
 		logger("matcher").Warn("scoring the pair", "a", a.GitHubHandle, "b", b.GitHubHandle, "err", err)
-		return defaultMatchResult()
+		return m.heuristicMatchResult(a, b)
 	}
 	return result
 }

@@ -51,8 +51,9 @@ func seedMatchedPair(t *testing.T, deps *testDeps) {
 
 // TestPhaseContent_RendersTheCompositionPerPhase covers #137's per-phase
 // render: the region shows only what the current phase calls for — the social
-// leads with the mission card, then the meet section, then the match reveal;
-// show & tell adds its tooling after the reveal; closed leads with the
+// leads with the mission card, then the meet section, then the match reveal,
+// then the show & tell sign-up (open from the social on; the question form
+// still waits for the show & tell); closed leads with the
 // reveal, then the mission card. The evergreen cards (the dossier, the
 // settings, the share-profile QR, the recap link) are not part of the region
 // — they live in the page's More drawer (#138).
@@ -71,17 +72,23 @@ func TestPhaseContent_RendersTheCompositionPerPhase(t *testing.T) {
 
 		assertPhaseContentRegion(t, body)
 		// The social composition: the mission card first, then the meet
-		// section, then the match reveal.
+		// section, then the match reveal, then the show & tell sign-up —
+		// open from the social on, and the matched Participants who live on
+		// the Match page during the social must reach it there.
 		assertOrder(t, body,
 			`id="mission-card"`,
 			`id="meet-status"`,
 			"It's a match!",
 			"Find them in the room",
+			`id="showtell"`,
 		)
 		assertRegionKeepsOutTheEvergreenCards(t, body)
-		// The show & tell tooling waits for the showtell phase.
-		if strings.Contains(body, `id="showtell"`) {
-			t.Error("the social's region should not carry the show & tell section")
+		if !strings.Contains(body, "Sign me up") {
+			t.Error("the social's region should carry the sign-up form")
+		}
+		// The question form still waits for the show & tell phase.
+		if strings.Contains(body, "Ask the presenter") {
+			t.Error("the social's region should not carry the question form")
 		}
 	})
 

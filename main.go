@@ -48,6 +48,9 @@ func main() {
 		logger("main").Error("selecting the LLM provider", "err", err)
 		os.Exit(1)
 	}
+	// One shared bound on concurrent LLM calls across the whole app, so a
+	// rush of registrations queues instead of storming the provider.
+	llm = NewGatedLLM(llm, LLMConcurrency(os.Getenv))
 
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {

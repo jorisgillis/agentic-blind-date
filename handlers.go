@@ -218,7 +218,7 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, dest, http.StatusSeeOther)
 		return
 	}
-	h.render(w, "onboard.html", onboardPage{Participant: p, Question: h.openQuestion(p)})
+	h.render(w, "onboard.html", onboardPage{Participant: p, Question: h.openQuestion(p), Pipeline: h.pipelineStepDataFor(p)})
 }
 
 // onboardPage is the Onboard page's data: the Participant plus the Interview
@@ -228,6 +228,20 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 type onboardPage struct {
 	*Participant
 	Question *QuestionData
+	Pipeline pipelineStepData
+}
+
+// pipelineStepData is the pipeline-step fragment's data: the Participant and
+// their position in the agent queue — how many Participants registered before
+// them are still waiting on an agent — so the waiting carries feedback instead
+// of a silent spinner.
+type pipelineStepData struct {
+	*Participant
+	QueueAhead int
+}
+
+func (h *Handler) pipelineStepDataFor(p *Participant) pipelineStepData {
+	return pipelineStepData{Participant: p, QueueAhead: h.store.AgentQueueAhead(p.ID)}
 }
 
 // openQuestion is the Interview question the pipeline area shows right away:
@@ -255,7 +269,7 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 		h.render(w, "fragment-question.html", qd)
 		return
 	}
-	h.render(w, "fragment-pipeline-step.html", p)
+	h.render(w, "fragment-pipeline-step.html", h.pipelineStepDataFor(p))
 }
 
 // POST /user/answer/{id}
@@ -489,12 +503,15 @@ func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase) string {
 // sees the teaser — their future Match's emoji and colour and a hint at what
 // the pair disagreed on, never the partner's identity, score or dossier. An
 // unmatched Participant sees the ready count while the event is still
-// onboarding, and a clear no-match state once the Social has begun.
+// onboarding, and a clear no-match state once the Social has begun. While the
+// Participant themselves waits on an agent (persona, matching), the queue
+// position rides along, so the wait carries feedback.
 func (h *Handler) waitStatusData(p *Participant) map[string]any {
 	data := map[string]any{
 		"Participant": p,
 		"Count":       h.db.ReadyCount(),
 		"Revealed":    h.events.State().AtLeast(PhaseSocial),
+		"QueueAhead":  h.store.AgentQueueAhead(p.ID),
 	}
 	partner, _, err := h.relations.PartnerOf(p.ID)
 	if err != nil {
@@ -1862,6 +1879,7 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 		"Count":             h.db.ParticipantCount(),
 		"Ready":             h.db.ReadyCount(),
 		"Matched":           h.db.MatchedCount(),
+		"Waiting":           h.store.AgentQueueWaiting(),
 		"Next":              phase.Next(),
 		"Notice":            r.URL.Query().Get("notice"),
 		"ShowTell":          h.showtellQueueData(),

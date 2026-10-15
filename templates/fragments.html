@@ -1,4 +1,7 @@
-{{/* Pipeline step indicator — shown while GitHub fetch / persona creation is in progress */}}
+{{/* Pipeline step indicator — shown while GitHub fetch / persona creation is
+     in progress. While the Participant waits on the agents, the queue
+     position rides along: how many Participants registered before them are
+     still waiting too, so a busy night reads as a queue, not a hang. */}}
 {{define "fragment-pipeline-step.html"}}
 <div
   id="pipeline-area"
@@ -35,16 +38,23 @@
     </div>
   </div>
 
+  {{if gt .QueueAhead 0}}
+  <p class="text-center text-gray-500 text-xs">🧑‍🤝‍🧑 {{.QueueAhead}} {{if eq .QueueAhead 1}}person{{else}}people{{end}} ahead of you in the agent queue — the agents work through the line in order</p>
+  {{else}}
   <p class="text-center text-gray-600 text-xs animate-pulse">Agent pipeline running...</p>
+  {{end}}
 </div>
 {{end}}
 
 
-{{/* A single interview question */}}
+{{/* A single interview question. The data-question marker lets the page's
+     header tell the interview apart from the agents' preparation work, and
+     the one-liner above the question says why it is asked at all. */}}
 {{define "fragment-question.html"}}
 {{if .}}
 <div
   id="pipeline-area"
+  data-question
   class="space-y-4"
 >
   <div class="text-center mb-4">
@@ -52,6 +62,7 @@
     <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
       <div class="h-full bg-indigo-500 rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
     </div>
+    <p class="text-gray-500 text-xs mt-2">Your answers decide who you meet tonight</p>
   </div>
 
   <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
@@ -326,6 +337,10 @@
     <span class="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
     Looking for your perfect match...
   </div>
+
+  {{if gt .QueueAhead 0}}
+  <p class="text-gray-600 text-xs">🧑‍🤝‍🧑 {{.QueueAhead}} {{if eq .QueueAhead 1}}person{{else}}people{{end}} ahead of you in the agent queue</p>
+  {{end}}
 
   <p class="text-gray-600 text-xs">Watch the big screen!</p>
 </div>
