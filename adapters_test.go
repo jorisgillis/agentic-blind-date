@@ -57,7 +57,7 @@ func (u *upstream) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func githubClientFor(u *upstream, token string) *GitHubClient {
-	c := NewGitHubClient(token)
+	c := NewGitHubClient(token, "https://api.github.com")
 	c.httpClient = u.client()
 	return c
 }
@@ -146,6 +146,41 @@ func TestGitHubClientCheckMutualFollow(t *testing.T) {
 	}
 }
 
+// TestGitHubClient_BaseURL covers #144: every GitHub call goes to the client's
+// base URL — api.github.com by default, the GITHUB_BASE_URL override when the
+// E2E harness points the app at a local stub.
+func TestGitHubClient_BaseURL(t *testing.T) {
+	u := newUpstream().on("/users/octo", 200, octoUser).on("/users/octo/repos", 200, octoRepos)
+
+	c := NewGitHubClient("", "http://gh-stub.local:3999")
+	c.httpClient = u.client()
+
+	if _, err := c.FetchProfile("octo"); err != nil {
+		t.Fatal(err)
+	}
+	if got := u.requests[0].URL.Host; got != "gh-stub.local:3999" {
+		t.Errorf("user fetch host: want gh-stub.local:3999, got %q", got)
+	}
+	if got := u.requests[1].URL.Host; got != "gh-stub.local:3999" {
+		t.Errorf("repos fetch host: want gh-stub.local:3999, got %q", got)
+	}
+}
+
+// TestGitHubClient_FollowCheckUsesTheBaseURL covers #144: the follow check
+// goes to the base URL too, so the E2E stub serves the whole GitHub surface.
+func TestGitHubClient_FollowCheckUsesTheBaseURL(t *testing.T) {
+	u := newUpstream().on("/users/octo/following/ferris", 204, "")
+
+	c := NewGitHubClient("", "http://gh-stub.local:3999")
+	c.httpClient = u.client()
+
+	c.CheckMutualFollow("octo", "ferris")
+
+	if got := u.requests[0].URL.Host; got != "gh-stub.local:3999" {
+		t.Errorf("follow check host: want gh-stub.local:3999, got %q", got)
+	}
+}
+
 // brokenTransport fails every request, like a network outage.
 type brokenTransport struct{}
 
@@ -166,7 +201,7 @@ func (truncatedTransport) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func TestGitHubClient_NetworkFailures(t *testing.T) {
-	c := NewGitHubClient("secret")
+	c := NewGitHubClient("secret", "")
 	c.httpClient = &http.Client{Transport: brokenTransport{}}
 
 	if _, err := c.FetchProfile("octo"); err == nil {
@@ -186,7 +221,7 @@ func (hangingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestGitHubClient_ATimeoutIsTreatedLikeAnyOtherFailure(t *testing.T) {
-	c := NewGitHubClient("secret")
+	c := NewGitHubClient("secret", "")
 	c.httpClient = &http.Client{Transport: hangingTransport{}, Timeout: 20 * time.Millisecond}
 
 	start := time.Now()

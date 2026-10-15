@@ -21,6 +21,7 @@ type GitHubAPI interface {
 // GitHubClient provides access to the GitHub API for fetching user profiles and repositories.
 type GitHubClient struct {
 	token      string
+	baseURL    string
 	httpClient *http.Client
 }
 
@@ -28,9 +29,28 @@ type GitHubClient struct {
 // Matchmaking, which holds its lock for the whole assessment.
 const githubTimeout = 10 * time.Second
 
-// NewGitHubClient creates a new GitHubClient with the given API token.
-func NewGitHubClient(token string) *GitHubClient {
-	return &GitHubClient{token: token, httpClient: &http.Client{Timeout: githubTimeout}}
+// defaultGitHubBaseURL is the real GitHub API, used when no override is set.
+const defaultGitHubBaseURL = "https://api.github.com"
+
+// GitHubBaseURL reads the GitHub API base URL override through lookup (never
+// the process environment directly, so this stays testable). Unset means the
+// real API; a trailing slash is trimmed so call sites can join with "/".
+func GitHubBaseURL(lookup func(string) string) string {
+	if v := strings.TrimRight(strings.TrimSpace(lookup("GITHUB_BASE_URL")), "/"); v != "" {
+		return v
+	}
+	return defaultGitHubBaseURL
+}
+
+// NewGitHubClient creates a new GitHubClient with the given API token. An
+// empty baseURL is the real GitHub API; otherwise every call goes to baseURL
+// (the GITHUB_BASE_URL override), so the E2E journeys can run against a local
+// stub.
+func NewGitHubClient(token, baseURL string) *GitHubClient {
+	if baseURL == "" {
+		baseURL = defaultGitHubBaseURL
+	}
+	return &GitHubClient{token: token, baseURL: baseURL, httpClient: &http.Client{Timeout: githubTimeout}}
 }
 
 // GitHubProfile contains data fetched from a user's GitHub account.
@@ -266,7 +286,7 @@ func (g *GitHubClient) get(url string) ([]byte, error) {
 }
 
 func (g *GitHubClient) fetchUser(handle string) (*ghUser, error) {
-	body, err := g.get("https://api.github.com/users/" + url.PathEscape(handle))
+	body, err := g.get(g.baseURL + "/users/" + url.PathEscape(handle))
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +295,7 @@ func (g *GitHubClient) fetchUser(handle string) (*ghUser, error) {
 }
 
 func (g *GitHubClient) fetchRepos(handle string) ([]ghRepo, error) {
-	body, err := g.get("https://api.github.com/users/" + url.PathEscape(handle) + "/repos?sort=stars&per_page=30")
+	body, err := g.get(g.baseURL + "/users/" + url.PathEscape(handle) + "/repos?sort=stars&per_page=30")
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +315,7 @@ func (g *GitHubClient) fetchRepos(handle string) ([]ghRepo, error) {
 // checkFollows returns true if follower follows followee on GitHub.
 // GitHub returns 204 (following) or 404 (not following).
 func (g *GitHubClient) checkFollows(follower, followee string) bool {
-	endpoint := "https://api.github.com/users/" +
+	endpoint := g.baseURL + "/users/" +
 		url.PathEscape(follower) + "/following/" + url.PathEscape(followee)
 	req, _ := http.NewRequest("GET", endpoint, nil) // built from a constant base and escaped handles
 	req.Header.Set("Accept", "application/vnd.github+json")

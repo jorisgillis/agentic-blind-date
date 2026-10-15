@@ -202,7 +202,7 @@ func TestMatcherScorePair_PromptDescribesEachDeveloperWithTheirOwnInterestsAndFo
 // #46: a follow check that never gets a response must not stall a Match
 // assessment, and a timed-out check is treated as no follow relationship.
 func TestMatcherScorePair_AHungFollowCheckStillCompletesTheAssessment(t *testing.T) {
-	gh := NewGitHubClient("secret")
+	gh := NewGitHubClient("secret", "")
 	gh.httpClient = &http.Client{Transport: hangingTransport{}, Timeout: 20 * time.Millisecond}
 	llm := newFakeLLM().on("matchmaker", matchReply)
 	m := NewMatcher(newTestDB(t), gh, llm)

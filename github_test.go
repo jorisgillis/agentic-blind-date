@@ -8,15 +8,35 @@ import (
 
 func TestNewGitHubClient(t *testing.T) {
 	// Test with empty token
-	client := NewGitHubClient("")
+	client := NewGitHubClient("", "")
 	if client.token != "" {
 		t.Errorf("expected empty token, got %s", client.token)
 	}
 
 	// Test with non-empty token
-	client = NewGitHubClient("test-token")
+	client = NewGitHubClient("test-token", "")
 	if client.token != "test-token" {
 		t.Errorf("expected token 'test-token', got %s", client.token)
+	}
+}
+
+// TestGitHubBaseURL covers #144: the GitHub API base URL is the real API by
+// default and the GITHUB_BASE_URL override (trailing slash trimmed) when set,
+// so the E2E harness can point the app at a local stub.
+func TestGitHubBaseURL(t *testing.T) {
+	if got := GitHubBaseURL(func(string) string { return "" }); got != "https://api.github.com" {
+		t.Errorf("unset override: want the real API, got %q", got)
+	}
+	if got := GitHubBaseURL(func(string) string { return "http://localhost:9377/" }); got != "http://localhost:9377" {
+		t.Errorf("override with trailing slash: want it trimmed, got %q", got)
+	}
+}
+
+// TestNewGitHubClient_EmptyBaseURLIsTheRealAPI covers #144: an empty base URL
+// means the real GitHub API, so main can pass the override through untouched.
+func TestNewGitHubClient_EmptyBaseURLIsTheRealAPI(t *testing.T) {
+	if got := NewGitHubClient("", "").baseURL; got != "https://api.github.com" {
+		t.Errorf("empty base URL: want the real API, got %q", got)
 	}
 }
 
@@ -24,7 +44,7 @@ func TestNewGitHubClient(t *testing.T) {
 // constructor arms its own http.Client with githubTimeout, so every GitHub
 // call is bounded without any test-side client override.
 func TestNewGitHubClient_InstallsTheBoundedTimeout(t *testing.T) {
-	client := NewGitHubClient("secret")
+	client := NewGitHubClient("secret", "")
 
 	if client.httpClient == nil {
 		t.Fatal("the constructor must install an http.Client")

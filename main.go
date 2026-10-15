@@ -63,7 +63,7 @@ func main() {
 	}
 	defer db.Close()
 
-	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
+	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"), GitHubBaseURL(os.Getenv))
 
 	matcher := NewMatcher(db, github, llm)
 	missions := NewMissions(db, matcher, llm)
@@ -82,6 +82,9 @@ func main() {
 	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, slides, nil)
 
 	addr := "0.0.0.0:8080"
+	if port := os.Getenv("PORT"); port != "" {
+		addr = "0.0.0.0:" + port
+	}
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: buildMux(h),
