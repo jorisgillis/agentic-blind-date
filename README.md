@@ -1,5 +1,9 @@
 # Agentic Blind Date
 
+<p align="center">
+  <img src="agentic-blind-date-logo.jpg" alt="Agentic Blind Date logo" width="320">
+</p>
+
 A web app for tech meetups, built as a live demo of agentic AI. Participants
 register with their GitHub handle, get interviewed by an AI pipeline, and are
 matched with their most compatible tech soulmate — then revealed all at once on
