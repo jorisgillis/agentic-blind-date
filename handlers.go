@@ -318,18 +318,9 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mission := h.missionView(p)
-	data := h.waitStatusData(p)
+	data := h.waitPageData(p)
 	data["Profile"] = profile
 	data["QAPairs"] = qaPairs
-	data["MeetStatus"] = h.meetStatusData(p)
-	data["MissionCard"] = h.missionCardSection(p, mission)
-	data["ShowTell"] = h.showtellData(p)
-	data["Slides"] = h.slidesData(p)
-	data["Board"] = h.boardData(p)
-	data["Settings"] = h.settingsData(p)
-	data["RecapLink"] = h.recapLinkData(p)
-	data["PhaseHeader"] = h.phaseHeaderData(p, mission)
 	h.render(w, "wait.html", data)
 }
 
@@ -533,24 +524,11 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The evergreen cards ride at the page's top level for the "More" drawer
-	// (ADR 0019, step 3): the dossier, the settings, the share-profile QR and
-	// the recap link — outside the phase-content region, so they survive
-	// phase swaps and keep their own refresh wiring.
-	dossier, _ := h.dossierData(p)
-	// The mission view is this render's single pass over the Participant's
-	// mission data, shared between the phase header and the mission card.
-	mission := h.missionView(p)
-	h.render(w, "match.html", map[string]any{
-		"Me":           p,
-		"PhaseHeader":  h.phaseHeaderData(p, mission),
-		"PhaseContent": h.phaseContentData(p, mission),
-		"Slides":       h.slidesData(p),
-		"Board":        h.boardData(p),
-		"Dossier":      dossier,
-		"Settings":     h.settingsData(p),
-		"RecapLink":    h.recapLinkData(p),
-	})
+	// The page's data map derives from the card registry: the body's cards
+	// and the evergreen cards riding at the page's top level for the "More"
+	// drawer (ADR 0019, step 3) — outside the phase-content region, so they
+	// survive phase swaps and keep their own refresh wiring.
+	h.render(w, "match.html", h.matchPageData(p))
 }
 
 // ── the match page's phase-content region ──────────────────────────────────
@@ -575,24 +553,33 @@ func (h *Handler) PhaseContent(w http.ResponseWriter, r *http.Request) {
 }
 
 // phaseContentData is the match page's phase-content region: the per-card
-// fragments the current phase calls for, composed around the match reveal —
-// the mission card and the meet section during the social, the show & tell
-// tooling from show & tell on. The evergreen cards — the dossier, the
-// settings, the share-profile QR and the recap link — live in the page's
+// data the current phase calls for, derived from the card registry — every
+// card placed in the region contributes its data, and the match reveal, the
+// one card the region renders from its own data, merges into the region's
+// map. The composition itself — which cards the current phase calls for, in
+// order — lives in the region's template. The evergreen cards — the dossier,
+// the settings, the share-profile QR and the recap link — live in the page's
 // "More" drawer instead (ADR 0019, step 3, #138), outside this region. The
 // mission view is the caller's single pass over the Participant's mission
 // data, shared with the phase header on full-page renders.
 func (h *Handler) phaseContentData(p *Participant, mission *MissionView) map[string]any {
-	dossier, match := h.dossierData(p)
-	return map[string]any{
-		"Me":          p,
-		"Phase":       h.events.State(),
-		"Match":       match,
-		"Score":       dossier["Score"],
-		"MeetStatus":  h.meetStatusData(p),
-		"MissionCard": h.missionCardSection(p, mission),
-		"ShowTell":    h.showtellData(p),
+	data := map[string]any{"Me": p, "Phase": h.events.State()}
+	for _, c := range pageCards {
+		if c.OnMatch != regionPhase {
+			continue
+		}
+		landCardData(data, c, c.Data(h, p, mission))
 	}
+	return data
+}
+
+// revealData is the match reveal's data: the region's hero — the "It's a
+// match!" card with the score and the partner's persona card, or the
+// no-match state. The reveal has no key of its own: the region renders it
+// from its own map, so its data merges in at the top level.
+func (h *Handler) revealData(p *Participant) map[string]any {
+	dossier, match := h.dossierData(p)
+	return map[string]any{"Me": p, "Match": match, "Score": dossier["Score"]}
 }
 
 // dossierData is the Match page's dossier: the fun payload of the Match — the
