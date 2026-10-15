@@ -283,6 +283,59 @@ func TestMeetings_Between(t *testing.T) {
 	}
 }
 
+// TestMeetings_DossierUnlocked pins the dossier-unlock rule (ADR-0012): the
+// pair's dossier unlocks once their Meeting is completed, or once the event
+// is closed, after which the recap takes over. Every other state stays
+// locked — including an unreadable database, which reads as locked, the
+// safe direction.
+func TestMeetings_DossierUnlocked(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// mate: whether the Participant is matched, so there is a
+		// partner id to consult.
+		mate  bool
+		setup func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant)
+		want  bool
+	}{
+		{"a pending meeting stays locked", true, func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant) {
+			if _, _, err := ms.Confirm(a, b, OriginOther); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"a completed meeting unlocks", true, func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant) {
+			if _, _, err := ms.Confirm(a, b, OriginOther); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := ms.Confirm(b, a, OriginOther); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"the closed event unlocks without a meeting", true, func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant) {
+			if err := events.Advance(PhaseClosed); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"an unmatched participant stays locked", false, nil, false},
+		{"an unreadable database reads as locked", true, func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant) {
+			breakDB(db)
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, events, ms, a, b := meetingSetup(t)
+			if tc.setup != nil {
+				tc.setup(t, db, events, ms, a, b)
+			}
+			partner := b.ID
+			if !tc.mate {
+				partner = ""
+			}
+			if got := ms.DossierUnlocked(a.ID, partner); got != tc.want {
+				t.Errorf("DossierUnlocked(%q, %q): want %v, got %v", a.ID, partner, tc.want, got)
+			}
+		})
+	}
+}
+
 func TestMeetings_ForParticipantAndConnections(t *testing.T) {
 	db, _, ms, a, b := meetingSetup(t)
 	seed(t, db, "c", "The YAML Wrangler", "ready")

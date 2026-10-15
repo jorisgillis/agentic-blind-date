@@ -622,7 +622,7 @@ func (h *Handler) dossierData(p *Participant) (map[string]any, *Participant) {
 	}
 	unlocked := false
 	if match != nil {
-		unlocked = h.dossierUnlocked(p)
+		unlocked = h.meetings.DossierUnlocked(p.ID, p.MatchedWith)
 	}
 	return map[string]any{
 		"Me":          p,
@@ -1774,24 +1774,12 @@ func (h *Handler) scrubbedAll(participants []*Participant) []*Participant {
 // assessment — reason, flags, icebreakers — is scrubbed until the pair's
 // dossier unlocks.
 func (h *Handler) scrubbed(p *Participant) *Participant {
-	if p.Assessment == nil || h.dossierUnlocked(p) {
+	if p.Assessment == nil || h.meetings.DossierUnlocked(p.ID, p.MatchedWith) {
 		return p
 	}
 	cp := *p
 	cp.Assessment = nil
 	return &cp
-}
-
-// dossierUnlocked reports whether p's Match dossier may be shown — on the
-// Match page and in the JSON debug endpoints: once the pair's Meeting is
-// completed, or once the event is closed, after which the evening is over
-// and the recap takes over.
-func (h *Handler) dossierUnlocked(p *Participant) bool {
-	if h.events.State() == PhaseClosed {
-		return true
-	}
-	m, _ := h.meetings.Between(p.ID, p.MatchedWith)
-	return m != nil && m.Completed()
 }
 
 // GET /data/activity

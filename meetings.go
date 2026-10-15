@@ -243,6 +243,21 @@ func (ms *Meetings) Between(a, b string) (*Meeting, error) {
 	return meetingRow(ms.db.db.QueryRow(selectMeeting+` WHERE participant_a = ? AND participant_b = ?`, a, b))
 }
 
+// DossierUnlocked reports whether the pair's Match dossier may be shown — on
+// the Match page and in the JSON debug endpoints (ADR-0012): once the pair's
+// Meeting is completed, or once the event is closed, after which the evening
+// is over and the recap takes over. An empty partner id (an unmatched
+// Participant) stays locked. The predicate is safe to run inside a stream
+// render: it logs and writes nothing, and an unreadable database reads as
+// locked — the safe direction.
+func (ms *Meetings) DossierUnlocked(id, partner string) bool {
+	if ms.events.State() == PhaseClosed {
+		return true
+	}
+	m, _ := ms.Between(id, partner)
+	return m != nil && m.Completed()
+}
+
 // All returns every Meeting, oldest first — the debug endpoint's view.
 func (ms *Meetings) All() ([]Meeting, error) {
 	return ms.queryMeetings(`ORDER BY created_at`)
