@@ -56,6 +56,7 @@ type Handler struct {
 	db          *DB
 	store       *ParticipantStore
 	events      *EventStore
+	evening     *Evening
 	meetings    *Meetings
 	channels    *ContactChannels
 	recaps      *Recaps
@@ -103,6 +104,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 	closing := NewClosing(db, meetings, channels, showtell)
 	return &Handler{
 		db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
+		evening:  NewEvening(db, missions, meetings, slides, matcher),
 		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell, slides: slides, board: NewBoard(db, events),
 		closing:    closing,
 		screen:     NewScreen(db, matcher, meetings, showtell, closing),
@@ -1632,13 +1634,12 @@ func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
 	h.advanceTo(w, r, PhaseSocial)
 }
 
-// advanceTo advances the event to the given phase. A rejected transition — an
-// unknown phase or one before the current one — is a client error; a database
-// failure is not. Advancing to the current phase is a no-op: nothing is
-// written or logged.
+// advanceTo advances the event to the given phase: the Evening module owns
+// the transition and its consequences. A rejected transition — an unknown
+// phase or one before the current one — is a client error; a database
+// failure is not.
 func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
-	before := h.events.State()
-	if err := h.events.Advance(to); err != nil {
+	if err := h.evening.Advance(to); err != nil {
 		if errors.Is(err, ErrIllegalPhaseTransition) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1646,54 +1647,15 @@ func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
 		http.Error(w, "phase change failed: "+err.Error(), 500)
 		return
 	}
-	if after := h.events.State(); after != before {
-		logger("handler").Info("phase advanced", "from", before, "to", after)
-		h.db.LogActivity(after.Activity())
-		// Mission cards go live at the social: generated in a background
-		// worker pool, so the transition returns immediately.
-		if after.MissionCardsLive() {
-			h.missions.GenerateAll()
-		}
-		// The champion is named at the close.
-		if after == PhaseClosed {
-			h.announceChampion()
-		}
-	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
-// announceChampion names the Merge Trophy winner on the ticker when the event
-// closes: the Participant with the most completed meetings, ties broken by
-// persona name. With no Participants there is no champion to name.
-func (h *Handler) announceChampion() {
-	champion, err := h.meetings.Champion()
-	if err != nil {
-		logger("handler").Warn("champion at the close", "err", err)
-		return
-	}
-	if champion == nil {
-		return
-	}
-	noun := "connections"
-	if champion.Connections == 1 {
-		noun = "connection"
-	}
-	h.db.LogActivity(fmt.Sprintf("👑 %s %s takes the Merge Trophy with %d %s!", champion.Symbol, champion.Name, champion.Connections, noun))
-}
-
-// POST /admin/reset
+// POST /admin/reset: the Evening module owns the reset and its consequences.
 func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
-	if err := h.events.Reset(); err != nil {
+	if err := h.evening.Reset(); err != nil {
 		http.Error(w, "reset failed: "+err.Error(), 500)
 		return
 	}
-	// The Slide Deck rows went with the reset; their files go now.
-	if err := h.slides.Sweep(); err != nil {
-		logger("handler").Warn("removing the slide files after the reset", "err", err)
-	}
-	// Clear LLM cache when resetting event
-	h.matcher.ClearCache()
-	logger("handler").Info("event reset")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
