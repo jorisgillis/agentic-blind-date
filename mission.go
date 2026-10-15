@@ -238,6 +238,38 @@ func (m *Missions) Stamped(id string) (map[string]bool, error) {
 	return stamped, nil
 }
 
+// MissionView is the mission card's read model: the card, its stamps and the
+// Participant's connection count, derived together in one pass over their
+// meetings — the count is the length of the stamp set, one connection per
+// completed meeting.
+type MissionView struct {
+	Card        *MissionCard
+	Stamped     map[string]bool
+	Connections int
+}
+
+// View returns the Participant's mission card with its stamps and their
+// connection count in a single pass over their meetings, so the personal
+// page renders the phase header and the mission card from one result — no
+// separate connection COUNT. Nil when they have no card. When the meetings
+// cannot be read the view degrades to unstamped tiles with a zero count —
+// the card still renders — and the failure is logged here.
+func (m *Missions) View(id string) (*MissionView, error) {
+	card, err := m.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if card == nil {
+		return nil, nil
+	}
+	stamped, err := m.Stamped(id)
+	if err != nil {
+		logger("mission").Warn("mission view stamps", "participant", id, "err", err)
+		stamped = map[string]bool{}
+	}
+	return &MissionView{Card: card, Stamped: stamped, Connections: len(stamped)}, nil
+}
+
 // RemoveParticipant deletes a Participant's Mission card when they leave the
 // event.
 func (m *Missions) RemoveParticipant(id string) error {

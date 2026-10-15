@@ -318,17 +318,18 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	mission := h.missionView(p)
 	data := h.waitStatusData(p)
 	data["Profile"] = profile
 	data["QAPairs"] = qaPairs
 	data["MeetStatus"] = h.meetStatusData(p)
-	data["MissionCard"] = h.missionCardData(p)
+	data["MissionCard"] = h.missionCardSection(p, mission)
 	data["ShowTell"] = h.showtellData(p)
 	data["Slides"] = h.slidesData(p)
 	data["Board"] = h.boardData(p)
 	data["Settings"] = h.settingsData(p)
 	data["RecapLink"] = h.recapLinkData(p)
-	data["PhaseHeader"] = h.phaseHeaderData(p)
+	data["PhaseHeader"] = h.phaseHeaderData(p, mission)
 	h.render(w, "wait.html", data)
 }
 
@@ -375,7 +376,7 @@ func (h *Handler) PhaseHeader(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, "fragment-phase-header.html", h.phaseHeaderData(p))
+	h.render(w, "fragment-phase-header.html", h.phaseHeaderData(p, h.missionView(p)))
 }
 
 // phaseHeaderStep is one step of the phase header's progress strip: the phase
@@ -399,7 +400,9 @@ type phaseHeaderBadge struct {
 // phaseHeaderData is the personal pages' phase header. It renders from the
 // phase machine's current state — a late joiner simply sees the earlier steps
 // as done — and weaves the Participant's own status into the current phase.
-func (h *Handler) phaseHeaderData(p *Participant) map[string]any {
+// The mission view is the caller's single pass over the Participant's mission
+// data, shared with the mission card section on full-page renders.
+func (h *Handler) phaseHeaderData(p *Participant, mission *MissionView) map[string]any {
 	phase := h.events.State()
 	steps := make([]phaseHeaderStep, 0, len(phases))
 	for _, q := range phases {
@@ -415,7 +418,7 @@ func (h *Handler) phaseHeaderData(p *Participant) map[string]any {
 		"Phase":      phase,
 		"Steps":      steps,
 		"Summary":    phase.Tonight(),
-		"Status":     h.phaseHeaderStatus(p, phase),
+		"Status":     h.phaseHeaderStatus(p, phase, mission),
 		"QueueBadge": h.phaseHeaderQueueBadge(p, phase),
 	}
 }
@@ -452,23 +455,19 @@ func (h *Handler) phaseHeaderQueueBadge(p *Participant, phase Phase) *phaseHeade
 // per phase: the Interview's progress during onboarding, the Mission card's
 // stamped tiles during the social, a show & tell pointer during show & tell,
 // and the recap pointer once the event is closed.
-func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase) string {
+func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase, mission *MissionView) string {
 	switch phase {
 	case PhaseSocial:
-		card, err := h.missions.Get(p.ID)
-		if err != nil {
-			logger("handler").Warn("phase header mission card", "participant", p.ID, "err", err)
-		}
-		if card == nil {
+		if mission == nil {
 			return "Mission: your card is being prepared"
 		}
 		stamped := 0
-		for _, tile := range h.stampedTiles(p, card) {
+		for _, tile := range stampedTiles(mission) {
 			if tile.Stamped {
 				stamped++
 			}
 		}
-		return fmt.Sprintf("Mission: %d of %d tiles stamped", stamped, len(card.Tiles))
+		return fmt.Sprintf("Mission: %d of %d tiles stamped", stamped, len(mission.Card.Tiles))
 	case PhaseShowTell:
 		return "Show & tell: audience questions open"
 	case PhaseClosed:
@@ -539,10 +538,13 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 	// the recap link — outside the phase-content region, so they survive
 	// phase swaps and keep their own refresh wiring.
 	dossier, _ := h.dossierData(p)
+	// The mission view is this render's single pass over the Participant's
+	// mission data, shared between the phase header and the mission card.
+	mission := h.missionView(p)
 	h.render(w, "match.html", map[string]any{
 		"Me":           p,
-		"PhaseHeader":  h.phaseHeaderData(p),
-		"PhaseContent": h.phaseContentData(p),
+		"PhaseHeader":  h.phaseHeaderData(p, mission),
+		"PhaseContent": h.phaseContentData(p, mission),
 		"Slides":       h.slidesData(p),
 		"Board":        h.boardData(p),
 		"Dossier":      dossier,
@@ -569,7 +571,7 @@ func (h *Handler) PhaseContent(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("HX-Redirect", dest)
 		return
 	}
-	h.render(w, "fragment-phase-content.html", h.phaseContentData(p))
+	h.render(w, "fragment-phase-content.html", h.phaseContentData(p, h.missionView(p)))
 }
 
 // phaseContentData is the match page's phase-content region: the per-card
@@ -577,8 +579,10 @@ func (h *Handler) PhaseContent(w http.ResponseWriter, r *http.Request) {
 // the mission card and the meet section during the social, the show & tell
 // tooling from show & tell on. The evergreen cards — the dossier, the
 // settings, the share-profile QR and the recap link — live in the page's
-// "More" drawer instead (ADR 0019, step 3, #138), outside this region.
-func (h *Handler) phaseContentData(p *Participant) map[string]any {
+// "More" drawer instead (ADR 0019, step 3, #138), outside this region. The
+// mission view is the caller's single pass over the Participant's mission
+// data, shared with the phase header on full-page renders.
+func (h *Handler) phaseContentData(p *Participant, mission *MissionView) map[string]any {
 	dossier, match := h.dossierData(p)
 	return map[string]any{
 		"Me":          p,
@@ -586,7 +590,7 @@ func (h *Handler) phaseContentData(p *Participant) map[string]any {
 		"Match":       match,
 		"Score":       dossier["Score"],
 		"MeetStatus":  h.meetStatusData(p),
-		"MissionCard": h.missionCardData(p),
+		"MissionCard": h.missionCardSection(p, mission),
 		"ShowTell":    h.showtellData(p),
 	}
 }
@@ -658,27 +662,42 @@ type missionTileView struct {
 	Stamped bool `json:"stamped"`
 }
 
-// missionCardData is the personal page's mission card section: the card's
-// tiles with their stamp state (derived from completed meetings) and the
-// live progress — connections and rank vs the top 5. Without a card it is
+// missionCardData is the personal page's mission card section from a fresh
+// single pass over the Participant's mission data.
+func (h *Handler) missionCardData(p *Participant) map[string]any {
+	return h.missionCardSection(p, h.missionView(p))
+}
+
+// missionView is the personal page's single pass over the Participant's
+// mission data: the card, its stamps and the connection count together. A
+// read failure degrades to nil, so the sections show the placeholder —
+// unreadable missions never break the page.
+func (h *Handler) missionView(p *Participant) *MissionView {
+	view, err := h.missions.View(p.ID)
+	if err != nil {
+		logger("handler").Warn("mission view", "participant", p.ID, "err", err)
+		return nil
+	}
+	return view
+}
+
+// missionCardSection is the personal page's mission card section from an
+// already-computed mission view: the card's tiles with their stamp state and
+// the live progress — connections and rank vs the top 5. Without a card it is
 // the preparing placeholder while the event allows cards, and empty
 // otherwise.
-func (h *Handler) missionCardData(p *Participant) map[string]any {
+func (h *Handler) missionCardSection(p *Participant, mission *MissionView) map[string]any {
 	data := map[string]any{
 		"Me":        p,
 		"Preparing": h.events.State().MissionCardsLive(),
 	}
-	card, err := h.missions.Get(p.ID)
-	if err != nil {
-		logger("handler").Warn("mission card", "participant", p.ID, "err", err)
-	}
-	if card == nil {
+	if mission == nil {
 		return data
 	}
-	tiles := h.stampedTiles(p, card)
+	tiles := stampedTiles(mission)
 	data["Tiles"] = tiles
 	data["Grid"] = tileGrid(tiles)
-	data["Connections"] = h.meetings.Connections(p.ID)
+	data["Connections"] = mission.Connections
 	board, err := h.meetings.Leaderboard()
 	if err != nil {
 		logger("handler").Warn("connection leaderboard", "participant", p.ID, "err", err)
@@ -692,17 +711,13 @@ func (h *Handler) missionCardData(p *Participant) map[string]any {
 	return data
 }
 
-// stampedTiles joins the card's tiles with the Participant's completed
-// meetings: a tile is stamped when a completed meeting exists with that
-// person. Stamps derive from the meetings — there is no stamped_at column.
-func (h *Handler) stampedTiles(p *Participant, card *MissionCard) []missionTileView {
-	stamped, err := h.missions.Stamped(p.ID)
-	if err != nil {
-		logger("handler").Warn("mission card stamps", "participant", p.ID, "err", err)
-	}
-	tiles := make([]missionTileView, 0, len(card.Tiles))
-	for _, t := range card.Tiles {
-		tiles = append(tiles, missionTileView{MissionTile: t, Stamped: stamped[t.PersonID]})
+// stampedTiles joins the mission view's tiles with its stamps: a tile is
+// stamped when the Participant has a completed meeting with that person.
+// Stamps derive from the meetings — there is no stamped_at column.
+func stampedTiles(mission *MissionView) []missionTileView {
+	tiles := make([]missionTileView, 0, len(mission.Card.Tiles))
+	for _, t := range mission.Card.Tiles {
+		tiles = append(tiles, missionTileView{MissionTile: t, Stamped: mission.Stamped[t.PersonID]})
 	}
 	return tiles
 }
@@ -1588,20 +1603,20 @@ func (h *Handler) DataMissionCard(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	card, err := h.missions.Get(id)
+	view, err := h.missions.View(id)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if card == nil {
+	if view == nil {
 		http.NotFound(w, r)
 		return
 	}
 	writeJSON(w, map[string]any{
 		"participant_id": p.ID,
 		"persona_name":   p.PersonaName,
-		"tiles":          h.stampedTiles(p, card),
-		"created_at":     card.CreatedAt,
+		"tiles":          stampedTiles(view),
+		"created_at":     view.Card.CreatedAt,
 	})
 }
 

@@ -697,6 +697,66 @@ func TestMissions_StampedDerivesFromCompletedMeetings(t *testing.T) {
 	_ = events
 }
 
+// TestMissions_ViewReturnsStampsAndConnectionsInOnePass covers the module's
+// single-pass read model: the stamp set and the connection count are derived
+// together from one pass over the Participant's meetings — the count is the
+// length of the stamp set — assertable without rendering anything.
+func TestMissions_ViewReturnsStampsAndConnectionsInOnePass(t *testing.T) {
+	db, _, ms, a, b := meetingSetup(t)
+	seed(t, db, "c", "The Third", "ready")
+	seed(t, db, "d", "The Fourth", "ready")
+	missions := NewMissions(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), newFakeLLM())
+
+	// Without a card there is no view: the personal page shows the
+	// placeholder.
+	if view, err := missions.View("a"); view != nil || err != nil {
+		t.Fatalf("no card yet: want (nil, nil), got (%v, %v)", view, err)
+	}
+	if err := missions.save(&MissionCard{ParticipantID: "a"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two completed meetings stamp two people and count two connections; a
+	// pending meeting does neither.
+	c, d := reload(t, db, "c"), reload(t, db, "d")
+	for _, pair := range [][2]*Participant{{a, b}, {a, c}} {
+		if _, _, err := ms.Confirm(pair[0], pair[1], OriginMission); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := ms.Confirm(pair[1], pair[0], OriginMission); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := ms.Confirm(a, d, OriginMission); err != nil {
+		t.Fatal(err) // one-sided: pending, not completed
+	}
+
+	view, err := missions.View("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Card == nil {
+		t.Fatal("the view carries the card")
+	}
+	if len(view.Stamped) != 2 || !view.Stamped["b"] || !view.Stamped["c"] {
+		t.Errorf("the stamps are the completed meetings' people, want b and c, got %v", view.Stamped)
+	}
+	if view.Connections != len(view.Stamped) {
+		t.Errorf("the connection count is the length of the stamp set: want %d, got %d", len(view.Stamped), view.Connections)
+	}
+
+	// When the meetings cannot be read the view still carries the card,
+	// unstamped with a zero count — the card renders regardless.
+	breakOnFault(t, db, "meet_read")
+	view, err = missions.View("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Card == nil || len(view.Stamped) != 0 || view.Connections != 0 {
+		t.Errorf("unreadable meetings degrade to an unstamped view, got %+v", view)
+	}
+}
+
 func TestMissions_RemoveParticipant(t *testing.T) {
 	db := newTestDB(t)
 	missions := NewMissions(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), newFakeLLM())
