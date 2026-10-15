@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -147,4 +148,38 @@ func TestCardRegistry_PlacementDrivesThePageData(t *testing.T) {
 			t.Errorf("the phase-content region's data map should not carry %q", key)
 		}
 	}
+}
+
+// TestMatchStream_ANewRegistryEntryPushesItsCard proves #155's claim: the
+// stream composes whatever signature sources the registry names, so a card
+// added by a registry entry alone — the stream code is untouched — gets its
+// push when its source changes. The test's entry watches the persona's
+// name, which no card on the match page watches: the refresh below can
+// only arrive through the new entry.
+func TestMatchStream_ANewRegistryEntryPushesItsCard(t *testing.T) {
+	pageCards = append(pageCards, pageCard{
+		Name:     "test-card",
+		OnMatch:  regionBody,
+		Key:      "TestCard",
+		Fragment: "fragment-persona-card.html",
+		Data:     func(h *Handler, p *Participant, _ *MissionView) any { return p },
+		Signature: func(h *Handler, p *Participant) string {
+			return "persona:" + p.PersonaName + ";"
+		},
+	})
+	t.Cleanup(func() { pageCards = pageCards[:len(pageCards)-1] })
+
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	seed(t, deps.db, "b", "The Crab", "ready")
+	pair(t, deps.db, "a", "b")
+	deps.events.Reveal()
+
+	s := open(t, srv, "/user/match-stream/a")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
+
+	setPersona(t, deps.db, "a", "The Renamed", "Ships things")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 }

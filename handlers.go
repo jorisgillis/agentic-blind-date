@@ -879,11 +879,15 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 }
 
 // GET /user/match-stream/{id}
-// Tells the match page to refresh its meet section and its dossier when the
-// Participant's meetings or the phase change — the pair's Meeting completing
-// unlocks the dossier. A phase transition additionally emits a distinct
-// 'phase' event, so the phase header updates live. Like the pipeline stream,
-// it syncs once on connect, so a page that rendered before the stream opened
+// Tells the match page to refresh its cards when what they show changes —
+// the stream's diff key is the card registry's per-card signature sources
+// composed together (#155), so every pushed card on the page contributes
+// what its own push depends on: the phase, the meetings (the meet section,
+// the dossier's unlock), the Mission card appearing, the show & tell
+// sign-up state, the Slide Decks, the Board, the recap link. A phase
+// transition additionally emits a distinct 'phase' event, so the phase
+// header updates live and the region swaps. Like the pipeline stream, it
+// syncs once on connect, so a page that rendered before the stream opened
 // catches up.
 func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -895,7 +899,7 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	last := h.meetSignature(first)
+	last := h.pageSignature(first, onMatchPage)
 	lastPhase := h.events.State()
 	synced := false
 	h.watch(w, r, func() bool {
@@ -917,37 +921,12 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 			sseEvent(w, "refresh")
 			return false
 		}
-		if now := h.meetSignature(p); now != last {
+		if now := h.pageSignature(p, onMatchPage); now != last {
 			last = now
 			sseEvent(w, "refresh")
 		}
 		return false
 	})
-}
-
-// meetSignature is what the meet streams watch: the phase, the Participant's
-// meetings (their count and how many are completed), whether their Mission
-// card exists — a freshly generated card appears via push — and their show &
-// tell sign-up state.
-type meetSignature struct {
-	phase     Phase
-	meetings  int
-	completed int
-	card      bool
-	showtell  string
-	slides    string
-	board     string
-}
-
-func (h *Handler) meetSignature(p *Participant) meetSignature {
-	ms, _ := h.meetings.ForParticipant(p.ID)
-	completed := 0
-	for _, m := range ms {
-		if m.Completed() {
-			completed++
-		}
-	}
-	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID), h.showtell.Signature(p.ID), h.slides.Signature(), h.board.Signature(p.ID)}
 }
 
 // ── contact exchange: settings + the post-meeting prompt ───────────────────
@@ -1861,12 +1840,16 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /user/wait-stream/{id}
-// Tells the wait page to refresh when what it shows changes (the ready count,
-// being matched, the persona being crafted, the meet section) and redirects
-// once the Participant belongs elsewhere. A phase transition additionally
-// emits a distinct 'phase' event, so the phase header updates live. Like the
-// pipeline stream, it syncs once on connect, so a page that rendered before
-// the stream opened catches up.
+// Tells the wait page to refresh its cards when what they show changes —
+// the stream's diff key is the card registry's per-card signature sources
+// composed together (#155), so every pushed card on the page contributes
+// what its own push depends on: the ready count and the Match (the status
+// card), the persona being crafted, the phase, the meetings, the Mission
+// card, the show & tell sign-up state, the Slide Decks, the Board, the
+// recap link — and redirects once the Participant belongs elsewhere. A
+// phase transition additionally emits a distinct 'phase' event, so the
+// phase header updates live. Like the pipeline stream, it syncs once on
+// connect, so a page that rendered before the stream opened catches up.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -1877,13 +1860,7 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	type shown struct {
-		ready   int
-		matched bool
-		meet    meetSignature
-		persona string
-	}
-	last := shown{h.db.ReadyCount(), first.IsMatched(), h.meetSignature(first), first.PersonaName}
+	last := h.pageSignature(first, onWaitPage)
 	lastPhase := h.events.State()
 	synced := false
 	h.watch(w, r, func() bool {
@@ -1909,7 +1886,7 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 			sseEvent(w, "refresh")
 			return false
 		}
-		if now := (shown{h.db.ReadyCount(), p.IsMatched(), h.meetSignature(p), p.PersonaName}); now != last {
+		if now := h.pageSignature(p, onWaitPage); now != last {
 			last = now
 			sseEvent(w, "refresh")
 		}

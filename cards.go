@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 )
 
 // The personal pages' card registry (ADR 0019): one entry per card, naming
@@ -197,4 +198,25 @@ func landCardData(data map[string]any, c pageCard, d any) {
 		return
 	}
 	data[c.Key] = d
+}
+
+// onWaitPage reports whether the registry places the card on the wait page.
+func onWaitPage(c pageCard) bool { return c.OnWait != "" }
+
+// onMatchPage reports whether the registry places the card on the match page.
+func onMatchPage(c pageCard) bool { return c.OnMatch != "" }
+
+// pageSignature is what a personal page's stream watches (#155): the
+// signature sources of every pushed card the registry places on the page,
+// composed in registry order. The stream code no longer changes per card:
+// a new card's push arrives because its registry entry names what to watch.
+func (h *Handler) pageSignature(p *Participant, on func(pageCard) bool) string {
+	var b strings.Builder
+	for _, c := range pageCards {
+		if c.Signature == nil || !on(c) {
+			continue
+		}
+		b.WriteString(c.Signature(h, p))
+	}
+	return b.String()
 }
