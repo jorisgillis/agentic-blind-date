@@ -34,6 +34,9 @@ type Participant struct {
 	// MeetCode is the Participant's 6-character meet code (see meetcode.go);
 	// assigned at registration and backfilled for existing Participants.
 	MeetCode string
+	// Theme is the Participant's theme choice's registry name (see theme.go);
+	// midnight until they choose one in Settings.
+	Theme string
 }
 
 // DisplayHandle is how the Participant is identified on screen: "@handle" for
@@ -87,7 +90,8 @@ func NewDB(path string) (*DB, error) {
 			green_flags      TEXT NOT NULL DEFAULT '[]',
 			icebreakers      TEXT NOT NULL DEFAULT '[]',
 			created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			meet_code        TEXT
+			meet_code        TEXT,
+			theme            TEXT NOT NULL DEFAULT 'midnight'
 		);
 
 		CREATE TABLE IF NOT EXISTS event_state (
@@ -200,6 +204,7 @@ func NewDB(path string) (*DB, error) {
 		`UPDATE participants SET pipeline_step = 'ready' WHERE pipeline_step = 'matched'`, // Relationship State is not a Pipeline Step
 		`UPDATE event_state SET value = 'social' WHERE value = 'revealed'`,                // the Reveal became the Social phase
 		`ALTER TABLE participants ADD COLUMN meet_code TEXT`,                              // meet codes, backfilled below
+		`ALTER TABLE participants ADD COLUMN theme TEXT NOT NULL DEFAULT 'midnight'`,      // theme choices, default backfilled
 	} {
 		sqlDB.Exec(m)
 	}
@@ -243,7 +248,7 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 		&profileJSON, &questionsJSON, &answersJSON, &interestsJSON,
 		&p.PipelineStep,
 		&p.MatchedWith, &compatScore, &compatReason,
-		&redFlags, &greenFlags, &icebreakers, &p.CreatedAt, &p.MeetCode,
+		&redFlags, &greenFlags, &icebreakers, &p.CreatedAt, &p.MeetCode, &p.Theme,
 	)
 	if err != nil {
 		return nil, err
@@ -289,7 +294,7 @@ const selectParticipant = `
 	       persona_name, persona_color, persona_symbol, persona_tagline,
 	       profile_json, questions, answers_json, interests, pipeline_step,
 	       COALESCE(matched_with, ''), compat_score, compat_reason,
-	       red_flags, green_flags, icebreakers, created_at, COALESCE(meet_code, '')
+	       red_flags, green_flags, icebreakers, created_at, COALESCE(meet_code, ''), theme
 	FROM participants`
 
 func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {

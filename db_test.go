@@ -281,6 +281,28 @@ func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
 	}
 }
 
+func TestNewDB_GivesOldParticipantsTheDefaultTheme(t *testing.T) {
+	path := t.TempDir() + "/old.db"
+	old, err := NewDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.CreateParticipant("id-1", "octocat", "Octo", true)
+	// Migration-test setup: drop theme to recreate the schema from before
+	// the column existed, so the migration's NOT NULL DEFAULT backfill runs.
+	old.db.Exec(`ALTER TABLE participants DROP COLUMN theme`)
+	old.Close()
+
+	db, err := NewDB(path)
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	defer db.Close()
+	if got := reload(t, db, "id-1").Theme; got != "midnight" {
+		t.Errorf("pre-existing Participant: want the default theme midnight, got %q", got)
+	}
+}
+
 func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
 	path := t.TempDir() + "/old.db"
 	old, err := NewDB(path)

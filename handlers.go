@@ -94,6 +94,7 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		"divInt":    func(a, b int) int { return a / b },
 		"colorName": paletteName,
 		"textColor": paletteText,
+		"themeCSS":  themeCSS,
 		"fileSize":  formatFileSize,
 		"linkify":   linkify,
 	}
@@ -784,12 +785,23 @@ func (h *Handler) Meet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The viewer's theme surrounds the target's business card: the viewer
+	// logged-in gets their choice, an anonymous viewer gets the default.
+	// The handler resolves the name because Me is a possibly-nil
+	// *Participant and field access on nil errors at template-execution
+	// time — the template gets a plain string.
+	themeName := ""
+	if me != nil {
+		themeName = me.Theme // themeByName absorbs ""
+	}
+
 	h.render(w, "meet.html", map[string]any{
 		"Target":    target,
 		"Me":        me,
 		"Allowed":   allowed,
 		"Already":   already,
 		"Completed": completed,
+		"ThemeName": themeName,
 	})
 }
 
@@ -966,6 +978,21 @@ func (h *Handler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 	data := h.settingsData(p)
 	data["Saved"] = true
 	h.render(w, "fragment-settings.html", data)
+}
+
+// POST /user/theme/{id} — saves the Participant's theme choice.
+func (h *Handler) SaveTheme(w http.ResponseWriter, r *http.Request) {
+	p, err := h.store.Get(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("theme"))
+	if err := h.store.Change(ParticipantChange{ID: p.ID, Theme: &name}); err != nil {
+		http.Error(w, "saving your theme failed: "+err.Error(), 500)
+		return
+	}
+	w.Header().Set("HX-Redirect", h.destination(p))
 }
 
 // settingsData is the personal page's settings section: the Participant's

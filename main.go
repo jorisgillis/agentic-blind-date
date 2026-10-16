@@ -128,6 +128,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/match-stream/{id}", h.MatchStream)
 	mux.HandleFunc("GET /user/settings/{id}", h.Settings)
 	mux.HandleFunc("POST /user/settings/{id}", h.SaveSettings)
+	mux.HandleFunc("POST /user/theme/{id}", h.SaveTheme)
 	mux.HandleFunc("GET /user/recap-link/{id}", h.RecapLink)
 	mux.HandleFunc("GET /user/recap/{token}", h.Recap)
 	mux.HandleFunc("POST /user/showtell/signup/{id}", h.ShowTellSignup)

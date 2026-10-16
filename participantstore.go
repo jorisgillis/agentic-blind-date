@@ -130,7 +130,8 @@ type ParticipantChange struct {
 	Persona      *Persona
 	Profile      *GitHubProfile
 	Answers      map[string]string
-	PipelineStep *Step // guarded exactly like advanceStep: only from the step right before it
+	PipelineStep *Step   // guarded exactly like advanceStep: only from the step right before it
+	Theme        *string // the Participant's theme choice's registry name (see theme.go); stored as-is — themeByName absorbs unknown names at render
 }
 
 // Change applies one or more Participant changes in a single transaction,
@@ -189,6 +190,11 @@ func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 			}
 			if c.PipelineStep != nil {
 				if err := advanceStep(tx, c.ID, *c.PipelineStep); err != nil {
+					return err
+				}
+			}
+			if c.Theme != nil {
+				if err := execFound(tx, c.ID, `UPDATE participants SET theme = ? WHERE id = ?`, *c.Theme, c.ID); err != nil {
 					return err
 				}
 			}
