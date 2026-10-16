@@ -35,6 +35,69 @@ func TestThemeCSSInjectsTheThemeAsVariables(t *testing.T) {
 	}
 }
 
+// TestThemeCSS_EmitsTheWalkthroughVariables pins the landing page walkthrough's
+// dedicated variables (#173): themeCSS emits them after the ten role variables,
+// with each theme's locked per-theme values, in sorted key order — so the
+// emitted block is stable across runs.
+func TestThemeCSS_EmitsTheWalkthroughVariables(t *testing.T) {
+	for _, tc := range []struct {
+		theme string
+		want  []string // sorted by variable name, as emitted
+	}{
+		{"midnight", []string{
+			"--color-walk-amber-400:#fbbf24",
+			"--color-walk-emerald-300:#6ee7b7",
+			"--color-walk-fuchsia-400:#f0abfc",
+			"--color-walk-gray-500:#6b7280",
+			"--color-walk-gray-600:#4b5563",
+			"--color-walk-green-500:#22c55e",
+			"--color-walk-green-950:#052e16",
+			"--color-walk-indigo-300:#a5b4fc",
+			"--color-walk-indigo-500:#6366f1",
+			"--color-walk-indigo-900:#312e81",
+			"--color-walk-indigo-950:#1e1b4b",
+		}},
+		{"daylight", []string{
+			"--color-walk-amber-400:#b45309",
+			"--color-walk-emerald-300:#059669",
+			"--color-walk-fuchsia-400:#c026d3",
+			"--color-walk-gray-500:#6b7280",
+			"--color-walk-gray-600:#4b5563",
+			"--color-walk-green-500:#22c55e",
+			"--color-walk-green-950:#052e16",
+			"--color-walk-indigo-300:#4f46e5",
+			"--color-walk-indigo-500:#6366f1",
+			"--color-walk-indigo-900:#e0e7ff",
+			"--color-walk-indigo-950:#eef2ff",
+		}},
+	} {
+		css := string(themeCSS(tc.theme))
+
+		// Every value present, after the role variables, in sorted key order.
+		at := strings.Index(css, "--color-surface-hover:")
+		if at < 0 {
+			t.Fatalf("themeCSS(%q): want the role variables before the walk variables, got %s", tc.theme, css)
+		}
+		for _, want := range tc.want {
+			next := strings.Index(css[at:], want)
+			if next < 0 {
+				t.Errorf("themeCSS(%q): want %s after the role variables, got %s", tc.theme, want, css)
+				break
+			}
+			at += next + len(want)
+		}
+		// The walk variables close the block: nothing theme-colored follows.
+		if tail := css[at:]; !strings.HasPrefix(tail, ";--color-walk-") && !strings.HasPrefix(tail, "}") {
+			t.Errorf("themeCSS(%q): want the walk variables last, got tail %q", tc.theme, tail)
+		}
+
+		// The block is deterministic: two calls emit byte-identical CSS.
+		if again := string(themeCSS(tc.theme)); again != css {
+			t.Errorf("themeCSS(%q): want a stable block across calls", tc.theme)
+		}
+	}
+}
+
 // TestSaveTheme_SavesTheChoiceAndRedirectsToTheirPage covers the theme
 // picker's save: the posted name is stored via the store, and the response
 // is an HX-Redirect to the Participant's destination page — the page's head

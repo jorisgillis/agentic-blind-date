@@ -112,6 +112,55 @@ func TestLanding_RendersTheAnimatedWalkthrough(t *testing.T) {
 	}
 }
 
+// TestLanding_WalkthroughStyleReadsThemeVariables covers the walkthrough's
+// converted style block (#173): its dedicated colors are --color-walk-*
+// references, the glows compose from variables via color-mix, and the page's
+// head injects the walkthrough values for the Public theme.
+func TestLanding_WalkthroughStyleReadsThemeVariables(t *testing.T) {
+	srv, _ := newTestServer(t, nil, nil)
+
+	body := readBody(t, get(t, srv, "/user"))
+
+	// Dedicated walkthrough variables, referenced in the style block.
+	for _, want := range []string{
+		"var(--color-walk-gray-600)",
+		"var(--color-walk-gray-500)",
+		"var(--color-walk-indigo-300)",
+		"var(--color-walk-indigo-500)",
+		"var(--color-walk-indigo-900)",
+		"var(--color-walk-indigo-950)",
+		"var(--color-walk-fuchsia-400)",
+		"var(--color-walk-emerald-300)",
+		"var(--color-walk-amber-400)",
+		"var(--color-walk-green-500)",
+		"var(--color-walk-green-950)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page: want %q in the walkthrough style block", want)
+		}
+	}
+
+	// The glows compose from the variables; the injected head carries the
+	// default Public theme's walk values alongside its role variables.
+	for _, want := range []string{
+		"color-mix(in srgb, var(--color-accent-muted) 22%, transparent)",
+		"color-mix(in srgb, var(--color-walk-fuchsia-400) 22%, transparent)",
+		"color-mix(in srgb, var(--color-walk-indigo-500) 35%, transparent)",
+		"--color-walk-indigo-900:#312e81", // Midnight: the Public theme default
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page: want %q", want)
+		}
+	}
+
+	// The two black rgba() shadows stay hardcoded (spec §7, exception 4).
+	for _, want := range []string{"rgba(0, 0, 0, 0.5)", "rgba(0, 0, 0, 0.45)"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing page: want the hardcoded shadow %q", want)
+		}
+	}
+}
+
 func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	deps.events.Reveal() // after the Reveal, matched Participants see their Match
