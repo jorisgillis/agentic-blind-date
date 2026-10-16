@@ -997,7 +997,8 @@ func (h *Handler) SaveTheme(w http.ResponseWriter, r *http.Request) {
 
 // settingsData is the personal page's settings section: the Participant's
 // contact channels — entered once, off by default — with the github channel
-// pre-filled from their GitHub profile.
+// pre-filled from their GitHub profile, and the theme registry for the
+// section's theme picker.
 func (h *Handler) settingsData(p *Participant) map[string]any {
 	channels, err := h.channels.Channels(p.ID)
 	if err != nil {
@@ -1008,7 +1009,7 @@ func (h *Handler) settingsData(p *Participant) map[string]any {
 			channels[i].Value = githubHandle(p)
 		}
 	}
-	return map[string]any{"Me": p, "Channels": channels}
+	return map[string]any{"Me": p, "Channels": channels, "Themes": themes}
 }
 
 // githubHandle is the Participant's GitHub handle, pre-filled into the github

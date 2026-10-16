@@ -124,3 +124,113 @@ func TestSaveTheme_UnknownParticipantIsNotFound(t *testing.T) {
 		t.Errorf("POST /user/theme/nobody: want 404, got %d", resp.StatusCode)
 	}
 }
+
+// picker is the theme-picker block of the settings section: the markup from
+// the block's own label on.
+func picker(body string) string {
+	at := strings.Index(body, "🎨 Theme")
+	if at < 0 {
+		return ""
+	}
+	return body[at:]
+}
+
+// buttonFor is the picker's swatch button for the labeled theme, without the
+// label line under it.
+func buttonFor(p, label string) string {
+	at := strings.Index(p, `aria-label="`+label+`"`)
+	if at < 0 {
+		return ""
+	}
+	return p[at : strings.Index(p[at:], "</button>")+at]
+}
+
+// TestSettings_ShowsTheThemePicker covers the settings section's theme picker
+// (#174): one swatch form per registry entry — in the registry's stable order,
+// posting to /user/theme/{id}, filled with each theme's literal colors — with
+// the stored theme marked current: its button ringed and disabled, its label
+// bold; every other label muted.
+func TestSettings_ShowsTheThemePicker(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	if resp := post(t, srv, "/user/theme/a", url.Values{"theme": {"daylight"}}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("saving a's theme: want 200, got %d", resp.StatusCode)
+	}
+
+	p := picker(readBody(t, get(t, srv, "/user/settings/a")))
+
+	// The block's own label and description.
+	if !strings.Contains(p, "🎨 Theme") || !strings.Contains(p, "One click saves — the page reloads in its new look.") {
+		t.Errorf("the picker carries its label and description, got: %s", p)
+	}
+	// One swatch form per registry entry, each posting to the theme save.
+	if got := strings.Count(p, `hx-post="/user/theme/a"`); got != len(themes) {
+		t.Errorf("want %d swatch forms posting to /user/theme/a, got %d in: %s", len(themes), got, p)
+	}
+	// The swatches in registry order — the registry's stable order is the
+	// picker's order.
+	last := -1
+	for _, theme := range themes {
+		at := strings.Index(p, `value="`+theme.Name+`"`)
+		if at < 0 {
+			t.Errorf("the picker shows the %s swatch, got: %s", theme.Name, p)
+			continue
+		}
+		if at < last {
+			t.Errorf("the %s swatch is out of registry order, got: %s", theme.Name, p)
+		}
+		last = at
+	}
+	// Every swatch shows its theme's literal colors — never the page's CSS
+	// variables, which would render every swatch in the current theme.
+	if !strings.Contains(p, `style="background: #f9fafb; border: 2px solid #e5e7eb"`) ||
+		!strings.Contains(p, `style="background: #030712; border: 2px solid #1f2937"`) {
+		t.Errorf("the swatches are filled with the themes' literal hexes, got: %s", p)
+	}
+	if strings.Count(p, `style="background: #4f46e5"`) != len(themes) {
+		t.Errorf("each swatch carries its theme's literal accent dot, got: %s", p)
+	}
+
+	// The stored theme is marked current: ringed and disabled, its label bold.
+	if marked := buttonFor(p, "Daylight"); !strings.Contains(marked, "disabled") || !strings.Contains(marked, "ring-2 ring-[var(--color-accent)]") {
+		t.Errorf("the stored theme's swatch is ringed and disabled, got: %s", marked)
+	}
+	if !strings.Contains(p, `font-bold text-[var(--color-text)]">Daylight</p>`) {
+		t.Errorf("the stored theme's label is bold in the text color, got: %s", p)
+	}
+	// Every other swatch is a plain button with a muted label.
+	if plain := buttonFor(p, "Midnight"); strings.Contains(plain, "disabled") || strings.Contains(plain, "ring-2") {
+		t.Errorf("only the stored theme is marked current, got: %s", plain)
+	}
+	if !strings.Contains(p, `text-[var(--color-text-muted)]">Midnight</p>`) {
+		t.Errorf("the other labels sit muted, got: %s", p)
+	}
+	// No fragment wiring: the response to a swatch's post is an HX-Redirect, so
+	// the forms carry no hx-target or hx-swap.
+	for _, absent := range []string{"hx-target", "hx-swap", "hx-vals"} {
+		if strings.Contains(p, absent) {
+			t.Errorf("a swatch form carries %q — the save redirects the whole page, got: %s", absent, p)
+		}
+	}
+}
+
+// TestSettings_AnUnknownStoredThemeMarksNothingCurrent covers the lenient
+// rule's render side: a stored name outside the registry matches no swatch, so
+// nothing is marked current and every label sits muted.
+func TestSettings_AnUnknownStoredThemeMarksNothingCurrent(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	if resp := post(t, srv, "/user/theme/a", url.Values{"theme": {"sepia"}}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("saving a's theme: want 200, got %d", resp.StatusCode)
+	}
+
+	p := picker(readBody(t, get(t, srv, "/user/settings/a")))
+
+	if strings.Contains(p, "disabled") || strings.Contains(p, "ring-2") {
+		t.Errorf("no swatch is current under an unknown stored theme, got: %s", p)
+	}
+	if !strings.Contains(p, `text-[var(--color-text-muted)]">Midnight</p>`) ||
+		!strings.Contains(p, `text-[var(--color-text-muted)]">Daylight</p>`) {
+		t.Errorf("every swatch label sits muted under an unknown stored theme, got: %s", p)
+	}
+}

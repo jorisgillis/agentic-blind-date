@@ -536,6 +536,36 @@
     </button>
     {{if .Saved}}<p class="text-green-800 text-xs font-semibold text-center">✅ Saved</p>{{end}}
   </form>
+  {{/* The theme picker: one swatch per registry entry, in registry order. The
+       swatch fills are the themes' literal hexes — a swatch's job is to show
+       the other theme's colors — never the page's CSS variables. Each swatch
+       posts on its own; the response is an HX-Redirect, so the swatch forms
+       carry no hx-target or hx-swap and sit outside the contact form above. */}}
+  <div class="border-t border-[var(--color-border)] pt-3 space-y-3">
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">🎨 Theme</p>
+    <p class="text-[var(--color-text-muted)] text-xs">One click saves — the page reloads in its new look.</p>
+    <div class="flex gap-3">
+    {{range .Themes}}
+    <form hx-post="/user/theme/{{$.Me.ID}}" class="text-center">
+      <input type="hidden" name="theme" value="{{.Name}}">
+      <button
+        type="submit"
+        aria-label="{{.Label}}"
+        {{if eq .Name $.Me.Theme}}disabled{{end}}
+        {{if eq .Name $.Me.Theme}}class="block rounded-full ring-2 ring-[var(--color-accent)]"{{else}}class="block rounded-full"{{end}}
+      >
+        <span
+          class="flex h-9 w-9 items-center justify-center rounded-full"
+          style="background: {{.Background}}; border: 2px solid {{.Border}}"
+        >
+          <span class="h-3 w-3 rounded-full" style="background: {{.Accent}}"></span>
+        </span>
+      </button>
+      <p class="text-xs mt-1 {{if eq .Name $.Me.Theme}}font-bold text-[var(--color-text)]{{else}}text-[var(--color-text-muted)]{{end}}">{{.Label}}</p>
+    </form>
+    {{end}}
+    </div>
+  </div>
 </div>
 {{end}}
 
