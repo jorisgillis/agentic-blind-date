@@ -137,7 +137,7 @@ func assertRenderedQuestion(t *testing.T, context string, resp *http.Response, i
 		for _, opt := range q.Options {
 			wants = append(wants,
 				`value="`+htmlRender(opt)+`"`,
-				`>`+htmlRender(opt)+`</button>`,
+				`><span class="hover:text-[var(--color-accent-text)]">`+htmlRender(opt)+`</span></button>`,
 			)
 		}
 	default: // free text — nil options

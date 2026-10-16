@@ -13,35 +13,35 @@
   <div class="space-y-3">
     {{$step := .PipelineStep}}
 
-    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsFetchingGitHub}}bg-indigo-900/40 border border-indigo-700{{else}}bg-gray-900 border border-gray-800{{end}}">
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsFetchingGitHub}}bg-[var(--color-surface-alt)] border border-[var(--color-accent)]{{else}}bg-[var(--color-surface)] border border-[var(--color-border)]{{end}}">
       <span class="text-xl">{{if $step.IsFetchingGitHub}}⏳{{else}}✅{{end}}</span>
       <div>
         <p class="font-semibold text-sm">Fetching GitHub profile</p>
-        {{if $step.IsFetchingGitHub}}<p class="text-indigo-400 text-xs">Preparing your interview questions...</p>{{end}}
+        {{if $step.IsFetchingGitHub}}<p class="text-[var(--color-accent-muted)] text-xs">Preparing your interview questions...</p>{{end}}
       </div>
     </div>
 
-    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsCreatingPersona}}bg-indigo-900/40 border border-indigo-700{{else if $step.IsFetchingGitHub}}bg-gray-900/50 border border-gray-800 opacity-40{{else}}bg-gray-900 border border-gray-800{{end}}">
+    <div class="flex items-center gap-3 p-4 rounded-xl {{if $step.IsCreatingPersona}}bg-[var(--color-surface-alt)] border border-[var(--color-accent)]{{else if $step.IsFetchingGitHub}}bg-[var(--color-surface)] border border-[var(--color-border)] opacity-40{{else}}bg-[var(--color-surface)] border border-[var(--color-border)]{{end}}">
       <span class="text-xl">{{if $step.IsCreatingPersona}}⏳{{else if $step.IsFetchingGitHub}}⬜{{else}}✅{{end}}</span>
       <div>
         <p class="font-semibold text-sm">Crafting your persona</p>
-        {{if $step.IsCreatingPersona}}<p class="text-indigo-400 text-xs">Creating your persona...</p>{{end}}
+        {{if $step.IsCreatingPersona}}<p class="text-[var(--color-accent-muted)] text-xs">Creating your persona...</p>{{end}}
       </div>
     </div>
 
-    <div class="flex items-center gap-3 p-4 rounded-xl bg-gray-900/50 border border-gray-800 opacity-40">
+    <div class="flex items-center gap-3 p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] opacity-40">
       <span class="text-xl">⬜</span>
       <div>
         <p class="font-semibold text-sm">Interview</p>
-        <p class="text-gray-600 text-xs">Coming up next</p>
+        <p class="text-[var(--color-text-muted)] text-xs">Coming up next</p>
       </div>
     </div>
   </div>
 
   {{if gt .QueueAhead 0}}
-  <p class="text-center text-gray-500 text-xs">🧑‍🤝‍🧑 {{.QueueAhead}} {{if eq .QueueAhead 1}}person{{else}}people{{end}} ahead of you in the agent queue — the agents work through the line in order</p>
+  <p class="text-center text-[var(--color-text-muted)] text-xs">🧑‍🤝‍🧑 {{.QueueAhead}} {{if eq .QueueAhead 1}}person{{else}}people{{end}} ahead of you in the agent queue — the agents work through the line in order</p>
   {{else}}
-  <p class="text-center text-gray-600 text-xs animate-pulse">Agent pipeline running...</p>
+  <p class="text-center text-[var(--color-text-muted)] text-xs animate-pulse">Agent pipeline running...</p>
   {{end}}
 </div>
 {{end}}
@@ -58,14 +58,14 @@
   class="space-y-4"
 >
   <div class="text-center mb-4">
-    <p class="text-gray-500 text-xs mb-1">Question {{add .Index 1}} of {{.Total}}</p>
-    <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-      <div class="h-full bg-indigo-500 rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
+    <p class="text-[var(--color-text-muted)] text-xs mb-1">Question {{add .Index 1}} of {{.Total}}</p>
+    <div class="h-1.5 bg-[var(--color-surface-alt)] rounded-full overflow-hidden">
+      <div class="h-full bg-[var(--color-accent)] rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
     </div>
-    <p class="text-gray-500 text-xs mt-2">Your answers decide who you meet tonight</p>
+    <p class="text-[var(--color-text-muted)] text-xs mt-2">Your answers decide who you meet tonight</p>
   </div>
 
-  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6">
     <p class="font-semibold text-lg mb-5" data-md>{{.Question.Text}}</p>
 
     <script>
@@ -103,10 +103,10 @@
       <div class="space-y-2" id="option-container">
         {{$question := .Question}}
         {{range $question.Options}}
-        <label class="flex items-center gap-3 p-4 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700 cursor-pointer transition-colors">
+        <label class="flex items-center gap-3 p-4 rounded-xl bg-[var(--color-surface-alt)] border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors">
           <input
             type="checkbox"
-            class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+            class="h-4 w-4 rounded border-[var(--color-border)] bg-[var(--color-surface-alt)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
             value="{{.}}"
             onchange="updateMultiSelect(this, {{$question.MaxSelections}})"
           />
@@ -114,8 +114,8 @@
         </label>
         {{end}}
       </div>
-      <p class="text-xs text-gray-500 text-center" id="selection-counter">0/{{.Question.MaxSelections}} selected</p>
-      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-3 text-sm transition-colors mt-2" id="submit-multiselect" disabled>
+      <p class="text-xs text-[var(--color-text-muted)] text-center" id="selection-counter">0/{{.Question.MaxSelections}} selected</p>
+      <button type="submit" class="w-full bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl py-3 text-sm transition-colors mt-2" id="submit-multiselect" disabled>
         Continue →
       </button>
     </form>
@@ -126,8 +126,8 @@
         type="submit"
         name="answer"
         value="{{.}}"
-        class="w-full text-left bg-gray-800 hover:bg-indigo-800 border border-gray-700 hover:border-indigo-500 rounded-xl px-4 py-3 text-sm transition-colors"
-      >{{.}}</button>
+        class="w-full text-left bg-[var(--color-surface-alt)] hover:bg-[var(--color-accent)] border border-[var(--color-border)] hover:border-[var(--color-accent)] rounded-xl px-4 py-3 text-sm transition-colors"
+      ><span class="hover:text-[var(--color-accent-text)]">{{.}}</span></button>
       {{end}}
     </form>
     {{end}}
@@ -138,14 +138,14 @@
           type="text"
           name="answer"
           placeholder="Type your answer..."
-          class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+          class="flex-1 bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-4 py-3 text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-accent)]"
         />
-        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-4 py-3 text-sm font-bold transition-colors">→</button>
+        <button type="submit" class="bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] rounded-xl px-4 py-3 text-sm font-bold transition-colors">→</button>
       </div>
     </form>
     <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="mt-2">
       <input type="hidden" name="answer" value="">
-      <button type="submit" class="text-gray-500 hover:text-gray-300 text-xs underline w-full text-center transition-colors">
+      <button type="submit" class="text-[var(--color-text-muted)] hover:brightness-110 text-xs underline w-full text-center transition-colors">
         Skip this question
       </button>
     </form>
@@ -168,11 +168,11 @@
   {{if .Allowed}}
 
   {{/* Your meet code + meet-link QR */}}
-  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide mb-2">🤝 Your meet code</p>
-    <p class="font-mono text-3xl font-black tracking-widest text-gray-900">{{.Me.MeetCode}}</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 text-center">
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide mb-2">🤝 Your meet code</p>
+    <p class="font-mono text-3xl font-black tracking-widest text-[var(--color-text)]">{{.Me.MeetCode}}</p>
     <img id="meet-qr" src="/qr?data=/user/m/{{.Me.ID}}&size=150" alt="Your meet link QR code" class="mx-auto rounded-lg mt-3 shadow-sm" width="150" height="150" />
-    <p class="text-gray-600 text-xs mt-2">Show this QR — the camera opens your meet page — or share your code.</p>
+    <p class="text-[var(--color-text-muted)] text-xs mt-2">Show this QR — the camera opens your meet page — or share your code.</p>
   </div>
 
   {{/* I met someone */}}
@@ -180,40 +180,40 @@
     hx-post="/user/met/{{.Me.ID}}"
     hx-target="#meet-result"
     hx-swap="outerHTML"
-    class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3"
+    class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-3"
   >
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">I met someone</p>
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">I met someone</p>
     <div class="flex gap-2">
       <input
         type="text"
         name="code"
         maxlength="6"
         placeholder="Their code"
-        class="flex-1 bg-white/60 border border-black/10 rounded-xl px-4 py-3 text-sm font-mono uppercase tracking-widest text-gray-900 placeholder-gray-500 focus:outline-none"
+        class="flex-1 bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-4 py-3 text-sm font-mono uppercase tracking-widest text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none"
       />
       <button
         type="submit"
-        class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-4 py-3 text-sm transition-colors"
+        class="bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl px-4 py-3 text-sm transition-colors"
       >
         Meet
       </button>
     </div>
-    <p class="text-gray-600 text-xs">Scan their QR with your camera, or type their 6-character code.</p>
+    <p class="text-[var(--color-text-muted)] text-xs">Scan their QR with your camera, or type their 6-character code.</p>
   </form>
   <div id="meet-result"></div>
 
   {{/* Your meetings */}}
   {{if .Meetings}}
-  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">Your meetings</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-3">
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">Your meetings</p>
     {{range .Meetings}}
     <div class="space-y-2">
       <div class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl {{.Other.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Other.PersonaSymbol}}</div>
           <div>
-            <p class="font-bold text-sm text-gray-900">{{.Other.PersonaName}}</p>
-            <p class="text-xs text-gray-700">
+            <p class="font-bold text-sm text-[var(--color-text)]">{{.Other.PersonaName}}</p>
+            <p class="text-xs text-[var(--color-text-muted)]">
               {{if eq .Status "completed"}}🎉 You met!
               {{else if eq .Status "pending"}}⏳ Pending — waiting for them to confirm
               {{else}}They confirmed — confirm back!{{end}}
@@ -225,7 +225,7 @@
           <input type="hidden" name="code" value="{{.Other.MeetCode}}" />
           <button
             type="submit"
-            class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-3 py-2 text-xs transition-colors"
+            class="bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl px-3 py-2 text-xs transition-colors"
           >
             Confirm
           </button>
@@ -237,20 +237,20 @@
            what each side chose to share. The mutual rule decides what is
            revealed: a channel shows only if its owner opted in. */}}
       {{if eq .Status "completed"}}
-      <div class="border-t border-black/10 pt-2 space-y-2">
-        <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🤝 Exchange contact details?</p>
+      <div class="border-t border-[var(--color-border)] pt-2 space-y-2">
+        <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">🤝 Exchange contact details?</p>
         <div class="grid grid-cols-2 gap-2 text-xs">
-          <div class="bg-white/40 rounded-xl p-2">
-            <p class="text-gray-600 font-semibold">They shared</p>
+          <div class="bg-[var(--color-surface-alt)] rounded-xl p-2">
+            <p class="text-[var(--color-text-muted)] font-semibold">They shared</p>
             {{if .Revealed}}
-            {{range .Revealed}}<p class="text-gray-900 font-medium">{{.Label}}: {{.Value}}</p>{{end}}
-            {{else}}<p class="text-gray-500 italic">nothing</p>{{end}}
+            {{range .Revealed}}<p class="text-[var(--color-text)] font-medium">{{.Label}}: {{.Value}}</p>{{end}}
+            {{else}}<p class="text-[var(--color-text-muted)] italic">nothing</p>{{end}}
           </div>
-          <div class="bg-white/40 rounded-xl p-2">
-            <p class="text-gray-600 font-semibold">You shared</p>
+          <div class="bg-[var(--color-surface-alt)] rounded-xl p-2">
+            <p class="text-[var(--color-text-muted)] font-semibold">You shared</p>
             {{if .Shared}}
-            {{range .Shared}}<p class="text-gray-900 font-medium">{{.Label}}: {{.Value}}</p>{{end}}
-            {{else}}<p class="text-gray-500 italic">nothing</p>{{end}}
+            {{range .Shared}}<p class="text-[var(--color-text)] font-medium">{{.Label}}: {{.Value}}</p>{{end}}
+            {{else}}<p class="text-[var(--color-text-muted)] italic">nothing</p>{{end}}
           </div>
         </div>
       </div>
@@ -260,7 +260,7 @@
   </div>
   {{end}}
 
-  <p class="text-center text-gray-700 text-sm">❤️ {{.Connections}} connection{{if gt .Connections 1}}s{{end}}</p>
+  <p class="text-center text-[var(--color-text-muted)] text-sm">❤️ {{.Connections}} connection{{if gt .Connections 1}}s{{end}}</p>
 
   {{end}}
 </div>
@@ -269,17 +269,17 @@
 
 {{/* The result of a meeting confirmation — swapped into the meet section or the meet page */}}
 {{define "fragment-meet-result.html"}}
-<div id="meet-result" class="bg-black/15 border border-black/10 rounded-2xl p-5">
+<div id="meet-result" class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5">
   <div class="flex items-center gap-3">
     <div class="w-12 h-12 rounded-xl {{.Target.PersonaColor}} flex items-center justify-center text-xl flex-shrink-0 shadow-sm">{{.Target.PersonaSymbol}}</div>
     <div>
-      <p class="font-bold text-gray-900">You found {{.Target.PersonaSymbol}} {{.Target.PersonaName}}!</p>
+      <p class="font-bold text-[var(--color-text)]">You found {{.Target.PersonaSymbol}} {{.Target.PersonaName}}!</p>
       {{if .Already}}
-      <p class="text-sm text-gray-700">You already met {{.Target.PersonaSymbol}}!</p>
+      <p class="text-sm text-[var(--color-text-muted)]">You already met {{.Target.PersonaSymbol}}!</p>
       {{else if .Completed}}
-      <p class="text-sm text-gray-700">🎉 You both met — {{.Target.PersonaName}} confirmed too!</p>
+      <p class="text-sm text-[var(--color-text-muted)]">🎉 You both met — {{.Target.PersonaName}} confirmed too!</p>
       {{else}}
-      <p class="text-sm text-gray-700">⏳ Recorded — {{.Target.PersonaName}} still has to confirm.</p>
+      <p class="text-sm text-[var(--color-text-muted)]">⏳ Recorded — {{.Target.PersonaName}} still has to confirm.</p>
       {{end}}
     </div>
   </div>
@@ -302,11 +302,11 @@
   hx-swap="outerHTML"
   class="text-center space-y-4 py-4"
 >
-  <div class="w-20 h-20 mx-auto rounded-2xl {{.Partner.PersonaColor}} flex items-center justify-center text-4xl shadow-lg ring-4 ring-black/10">
+  <div class="w-20 h-20 mx-auto rounded-2xl {{.Partner.PersonaColor}} flex items-center justify-center text-4xl shadow-lg ring-4 ring-[var(--color-border)]">
     {{.Partner.PersonaSymbol}}
   </div>
-  <p class="text-gray-900 font-bold">You've been matched!</p>
-  <p class="text-gray-700 text-sm">{{.Hint}}</p>
+  <p class="text-[var(--color-text)] font-bold">You've been matched!</p>
+  <p class="text-[var(--color-text-muted)] text-sm">{{.Hint}}</p>
 </div>
 {{else if .Revealed}}
 <div
@@ -317,8 +317,8 @@
   class="text-center space-y-4 py-4"
 >
   <p class="text-4xl">🤷</p>
-  <p class="text-gray-900 font-bold">No match for you this time</p>
-  <p class="text-gray-700 text-sm">The evening goes on — go meet people in the room!</p>
+  <p class="text-[var(--color-text)] font-bold">No match for you this time</p>
+  <p class="text-[var(--color-text-muted)] text-sm">The evening goes on — go meet people in the room!</p>
 </div>
 {{else}}
 <div
@@ -329,20 +329,20 @@
   class="text-center space-y-4"
 >
   <div>
-    <p class="text-5xl font-black text-gray-900">{{.Count}}</p>
-    <p class="text-gray-700 mt-1">{{if eq .Count 1}}person{{else}}people{{end}} ready in the room</p>
+    <p class="text-5xl font-black text-[var(--color-text)]">{{.Count}}</p>
+    <p class="text-[var(--color-text-muted)] mt-1">{{if eq .Count 1}}person{{else}}people{{end}} ready in the room</p>
   </div>
 
-  <div class="flex items-center justify-center gap-2 text-gray-700 text-sm">
-    <span class="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
+  <div class="flex items-center justify-center gap-2 text-[var(--color-text-muted)] text-sm">
+    <span class="w-2 h-2 rounded-full bg-[var(--color-accent)] animate-pulse"></span>
     Looking for your perfect match...
   </div>
 
   {{if gt .QueueAhead 0}}
-  <p class="text-gray-600 text-xs">🧑‍🤝‍🧑 {{.QueueAhead}} {{if eq .QueueAhead 1}}person{{else}}people{{end}} ahead of you in the agent queue</p>
+  <p class="text-[var(--color-text-muted)] text-xs">🧑‍🤝‍🧑 {{.QueueAhead}} {{if eq .QueueAhead 1}}person{{else}}people{{end}} ahead of you in the agent queue</p>
   {{end}}
 
-  <p class="text-gray-600 text-xs">Watch the big screen!</p>
+  <p class="text-[var(--color-text-muted)] text-xs">Watch the big screen!</p>
 </div>
 {{end}}
 {{end}}
@@ -366,8 +366,8 @@
 
   {{/* Why you two */}}
   {{if .Reason}}
-  <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in" style="animation-delay:0.15s">
-    <p class="text-gray-800 italic text-sm text-center" data-md>"{{.Reason}}"</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 pop-in" style="animation-delay:0.15s">
+    <p class="text-[var(--color-text)] italic text-sm text-center" data-md>"{{.Reason}}"</p>
   </div>
   {{end}}
 
@@ -375,18 +375,18 @@
   {{if or .GreenFlags .RedFlags}}
   <div class="grid grid-cols-2 gap-3 pop-in" style="animation-delay:0.25s">
     {{if .GreenFlags}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4">
       <p class="text-green-800 font-bold text-sm mb-2">✅ Green flags</p>
       {{range .GreenFlags}}
-      <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
+      <p class="text-[var(--color-text)] text-sm" data-md>• {{.}}</p>
       {{end}}
     </div>
     {{end}}
     {{if .RedFlags}}
-    <div class="bg-black/15 border border-black/10 rounded-xl p-4">
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4">
       <p class="text-red-800 font-bold text-sm mb-2">🚩 Red flags</p>
       {{range .RedFlags}}
-      <p class="text-gray-800 text-sm" data-md>• {{.}}</p>
+      <p class="text-[var(--color-text)] text-sm" data-md>• {{.}}</p>
       {{end}}
     </div>
     {{end}}
@@ -395,10 +395,10 @@
 
   {{/* Icebreakers */}}
   {{if .Icebreakers}}
-  <div class="bg-black/15 border border-black/10 rounded-xl p-4 pop-in" style="animation-delay:0.35s">
-    <p class="text-indigo-800 font-bold text-sm mb-3">💬 Ask them</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 pop-in" style="animation-delay:0.35s">
+    <p class="text-[var(--color-accent-muted)] font-bold text-sm mb-3">💬 Ask them</p>
     {{range .Icebreakers}}
-    <p class="text-gray-800 text-sm mb-2" data-md>→ {{.}}</p>
+    <p class="text-[var(--color-text)] text-sm mb-2" data-md>→ {{.}}</p>
     {{end}}
   </div>
   {{end}}
@@ -407,32 +407,32 @@
 
   <div class="relative">
     <div class="blur-sm select-none pointer-events-none space-y-4" aria-hidden="true">
-      <div class="bg-black/15 border border-black/10 rounded-xl p-4">
-        <div class="h-3 bg-black/20 rounded-full w-2/3 mx-auto"></div>
+      <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4">
+        <div class="h-3 bg-[var(--color-surface-alt)] rounded-full w-2/3 mx-auto"></div>
       </div>
       <div class="grid grid-cols-2 gap-3">
-        <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
-          <div class="h-2.5 bg-black/20 rounded-full w-1/2"></div>
-          <div class="h-2.5 bg-black/20 rounded-full"></div>
-          <div class="h-2.5 bg-black/20 rounded-full w-5/6"></div>
+        <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 space-y-2">
+          <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full w-1/2"></div>
+          <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full"></div>
+          <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full w-5/6"></div>
         </div>
-        <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
-          <div class="h-2.5 bg-black/20 rounded-full w-1/2"></div>
-          <div class="h-2.5 bg-black/20 rounded-full"></div>
-          <div class="h-2.5 bg-black/20 rounded-full w-4/6"></div>
+        <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 space-y-2">
+          <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full w-1/2"></div>
+          <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full"></div>
+          <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full w-4/6"></div>
         </div>
       </div>
-      <div class="bg-black/15 border border-black/10 rounded-xl p-4 space-y-2">
-        <div class="h-2.5 bg-black/20 rounded-full w-1/3"></div>
-        <div class="h-2.5 bg-black/20 rounded-full"></div>
-        <div class="h-2.5 bg-black/20 rounded-full w-2/3"></div>
+      <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 space-y-2">
+        <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full w-1/3"></div>
+        <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full"></div>
+        <div class="h-2.5 bg-[var(--color-surface-alt)] rounded-full w-2/3"></div>
       </div>
     </div>
     <div class="absolute inset-0 flex items-center justify-center">
-      <div class="bg-white/80 border border-black/10 rounded-2xl px-6 py-4 text-center shadow-lg space-y-1">
+      <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl px-6 py-4 text-center shadow-lg space-y-1">
         <p class="text-3xl">🔒</p>
-        <p class="text-gray-900 font-bold text-sm">Your dossier is locked</p>
-        <p class="text-gray-700 text-xs">Meet {{.Match.PersonaSymbol}} in the room to unlock it — confirm each other with your meet codes.</p>
+        <p class="text-[var(--color-text)] font-bold text-sm">Your dossier is locked</p>
+        <p class="text-[var(--color-text-muted)] text-xs">Meet {{.Match.PersonaSymbol}} in the room to unlock it — confirm each other with your meet codes.</p>
       </div>
     </div>
   </div>
@@ -454,16 +454,16 @@
   hx-swap="outerHTML"
 >
 {{if .Tiles}}
-<div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-4">
+<div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-4">
   <div class="flex items-center justify-between gap-2">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎯 Your mission — meet 8 personas</p>
-    <p class="text-gray-800 text-xs font-bold whitespace-nowrap">❤️ {{.Connections}} · #{{.Rank}}</p>
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">🎯 Your mission — meet 8 personas</p>
+    <p class="text-[var(--color-text)] text-xs font-bold whitespace-nowrap">❤️ {{.Connections}} · #{{.Rank}}</p>
   </div>
 
   {{/* The 3×3 grid — the center is your match (or your best fit) */}}
   <div class="grid grid-cols-3 gap-2">
     {{range .Grid}}
-    <div class="relative rounded-xl {{if .}}{{.Color}}{{else}}bg-black/5{{end}} min-h-24 p-1.5 flex flex-col items-center justify-center text-center shadow-sm {{if .}}{{if .Stamped}}ring-2 ring-green-600{{end}}{{end}}">
+    <div class="relative rounded-xl {{if .}}{{.Color}}{{else}}bg-[var(--color-surface-alt)]{{end}} min-h-24 p-1.5 flex flex-col items-center justify-center text-center shadow-sm {{if .}}{{if .Stamped}}ring-2 ring-green-600{{end}}{{end}}">
       {{if .}}
       {{if .Stamped}}<span class="absolute top-1 right-1 text-xs stamp-in">✅</span>{{end}}
       <div class="text-xl leading-none">{{.Symbol}}</div>
@@ -477,19 +477,19 @@
 
   {{/* Live progress — connections and rank vs the top 5 */}}
   {{if .Top}}
-  <div class="border-t border-black/10 pt-3 space-y-2">
-    <p class="text-gray-700 text-xs uppercase tracking-wide">Top connections</p>
+  <div class="border-t border-[var(--color-border)] pt-3 space-y-2">
+    <p class="text-[var(--color-text-muted)] text-xs uppercase tracking-wide">Top connections</p>
     <div class="flex flex-wrap gap-1.5">
       {{range .Top}}
-      <span class="bg-black/20 text-gray-900 rounded-full px-2 py-0.5 text-xs">{{.Symbol}} {{.Name}} · {{.Connections}}</span>
+      <span class="bg-[var(--color-surface-alt)] text-[var(--color-text)] rounded-full px-2 py-0.5 text-xs">{{.Symbol}} {{.Name}} · {{.Connections}}</span>
       {{end}}
     </div>
   </div>
   {{end}}
 </div>
 {{else if .Preparing}}
-<div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
-  <p class="text-gray-700 text-sm">🃏 Your mission card is being prepared…</p>
+<div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 text-center">
+  <p class="text-[var(--color-text-muted)] text-sm">🃏 Your mission card is being prepared…</p>
 </div>
 {{end}}
 </div>
@@ -501,27 +501,27 @@
      GitHub profile. After a completed meeting, both phones show what each side
      chose to share. */}}
 {{define "fragment-settings.html"}}
-<div id="settings" class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
-  <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📇 Your contact details</p>
-  <p class="text-gray-600 text-xs">Enter each channel once — everything stays off until you turn it on. After a completed meeting, you both see what you chose to share.</p>
+<div id="settings" class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-3">
+  <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">📇 Your contact details</p>
+  <p class="text-[var(--color-text-muted)] text-xs">Enter each channel once — everything stays off until you turn it on. After a completed meeting, you both see what you chose to share.</p>
   <form hx-post="/user/settings/{{.Me.ID}}" hx-target="#settings" hx-swap="outerHTML" class="space-y-3">
-    <div class="divide-y divide-black/15">
+    <div class="divide-y divide-[var(--color-border)]">
     {{range .Channels}}
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 py-2.5 first:pt-0">
-      <span class="w-20 text-xs font-bold text-gray-800 flex-shrink-0">{{.Label}}</span>
+      <span class="w-20 text-xs font-bold text-[var(--color-text)] flex-shrink-0">{{.Label}}</span>
       <input
         type="text"
         name="{{.Channel}}"
         value="{{.Value}}"
         placeholder="{{.Label}}"
-        class="flex-1 min-w-[10rem] bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+        class="flex-1 min-w-[10rem] bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none"
       />
-      <label class="flex items-center gap-1 text-xs font-semibold text-gray-700 flex-shrink-0 ml-auto">
+      <label class="flex items-center gap-1 text-xs font-semibold text-[var(--color-text-muted)] flex-shrink-0 ml-auto">
         <input
           type="checkbox"
           name="{{.Channel}}_on"
           {{if .Enabled}}checked{{end}}
-          class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500"
+          class="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
         />
         Share
       </label>
@@ -530,7 +530,7 @@
     </div>
     <button
       type="submit"
-      class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors"
+      class="w-full bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl py-2.5 text-sm transition-colors"
     >
       Save
     </button>
@@ -554,14 +554,14 @@
   hx-swap="outerHTML"
 >
 {{if .Open}}
-  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎤 Show &amp; tell</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-3">
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">🎤 Show &amp; tell</p>
     {{if .Signup}}
     <div class="flex items-center gap-3">
       <div class="w-10 h-10 rounded-xl {{.Signup.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Signup.PersonaSymbol}}</div>
       <div>
-        <p class="font-bold text-sm text-gray-900">{{.Signup.Title}}</p>
-        <p class="text-xs text-gray-700">
+        <p class="font-bold text-sm text-[var(--color-text)]">{{.Signup.Title}}</p>
+        <p class="text-xs text-[var(--color-text-muted)]">
           {{if eq .Signup.Status "queued"}}⏳ In the queue — #{{.Position}}
           {{else if eq .Signup.Status "on_stage"}}🎤 You're on stage!
           {{else}}✅ You presented{{end}}
@@ -569,7 +569,7 @@
       </div>
     </div>
     {{if .Signup.IdentityRevealed}}
-    <p class="text-xs text-gray-700">🎭 The host revealed your identity on the big screen — go say hi!</p>
+    <p class="text-xs text-[var(--color-text-muted)]">🎭 The host revealed your identity on the big screen — go say hi!</p>
     {{end}}
     {{end}}
     <form hx-post="/user/showtell/signup/{{.Me.ID}}" hx-target="#showtell" hx-swap="outerHTML" class="space-y-2">
@@ -580,7 +580,7 @@
         required
         placeholder="Your talk's title"
         value="{{if .Signup}}{{.Signup.Title}}{{end}}"
-        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+        class="w-full bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none"
       />
       <input
         type="text"
@@ -588,18 +588,18 @@
         maxlength="300"
         placeholder="One line about it (optional)"
         value="{{if .Signup}}{{.Signup.Description}}{{end}}"
-        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+        class="w-full bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none"
       />
       <input
         type="url"
         name="repo"
         placeholder="Repo link (optional)"
         value="{{if .Signup}}{{.Signup.RepoURL}}{{end}}"
-        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+        class="w-full bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none"
       />
       <button
         type="submit"
-        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors"
+        class="w-full bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl py-2.5 text-sm transition-colors"
       >
         {{if .Signup}}Update my sign-up{{else}}Sign me up{{end}}
       </button>
@@ -608,18 +608,18 @@
   </div>
 {{end}}
 {{if .AskOpen}}
-  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">❓ Ask the presenter</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-3">
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">❓ Ask the presenter</p>
     {{if .Presenter}}
     <div class="flex items-center gap-3">
       <div class="w-10 h-10 rounded-xl {{.Presenter.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Presenter.PersonaSymbol}}</div>
       <div>
-        <p class="font-bold text-sm text-gray-900">{{.Presenter.PersonaName}}</p>
-        <p class="text-xs text-gray-700">is on stage — “{{.Presenter.Title}}”</p>
+        <p class="font-bold text-sm text-[var(--color-text)]">{{.Presenter.PersonaName}}</p>
+        <p class="text-xs text-[var(--color-text-muted)]">is on stage — “{{.Presenter.Title}}”</p>
       </div>
     </div>
     {{else}}
-    <p class="text-gray-600 text-sm">The stage is empty — questions open when a presenter is up.</p>
+    <p class="text-[var(--color-text-muted)] text-sm">The stage is empty — questions open when a presenter is up.</p>
     {{end}}
     <form hx-post="/user/showtell/question/{{.Me.ID}}" hx-target="#showtell" hx-swap="outerHTML" class="space-y-2">
       <input
@@ -627,12 +627,12 @@
         name="question"
         maxlength="300"
         placeholder="{{.Me.PersonaSymbol}} {{.Me.PersonaName}} asks…"
-        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none disabled:opacity-50"
+        class="w-full bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none disabled:opacity-50"
         {{if not .Presenter}}disabled{{end}}
       />
       <button
         type="submit"
-        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        class="w-full bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl py-2.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         {{if not .Presenter}}disabled{{end}}
       >
         Ask the presenter
@@ -640,9 +640,9 @@
     </form>
     {{if .Asked}}<p class="text-green-800 text-xs font-semibold text-center">✅ Queued — the host picks it up</p>{{end}}
     {{if .MyQuestions}}
-    <div class="border-t border-black/10 pt-2 space-y-1">
+    <div class="border-t border-[var(--color-border)] pt-2 space-y-1">
       {{range .MyQuestions}}
-      <p class="text-xs text-gray-800">“{{.Text}}” — {{if eq .Status "queued"}}⏳ queued{{else if eq .Status "asked"}}🎤 being asked on the big screen{{else if eq .Status "answered"}}✅ answered{{else}}🗑 dismissed{{end}}</p>
+      <p class="text-xs text-[var(--color-text)]">“{{.Text}}” — {{if eq .Status "queued"}}⏳ queued{{else if eq .Status "asked"}}🎤 being asked on the big screen{{else if eq .Status "answered"}}✅ answered{{else}}🗑 dismissed{{end}}</p>
       {{end}}
     </div>
     {{end}}
@@ -813,10 +813,10 @@
   hx-swap="outerHTML"
 >
   {{if .Token}}
-  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center space-y-2">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📲 Your recap</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 text-center space-y-2">
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">📲 Your recap</p>
     <img id="recap-qr" src="/qr?data=/user/recap/{{.Token}}&size=150" alt="Your personal recap QR code" class="mx-auto rounded-lg shadow-sm" width="150" height="150" />
-    <p class="text-gray-600 text-xs">Scan to open your personal recap — your evening, kept.</p>
+    <p class="text-[var(--color-text-muted)] text-xs">Scan to open your personal recap — your evening, kept.</p>
   </div>
   {{end}}
 </div>
@@ -835,15 +835,15 @@
   hx-swap="outerHTML"
 >
   {{if .Decks}}
-  <div class="bg-black/15 border border-black/10 rounded-2xl p-4 mb-4 space-y-3">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📑 Slides</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-4 mb-4 space-y-3">
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">📑 Slides</p>
     {{range .Decks}}
     <div class="flex items-center gap-3">
       <div class="min-w-0 flex-1">
-        <a href="/slides/{{.ID}}" target="_blank" rel="noopener" class="block font-bold text-gray-900 text-sm truncate underline decoration-black/30">{{.Title}}</a>
-        <p class="text-gray-700 text-xs truncate">{{.Speaker}} · {{fileSize .Size}}</p>
+        <a href="/slides/{{.ID}}" target="_blank" rel="noopener" class="block font-bold text-[var(--color-text)] text-sm truncate underline decoration-[var(--color-border)]">{{.Title}}</a>
+        <p class="text-[var(--color-text-muted)] text-xs truncate">{{.Speaker}} · {{fileSize .Size}}</p>
       </div>
-      <a href="/slides/{{.ID}}/download" class="flex-shrink-0 text-xs font-bold text-gray-900 bg-black/10 hover:bg-black/20 rounded-lg px-3 py-1.5">⬇ PDF</a>
+      <a href="/slides/{{.ID}}/download" class="flex-shrink-0 text-xs font-bold text-[var(--color-text)] bg-[var(--color-surface-alt)] hover:bg-[var(--color-surface-hover)] rounded-lg px-3 py-1.5">⬇ PDF</a>
     </div>
     {{end}}
   </div>
@@ -867,8 +867,8 @@
   hx-on::before-swap="if (event.detail.xhr.status === 400) { event.detail.shouldSwap = true; event.detail.isError = false; }"
 >
   {{if or .Open .Posts .Error}}
-  <div class="bg-black/15 border border-black/10 rounded-2xl p-4 mb-4 space-y-3">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📣 Board</p>
+  <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-4 mb-4 space-y-3">
+    <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">📣 Board</p>
     {{if .Open}}
     <form hx-post="/user/board/{{.Me.ID}}" hx-target="#board" hx-swap="outerHTML" class="space-y-2">
       <textarea
@@ -879,11 +879,11 @@
         maxlength="{{.MaxLength}}"
         required
         placeholder="Share a link or a thought with the room…"
-        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+        class="w-full bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-sm text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none"
       ></textarea>
       <button
         type="submit"
-        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors"
+        class="w-full bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl py-2.5 text-sm transition-colors"
       >
         Post ({{.Remaining}} left)
       </button>
@@ -895,15 +895,15 @@
     <div class="flex gap-3">
       <div class="w-9 h-9 rounded-xl {{.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.PersonaSymbol}}</div>
       <div class="min-w-0 flex-1">
-        <p class="text-xs font-bold text-gray-900">{{.PersonaName}}</p>
-        <p class="text-sm text-gray-900 whitespace-pre-line break-words">{{linkify .Text}}</p>
-        {{if eq .Status "pending"}}<p class="text-xs text-gray-700">⏳ Waiting for the Host</p>{{end}}
-        {{if eq .Status "rejected"}}<p class="text-xs text-gray-700">🚫 Not approved</p>{{end}}
+        <p class="text-xs font-bold text-[var(--color-text)]">{{.PersonaName}}</p>
+        <p class="text-sm text-[var(--color-text)] whitespace-pre-line break-words">{{linkify .Text}}</p>
+        {{if eq .Status "pending"}}<p class="text-xs text-[var(--color-text-muted)]">⏳ Waiting for the Host</p>{{end}}
+        {{if eq .Status "rejected"}}<p class="text-xs text-[var(--color-text-muted)]">🚫 Not approved</p>{{end}}
       </div>
       {{if eq .ParticipantID $.Me.ID}}
       <form hx-post="/user/board/{{$.Me.ID}}/delete" hx-target="#board" hx-swap="outerHTML" hx-confirm="Delete this post?" class="flex-shrink-0">
         <input type="hidden" name="post" value="{{.ID}}">
-        <button type="submit" class="text-xs text-gray-700 hover:text-red-700 bg-black/10 rounded-lg px-2 py-1" title="Delete this post">🗑</button>
+        <button type="submit" class="text-xs text-[var(--color-text-muted)] hover:text-red-700 bg-[var(--color-surface-alt)] rounded-lg px-2 py-1" title="Delete this post">🗑</button>
       </form>
       {{end}}
     </div>

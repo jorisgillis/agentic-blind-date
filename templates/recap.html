@@ -9,88 +9,91 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   {{themeCSS .Me.Theme}}
 </head>
-<body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10" style="color-scheme: light;">
-<div class="{{textColor .Me.PersonaColor}}">
+<body class="bg-[var(--color-bg)] text-[var(--color-text)] min-h-screen px-4 py-10">
   <div class="max-w-md mx-auto space-y-5">
 
-    {{/* Persona card */}}
-    <div class="text-center pt-2">
-      <p class="text-gray-700 text-xs uppercase tracking-widest mb-2">Your evening, recapped</p>
-      <div class="text-7xl mb-3">{{.Me.PersonaSymbol}}</div>
-      <h1 class="text-3xl font-black text-gray-900">{{.Me.PersonaName}}</h1>
-      {{if .Me.PersonaTagline}}
-      <p class="text-gray-700 mt-1 italic" data-md>"{{.Me.PersonaTagline}}"</p>
-      {{end}}
+    {{/* The owner's business card (theming spec §4): the identity block
+         carries their persona color; the page around it follows their
+         theme */}}
+    <div class="pt-2">
+      <p class="text-[var(--color-text-muted)] text-xs uppercase tracking-widest mb-2 text-center">Your evening, recapped</p>
+      <div class="rounded-2xl {{.Me.PersonaColor}} p-6 text-center">
+        <div class="text-7xl mb-3">{{.Me.PersonaSymbol}}</div>
+        <h1 class="text-3xl font-black {{textColor .Me.PersonaColor}}">{{.Me.PersonaName}}</h1>
+        {{if .Me.PersonaTagline}}
+        <p class="text-gray-700 mt-1 italic" data-md>"{{.Me.PersonaTagline}}"</p>
+        {{end}}
+      </div>
     </div>
 
     {{/* Personal stats */}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-5 flex items-center justify-center gap-2 flex-wrap">
-      <span class="text-gray-900 font-bold text-sm">❤️ {{.ConnectionCount}} connection{{if gt .ConnectionCount 1}}s{{end}}</span>
-      {{if .Rank}}<span class="text-gray-700 text-sm">· #{{.Rank}} on the leaderboard</span>{{end}}
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 flex items-center justify-center gap-2 flex-wrap">
+      <span class="text-[var(--color-text)] font-bold text-sm">❤️ {{.ConnectionCount}} connection{{if gt .ConnectionCount 1}}s{{end}}</span>
+      {{if .Rank}}<span class="text-[var(--color-text-muted)] text-sm">· #{{.Rank}} on the leaderboard</span>{{end}}
       {{if .Champion}}<span class="text-amber-800 font-bold text-sm">👑 Merge Trophy</span>{{end}}
     </div>
 
     {{/* The match dossier — always unlocked here */}}
     {{if .Match}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-6">
-      <p class="text-gray-700 font-bold text-xs uppercase tracking-wide mb-3">💘 Your match</p>
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6">
+      <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide mb-3">💘 Your match</p>
       <div class="flex items-center gap-4">
         <div class="w-14 h-14 rounded-xl {{.Match.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
           {{.Match.PersonaSymbol}}
         </div>
         <div>
-          <p class="font-bold text-gray-900">{{.Match.PersonaName}}</p>
-          <p class="text-gray-700 text-sm">{{.Dossier.Score}}% compatibility</p>
+          <p class="font-bold text-[var(--color-text)]">{{.Match.PersonaName}}</p>
+          <p class="text-[var(--color-text-muted)] text-sm">{{.Dossier.Score}}% compatibility</p>
         </div>
       </div>
     </div>
     {{template "fragment-dossier.html" .Dossier}}
     {{else}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
-      <p class="text-gray-700 text-sm">You weren't matched this time — the room was still yours.</p>
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 text-center">
+      <p class="text-[var(--color-text-muted)] text-sm">You weren't matched this time — the room was still yours.</p>
     </div>
     {{end}}
 
     {{/* Connections — everyone they completed a meeting with, with the
          contact channels those connections shared with them */}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
-      <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🤝 Your connections</p>
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-3">
+      <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">🤝 Your connections</p>
       {{if .Connections}}
       {{range .Connections}}
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl {{.Other.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Other.PersonaSymbol}}</div>
         <div>
-          <p class="font-bold text-sm text-gray-900">{{.Other.PersonaName}}</p>
+          <p class="font-bold text-sm text-[var(--color-text)]">{{.Other.PersonaName}}</p>
           {{if .Revealed}}
           <div class="mt-0.5 space-y-0.5">
-            {{range .Revealed}}<p class="text-xs text-gray-800">{{.Label}}: <span class="font-medium">{{.Value}}</span></p>{{end}}
+            {{range .Revealed}}<p class="text-xs text-[var(--color-text)]">{{.Label}}: <span class="font-medium">{{.Value}}</span></p>{{end}}
           </div>
           {{else}}
-          <p class="text-xs text-gray-600 italic">shared nothing</p>
+          <p class="text-xs text-[var(--color-text-muted)] italic">shared nothing</p>
           {{end}}
         </div>
       </div>
       {{end}}
       {{else}}
-      <p class="text-gray-600 text-sm">No completed meetings — next time, confirm each other with your meet codes.</p>
+      <p class="text-[var(--color-text-muted)] text-sm">No completed meetings — next time, confirm each other with your meet codes.</p>
       {{end}}
     </div>
 
     {{/* Show & tell — the Participant's sign-up and their audience questions,
          with how each ended up. Personas only, like everywhere outside stage. */}}
     {{if or .ShowTellSignup .ShowTellQuestions}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
-      <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎤 Your show &amp; tell</p>
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-3">
+      <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">🎤 Your show &amp; tell</p>
       {{if .ShowTellSignup}}
       <div class="space-y-1">
-        <p class="font-bold text-sm text-gray-900">“{{.ShowTellSignup.Title}}”</p>
+        <p class="font-bold text-sm text-[var(--color-text)]">“{{.ShowTellSignup.Title}}”</p>
         {{if .ShowTellSignup.Description}}
-        <p class="text-xs text-gray-700" data-md>{{.ShowTellSignup.Description}}</p>
+        <p class="text-xs text-[var(--color-text-muted)]" data-md>{{.ShowTellSignup.Description}}</p>
         {{end}}
         {{if .ShowTellSignup.RepoURL}}
-        <p class="text-xs"><a href="{{.ShowTellSignup.RepoURL}}" class="text-indigo-700 underline" target="_blank" rel="noopener">{{.ShowTellSignup.RepoURL}}</a></p>
+        <p class="text-xs"><a href="{{.ShowTellSignup.RepoURL}}" class="text-[var(--color-accent-muted)] underline" target="_blank" rel="noopener">{{.ShowTellSignup.RepoURL}}</a></p>
         {{end}}
-        <p class="text-xs text-gray-700">
+        <p class="text-xs text-[var(--color-text-muted)]">
           {{if eq .ShowTellSignup.Status "queued"}}⏳ queued
           {{else if eq .ShowTellSignup.Status "on_stage"}}🎤 on stage
           {{else}}✅ presented{{end}}
@@ -98,9 +101,9 @@
       </div>
       {{end}}
       {{if .ShowTellQuestions}}
-      <div class="space-y-1 {{if .ShowTellSignup}}border-t border-black/10 pt-2{{end}}">
+      <div class="space-y-1 {{if .ShowTellSignup}}border-t border-[var(--color-border)] pt-2{{end}}">
         {{range .ShowTellQuestions}}
-        <p class="text-xs text-gray-800">“{{.Text}}” — {{if eq .Status "queued"}}queued{{else if eq .Status "asked"}}being asked{{else if eq .Status "answered"}}answered{{else}}dismissed{{end}}</p>
+        <p class="text-xs text-[var(--color-text)]">“{{.Text}}” — {{if eq .Status "queued"}}queued{{else if eq .Status "asked"}}being asked{{else if eq .Status "answered"}}answered{{else}}dismissed{{end}}</p>
         {{end}}
       </div>
       {{end}}
@@ -108,17 +111,16 @@
     {{end}}
 
     {{/* Their own contact details — what they shared during the evening */}}
-    <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-2">
-      <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📇 Your contact details</p>
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-2">
+      <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">📇 Your contact details</p>
       {{if .Shared}}
-      {{range .Shared}}<p class="text-sm text-gray-900">{{.Label}}: <span class="font-medium">{{.Value}}</span></p>{{end}}
+      {{range .Shared}}<p class="text-sm text-[var(--color-text)]">{{.Label}}: <span class="font-medium">{{.Value}}</span></p>{{end}}
       {{else}}
-      <p class="text-gray-600 text-sm">You didn't share any contact details.</p>
+      <p class="text-[var(--color-text-muted)] text-sm">You didn't share any contact details.</p>
       {{end}}
     </div>
 
   </div>
-</div>
   <script>
     function renderMd() {
       document.querySelectorAll('[data-md]').forEach(el => {

@@ -211,8 +211,8 @@ func TestPhaseHeader_Endpoint(t *testing.T) {
 }
 
 // assertQueueBadge checks the header's show & tell queue badge (#139): its
-// state, its text and the colour that tells the two states apart — indigo
-// while queued, the app's live emerald once on stage.
+// state, its text and the colour that tells the two states apart — the theme
+// accent while queued, the app's live emerald once on stage.
 func assertQueueBadge(t *testing.T, body, state, text string) {
 	t.Helper()
 	if !strings.Contains(body, `data-badge="`+state+`"`) {
@@ -221,7 +221,7 @@ func assertQueueBadge(t *testing.T, body, state, text string) {
 	if !strings.Contains(body, html.EscapeString(text)) {
 		t.Errorf("the queue badge should read %q, got: %s", text, body)
 	}
-	want := "font-bold bg-indigo-600 text-white"
+	want := "font-bold bg-[var(--color-accent)] text-[var(--color-accent-text)]"
 	if state == "on-stage" {
 		want = "font-bold bg-emerald-600 text-white"
 	}

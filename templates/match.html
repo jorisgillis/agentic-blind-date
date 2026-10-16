@@ -24,8 +24,7 @@
   </style>
   {{themeCSS .Me.Theme}}
 </head>
-<body class="{{.Me.PersonaColor}} min-h-screen px-4 py-10" style="color-scheme: light;">
-<div class="{{textColor .Me.PersonaColor}}">
+<body class="bg-[var(--color-bg)] text-[var(--color-text)] min-h-screen px-4 py-10">
   <div class="max-w-md mx-auto">
 
     {{/* Phase header — persistent and page-level (ADR 0019): the evening's
@@ -64,13 +63,13 @@
          survives phase swaps, and its cards keep their own 'refresh'
          wiring — the dossier unlocks live with its flourish, drawer open or
          not. A browser-native details/summary toggle: no JS, no new stream */}}
-    <details class="group mt-5 bg-black/10 border border-black/10 rounded-2xl">
+    <details class="group mt-5 bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-2xl">
       <summary class="flex cursor-pointer select-none items-center gap-2 px-4 py-3 list-none [&::-webkit-details-marker]:hidden">
-        <span class="text-gray-900 font-bold text-sm">More</span>
-        <span class="text-gray-600 text-xs">dossier · settings · share · recap</span>
-        <span class="ml-auto text-gray-500 text-xs transition-transform duration-200 motion-reduce:transition-none group-open:rotate-180" aria-hidden="true">▾</span>
+        <span class="text-[var(--color-text)] font-bold text-sm">More</span>
+        <span class="text-[var(--color-text-muted)] text-xs">dossier · settings · share · recap</span>
+        <span class="ml-auto text-[var(--color-text-muted)] text-xs transition-transform duration-200 motion-reduce:transition-none group-open:rotate-180" aria-hidden="true">▾</span>
       </summary>
-      <div class="space-y-4 border-t border-black/10 p-4">
+      <div class="space-y-4 border-t border-[var(--color-border)] p-4">
 
         {{if .Dossier.Match}}
         {{/* Dossier — locked until the pair's Meeting completes, refreshed
@@ -83,8 +82,8 @@
         {{template "fragment-settings.html" .Settings}}
 
         {{/* Share your profile */}}
-        <div class="bg-black/10 border border-black/10 rounded-xl p-4 pop-in text-center" style="animation-delay:0.6s">
-          <p class="text-gray-700 font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
+        <div class="bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl p-4 pop-in text-center" style="animation-delay:0.6s">
+          <p class="text-[var(--color-text-muted)] font-bold text-xs mb-3 uppercase tracking-wide">📲 Share your profile</p>
           <img id="qr" src="/qr?data=/user/match/{{.Me.ID}}&size=150" alt="QR code" class="mx-auto rounded-lg" width="150" height="150" />
         </div>
 
@@ -96,7 +95,6 @@
     </details>
 
   </div>
-</div>
   <script>
     function renderMd() {
       document.querySelectorAll('[data-md]').forEach(el => {

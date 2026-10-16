@@ -5,9 +5,9 @@
      shown). */}}
 {{define "fragment-this-is-you.html"}}
 {{if .HasGitHub}}
-<p class="text-gray-600 text-xs mt-1">This is you: <span class="font-semibold text-gray-800">{{.Name}}</span> · {{.DisplayHandle}}</p>
+<p class="text-[var(--color-text-muted)] text-xs mt-1">This is you: <span class="font-semibold text-[var(--color-text)]">{{.Name}}</span> · {{.DisplayHandle}}</p>
 {{else}}
-<p class="text-gray-600 text-xs mt-1">This is you: <span class="font-semibold text-gray-800">{{.Name}}</span></p>
+<p class="text-[var(--color-text-muted)] text-xs mt-1">This is you: <span class="font-semibold text-[var(--color-text)]">{{.Name}}</span></p>
 {{end}}
 {{end}}
 
@@ -24,23 +24,26 @@
   class="flex flex-col items-center text-center pt-2"
 >
   {{if .PersonaName}}
-  <div class="w-36 h-36 rounded-3xl bg-white/20 flex items-center justify-center text-8xl mb-4 shadow-xl ring-4 ring-black/10">
-    {{.PersonaSymbol}}
+  {{/* The business card (theming spec §4): the identity block of emoji, name
+       and tagline carries the persona color itself — one panel, rounded like
+       the page's other cards. Everything around it follows the theme. */}}
+  <div class="w-full {{.PersonaColor}} rounded-2xl p-6 shadow-xl ring-4 ring-[var(--color-border)]">
+    <div class="text-8xl mb-3">{{.PersonaSymbol}}</div>
+    <h2 class="text-2xl font-black {{textColor .PersonaColor}}">{{.PersonaName}}</h2>
+    {{if .PersonaTagline}}
+    <p class="text-gray-700 text-sm mt-1 italic" data-md>"{{.PersonaTagline}}"</p>
+    {{end}}
   </div>
-  <h2 class="text-2xl font-black {{textColor .PersonaColor}}">{{.PersonaName}}</h2>
-  {{if .PersonaTagline}}
-  <p class="text-gray-700 text-sm mt-1 italic" data-md>"{{.PersonaTagline}}"</p>
-  {{end}}
   {{template "fragment-this-is-you.html" .}}
   <div class="mt-4">
-    <p class="text-gray-600 text-xs mb-2">📲 Let others find your profile</p>
+    <p class="text-[var(--color-text-muted)] text-xs mb-2">📲 Let others find your profile</p>
     <img src="/qr?data=/user/wait/{{.ID}}&size=120" alt="QR code" class="mx-auto rounded-lg shadow-md" width="120" height="120" />
   </div>
   {{else}}
-  <div class="w-36 h-36 rounded-3xl bg-white/20 flex items-center justify-center text-6xl mb-4 shadow-xl ring-4 ring-black/10 animate-pulse">
-    🎭
+  <div class="w-full {{.PersonaColor}} rounded-2xl p-6 shadow-xl ring-4 ring-[var(--color-border)] animate-pulse">
+    <div class="text-6xl mb-3">🎭</div>
+    <h2 class="text-2xl font-black {{textColor .PersonaColor}}">Crafting your persona…</h2>
   </div>
-  <h2 class="text-2xl font-black text-gray-900">Crafting your persona…</h2>
   {{template "fragment-this-is-you.html" .}}
   {{end}}
 </div>

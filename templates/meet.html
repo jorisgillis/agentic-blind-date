@@ -27,20 +27,21 @@
   </style>
   {{themeCSS .ThemeName}}
 </head>
-<body class="{{.Target.PersonaColor}} min-h-screen px-4 py-10" style="color-scheme: light;">
-<div class="{{textColor .Target.PersonaColor}}">
+<body class="bg-[var(--color-bg)] text-[var(--color-text)] min-h-screen px-4 py-10">
   <div class="max-w-md mx-auto space-y-5">
 
     {{if .Me}}
-    <p class="text-center text-sm text-gray-700">
+    <p class="text-center text-sm text-[var(--color-text-muted)]">
       You are <span class="font-bold">{{.Me.PersonaSymbol}} {{.Me.PersonaName}}</span>
     </p>
     {{end}}
 
-    {{/* The target's persona card */}}
-    <div class="text-center pop-in">
+    {{/* The target's business card (theming spec §4): the identity block
+         carries the target's persona color; the page around it follows the
+         viewer's theme */}}
+    <div class="rounded-2xl {{.Target.PersonaColor}} p-6 text-center pop-in">
       <div class="text-8xl mb-3">{{.Target.PersonaSymbol}}</div>
-      <h1 class="text-3xl font-black text-gray-900">You found {{.Target.PersonaSymbol}} {{.Target.PersonaName}}!</h1>
+      <h1 class="text-3xl font-black {{textColor .Target.PersonaColor}}">You found {{.Target.PersonaSymbol}} {{.Target.PersonaName}}!</h1>
       {{if .Target.PersonaTagline}}
       <p class="text-gray-700 mt-1 italic">"{{.Target.PersonaTagline}}"</p>
       {{end}}
@@ -48,26 +49,26 @@
 
     {{if .Me}}
       {{if eq .Me.ID .Target.ID}}
-      <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center pop-in" style="animation-delay:0.15s">
+      <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 text-center pop-in" style="animation-delay:0.15s">
         <p class="text-2xl mb-1">😄</p>
-        <p class="text-gray-900 font-bold">That's you!</p>
-        <p class="text-gray-700 text-sm mt-1">Go find someone else to meet.</p>
+        <p class="text-[var(--color-text)] font-bold">That's you!</p>
+        <p class="text-[var(--color-text-muted)] text-sm mt-1">Go find someone else to meet.</p>
       </div>
       {{else if not .Allowed}}
-      <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center pop-in" style="animation-delay:0.15s">
+      <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 text-center pop-in" style="animation-delay:0.15s">
         <p class="text-2xl mb-1">🔒</p>
-        <p class="text-gray-900 font-bold">Meeting confirmation is closed for now.</p>
-        <p class="text-gray-700 text-sm mt-1">It opens during the social and show &amp; tell.</p>
+        <p class="text-[var(--color-text)] font-bold">Meeting confirmation is closed for now.</p>
+        <p class="text-[var(--color-text-muted)] text-sm mt-1">It opens during the social and show &amp; tell.</p>
       </div>
       {{else if .Already}}
-      <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center pop-in" style="animation-delay:0.15s">
+      <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 text-center pop-in" style="animation-delay:0.15s">
         {{if .Completed}}
         <p class="text-2xl mb-1">🎉</p>
-        <p class="text-gray-900 font-bold">You already met {{.Target.PersonaSymbol}}!</p>
+        <p class="text-[var(--color-text)] font-bold">You already met {{.Target.PersonaSymbol}}!</p>
         {{else}}
         <p class="text-2xl mb-1">⏳</p>
-        <p class="text-gray-900 font-bold">You already confirmed meeting {{.Target.PersonaSymbol}}.</p>
-        <p class="text-gray-700 text-sm mt-1">Waiting for them to confirm.</p>
+        <p class="text-[var(--color-text)] font-bold">You already confirmed meeting {{.Target.PersonaSymbol}}.</p>
+        <p class="text-[var(--color-text-muted)] text-sm mt-1">Waiting for them to confirm.</p>
         {{end}}
       </div>
       {{else}}
@@ -90,26 +91,26 @@
       {{end}}
     {{else}}
       {{if not .Allowed}}
-      <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center pop-in" style="animation-delay:0.15s">
+      <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 text-center pop-in" style="animation-delay:0.15s">
         <p class="text-2xl mb-1">🔒</p>
-        <p class="text-gray-900 font-bold">Meeting confirmation is closed for now.</p>
-        <p class="text-gray-700 text-sm mt-1">It opens during the social and show &amp; tell.</p>
+        <p class="text-[var(--color-text)] font-bold">Meeting confirmation is closed for now.</p>
+        <p class="text-[var(--color-text-muted)] text-sm mt-1">It opens during the social and show &amp; tell.</p>
       </div>
       {{else}}
-      <div class="bg-black/15 border border-black/10 rounded-2xl p-5 pop-in space-y-3" style="animation-delay:0.15s">
-        <p class="text-gray-900 font-bold text-sm">Who are you?</p>
-        <p class="text-gray-700 text-xs">Enter your own meet code to confirm the meeting — it's on your personal page.</p>
+      <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 pop-in space-y-3" style="animation-delay:0.15s">
+        <p class="text-[var(--color-text)] font-bold text-sm">Who are you?</p>
+        <p class="text-[var(--color-text-muted)] text-xs">Enter your own meet code to confirm the meeting — it's on your personal page.</p>
         <form method="GET" action="/user/m/{{.Target.ID}}" class="flex gap-2">
           <input
             type="text"
             name="me"
             maxlength="6"
             placeholder="Your code"
-            class="flex-1 bg-white/60 border border-black/10 rounded-xl px-4 py-3 text-sm font-mono uppercase tracking-widest text-gray-900 placeholder-gray-500 focus:outline-none"
+            class="flex-1 bg-[var(--color-surface-alt)] border border-[var(--color-border)] rounded-xl px-4 py-3 text-sm font-mono uppercase tracking-widest text-[var(--color-text)] placeholder-[var(--color-text-muted)] focus:outline-none"
           />
           <button
             type="submit"
-            class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl px-4 py-3 text-sm transition-colors"
+            class="bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl px-4 py-3 text-sm transition-colors"
           >
             That's me
           </button>
@@ -119,7 +120,6 @@
     {{end}}
 
   </div>
-</div>
 </body>
 </html>
 {{end}}

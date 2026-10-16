@@ -10,7 +10,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   {{themeCSS .Theme}}
 </head>
-<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center px-4">
+<body class="bg-[var(--color-bg)] text-[var(--color-text)] min-h-screen flex items-center justify-center px-4">
   <div class="w-full max-w-md">
 
     {{/* The header tracks the pipeline area: while the agents prepare the
@@ -20,9 +20,9 @@
     <div class="text-center mb-8">
       <div class="text-5xl mb-3" id="onboard-emoji">{{if .Question}}🎤{{else}}🤖{{end}}</div>
       <h1 class="text-2xl font-black" id="onboard-title">{{if .Question}}Quick interview{{else}}The agents are on it{{end}}</h1>
-      <p class="text-gray-400 text-sm mt-1">{{.DisplayHandle}}</p>
-      <p class="text-gray-500 text-xs mt-2" id="onboard-sub">{{if .Question}}A few quick questions — your answers decide who you meet tonight{{else}}Fetching your profile and preparing your questions…{{end}}</p>
-      <p class="text-gray-600 text-xs mt-1 {{if .Question}}hidden{{end}}" id="onboard-elapsed">⏳ <span id="wait-elapsed">0:00</span></p>
+      <p class="text-[var(--color-text-muted)] text-sm mt-1">{{.DisplayHandle}}</p>
+      <p class="text-[var(--color-text-muted)] text-xs mt-2" id="onboard-sub">{{if .Question}}A few quick questions — your answers decide who you meet tonight{{else}}Fetching your profile and preparing your questions…{{end}}</p>
+      <p class="text-[var(--color-text-muted)] text-xs mt-1 {{if .Question}}hidden{{end}}" id="onboard-elapsed">⏳ <span id="wait-elapsed">0:00</span></p>
     </div>
 
     {{/* The fragment self-contains the polling div (hx-swap="outerHTML") */}}
