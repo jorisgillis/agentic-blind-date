@@ -10,26 +10,26 @@
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   {{themeCSS ""}}
 </head>
-<body class="bg-gray-950 text-white min-h-screen px-6 py-10">
+<body class="bg-[var(--color-bg)] text-[var(--color-text)] min-h-screen px-6 py-10">
   <div class="max-w-sm mx-auto space-y-6">
 
     <div class="text-center">
       <h1 class="text-2xl font-black">Host panel</h1>
-      <p class="text-gray-500 text-sm mt-1">Agentic Blind Date</p>
+      <p class="text-[var(--color-text-muted)] text-sm mt-1">Agentic Blind Date</p>
     </div>
 
     {{if .Notice}}
-    <div class="bg-indigo-900/50 border border-indigo-700 text-indigo-100 rounded-xl p-4 text-sm text-center">
+    <div class="bg-[var(--color-surface-alt)] border border-[var(--color-accent)] text-[var(--color-accent-muted)] rounded-xl p-4 text-sm text-center">
       {{.Notice}}
     </div>
     {{end}}
 
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 space-y-3">
       <div class="flex justify-between items-baseline text-sm">
-        <span class="text-gray-400">Phase</span>
+        <span class="text-[var(--color-text-muted)]">Phase</span>
         <span class="font-bold">{{.Phase}} · {{.Phase.Label}}</span>
       </div>
-      <p class="text-gray-500 text-xs">
+      <p class="text-[var(--color-text-muted)] text-xs">
         {{if .Phase.IsOnboarding}}Onboarding: register, match, wait — matches stay hidden
         {{else if .Phase.IsSocial}}Social: every match is revealed
         {{else if .Phase.IsShowTell}}Show &amp; tell: everything in the social stays
@@ -37,20 +37,47 @@
         {{end}}
       </p>
       <div class="flex justify-between text-sm">
-        <span class="text-gray-400">Registered</span>
+        <span class="text-[var(--color-text-muted)]">Registered</span>
         <span class="font-bold">{{.Count}}</span>
       </div>
       <div class="flex justify-between text-sm">
-        <span class="text-gray-400">Ready</span>
+        <span class="text-[var(--color-text-muted)]">Ready</span>
         <span class="font-bold">{{.Ready}}</span>
       </div>
       <div class="flex justify-between text-sm">
-        <span class="text-gray-400">Matched</span>
+        <span class="text-[var(--color-text-muted)]">Matched</span>
         <span class="font-bold">{{.Matched}}</span>
       </div>
       <div class="flex justify-between text-sm">
-        <span class="text-gray-400">Waiting for the agents</span>
+        <span class="text-[var(--color-text-muted)]">Waiting for the agents</span>
         <span class="font-bold">{{.Waiting}}</span>
+      </div>
+    </div>
+
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 space-y-3">
+      <p class="text-[var(--color-text-muted)] font-bold text-xs uppercase tracking-wide">🎨 Public theme</p>
+      <p class="text-[var(--color-text-muted)] text-xs">The look of the public pages — the big screen, the landing page and the event recap.</p>
+      <div class="flex gap-3">
+        {{$public := .PublicTheme}}
+        {{range .Themes}}
+        <form action="/admin/public-theme" method="POST" class="text-center">
+          <input type="hidden" name="theme" value="{{.Name}}">
+          <button
+            type="submit"
+            aria-label="{{.Label}}"
+            {{if eq .Name $public}}disabled{{end}}
+            {{if eq .Name $public}}class="block rounded-full ring-2 ring-indigo-500"{{else}}class="block rounded-full"{{end}}
+          >
+            <span
+              class="flex h-9 w-9 items-center justify-center rounded-full"
+              style="background: {{.Background}}; border: 2px solid {{.Border}}"
+            >
+              <span class="h-3 w-3 rounded-full" style="background: {{.Accent}}"></span>
+            </span>
+          </button>
+          <p class="text-xs mt-1 {{if eq .Name $public}}font-bold text-[var(--color-text)]{{else}}text-[var(--color-text-muted)]{{end}}">{{.Label}}</p>
+        </form>
+        {{end}}
       </div>
     </div>
 
@@ -64,7 +91,7 @@
 
     {{template "fragment-board-queue.html" .Board}}
 
-    <div class="text-center py-4 text-indigo-400 font-bold">
+    <div class="text-center py-4 text-[var(--color-accent-muted)] font-bold">
       ✨ Continuous matching active
     </div>
 
@@ -84,7 +111,7 @@
     <form action="/admin/reset" method="POST">
       <button
         type="submit"
-        class="w-full bg-gray-800 hover:bg-gray-700 text-gray-400 font-bold rounded-xl py-3 transition-colors text-sm"
+        class="w-full bg-[var(--color-surface-alt)] hover:bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] font-bold rounded-xl py-3 transition-colors text-sm"
         onclick="return confirm('Reset everything? This will delete all participants.')"
       >
         Reset event
@@ -95,23 +122,23 @@
     <form action="/admin/rematch" method="POST">
       <button
         type="submit"
-        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-3 transition-colors text-sm"
+        class="w-full bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl py-3 transition-colors text-sm"
         onclick="return confirm('Re-run matching for all participants?')"
       >
         🔄 Rematch
       </button>
     </form>
     {{else}}
-    <p class="text-center text-gray-600 text-xs">🔒 Matching is frozen — pairs are final</p>
+    <p class="text-center text-[var(--color-text-muted)] text-xs">🔒 Matching is frozen — pairs are final</p>
     {{end}}
 
     <div class="text-center space-y-1">
-      <a href="/bigscreen" target="_blank" class="block text-indigo-400 hover:text-indigo-300 text-sm">Open big screen →</a>
-      <a href="/user" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open participant landing →</a>
-      <a href="/admin/slides" class="block text-indigo-400 hover:text-indigo-300 text-sm">Manage slides →</a>
-      <a href="/data" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open debug data →</a>
-      <a href="/admin/export" class="block text-gray-600 hover:text-gray-400 text-sm">Download export pack (JSON) →</a>
-      <a href="/admin/export?format=md" class="block text-gray-600 hover:text-gray-400 text-sm">Download export pack (Markdown) →</a>
+      <a href="/bigscreen" target="_blank" class="block text-[var(--color-accent-muted)] hover:brightness-110 text-sm">Open big screen →</a>
+      <a href="/user" target="_blank" class="block text-[var(--color-text-muted)] hover:brightness-110 text-sm">Open participant landing →</a>
+      <a href="/admin/slides" class="block text-[var(--color-accent-muted)] hover:brightness-110 text-sm">Manage slides →</a>
+      <a href="/data" target="_blank" class="block text-[var(--color-text-muted)] hover:brightness-110 text-sm">Open debug data →</a>
+      <a href="/admin/export" class="block text-[var(--color-text-muted)] hover:brightness-110 text-sm">Download export pack (JSON) →</a>
+      <a href="/admin/export?format=md" class="block text-[var(--color-text-muted)] hover:brightness-110 text-sm">Download export pack (Markdown) →</a>
     </div>
 
   </div>

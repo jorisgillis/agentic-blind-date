@@ -180,6 +180,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("POST /admin/slides", h.AdminSlidesUpload)
 	mux.HandleFunc("POST /admin/slides/remove", h.AdminSlidesRemove)
 	mux.HandleFunc("POST /admin/board", h.AdminBoard)
+	mux.HandleFunc("POST /admin/public-theme", h.AdminPublicTheme)
 
 	return mux
 }

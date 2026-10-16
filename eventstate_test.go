@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 )
 
@@ -79,5 +80,31 @@ func TestNewDB_MapsTheLegacyRevealedValueToSocial(t *testing.T) {
 	defer reopened.Close()
 	if got := NewEventStore(reopened).State(); got != PhaseSocial {
 		t.Errorf("the legacy 'revealed' value should read as social, got %q", got)
+	}
+}
+
+// TestEventStore_PublicTheme covers the Public theme's storage (#172): an
+// absent key reads as the default, the set/get roundtrip works, and the
+// Host's choice survives a Reset — Reset rewrites only the phase key, and
+// the Public theme is a console preference about the venue, not event data.
+func TestEventStore_PublicTheme(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+
+	if got := deps.events.PublicTheme(); got != themeDefault {
+		t.Errorf("an absent public_theme: want %q, got %q", themeDefault, got)
+	}
+
+	if err := deps.events.SetPublicTheme("daylight"); err != nil {
+		t.Fatalf("SetPublicTheme: %v", err)
+	}
+	if got := deps.events.PublicTheme(); got != "daylight" {
+		t.Errorf("set/get roundtrip: want daylight, got %q", got)
+	}
+
+	if resp := post(t, srv, "/admin/reset", nil); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("POST /admin/reset: want 303, got %d", resp.StatusCode)
+	}
+	if got := deps.events.PublicTheme(); got != "daylight" {
+		t.Errorf("the public theme must survive a Reset, got %q", got)
 	}
 }

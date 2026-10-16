@@ -33,9 +33,9 @@
     }
     .edge-matched { animation: pulse-match 2s ease-in-out infinite; }
   </style>
-  {{themeCSS ""}}
+  {{themeCSS .PublicTheme}}
 </head>
-<body class="bg-gray-950 text-white flex flex-col h-full">
+<body class="bg-[var(--color-bg)] text-[var(--color-text)] flex flex-col h-full">
 
   <header class="flex items-center justify-between px-8 pt-5 pb-3 flex-shrink-0">
     <div class="flex items-center gap-3">
@@ -44,8 +44,8 @@
     </div>
     <div class="flex items-center gap-6">
       <div id="status-info" class="text-right">
-        <p id="phase-label" class="text-sm text-gray-400">Loading...</p>
-        <p id="count-label" class="text-xs text-gray-600"></p>
+        <p id="phase-label" class="text-sm text-[var(--color-text-muted)]">Loading...</p>
+        <p id="count-label" class="text-xs text-[var(--color-text-muted)]"></p>
       </div>
       <img id="qr" src="/qr?data=/user&size=110" alt="Join the event" class="rounded-lg flex-shrink-0" width="110" height="110" />
     </div>
@@ -57,45 +57,45 @@
       <g id="nodes-layer"></g>
     </svg>
     <canvas id="confetti" class="absolute inset-0 pointer-events-none"></canvas>
-    <div id="leaderboard" class="absolute top-4 left-4 bg-gray-900/90 border border-gray-700 rounded-xl p-4 hidden" style="min-width: 280px; z-index: 5;">
-      <h2 class="text-xs uppercase tracking-widest text-gray-400 mb-2">Connections</h2>
+    <div id="leaderboard" class="absolute top-4 left-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hidden" style="min-width: 280px; z-index: 5;">
+      <h2 class="text-xs uppercase tracking-widest text-[var(--color-text-muted)] mb-2">Connections</h2>
       <p id="champion" class="hidden text-amber-400 font-bold text-sm mb-2"></p>
       <ol id="leaderboard-list" class="space-y-1 text-sm"></ol>
     </div>
-    <div id="stats" class="absolute top-4 right-4 bg-gray-900/90 border border-gray-700 rounded-xl p-4 hidden text-sm space-y-1" style="min-width: 240px; z-index: 5;">
-      <h2 class="text-xs uppercase tracking-widest text-gray-400 mb-2">The evening</h2>
+    <div id="stats" class="absolute top-4 right-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hidden text-sm space-y-1" style="min-width: 240px; z-index: 5;">
+      <h2 class="text-xs uppercase tracking-widest text-[var(--color-text-muted)] mb-2">The evening</h2>
       <p>👥 <span id="stat-participants"></span> participants</p>
       <p>🤝 <span id="stat-meetings"></span> completed meetings</p>
       <p>📇 <span id="stat-exchanges"></span> contact details exchanged</p>
       <p>❓ <span id="stat-questions"></span> questions (<span id="stat-answered"></span> answered)</p>
     </div>
-    <div id="board" class="absolute bottom-4 left-1/2 hidden items-center gap-4 bg-gray-900/90 border border-gray-700 rounded-xl p-4" style="transform: translateX(-50%); width: 640px; max-width: 90%; z-index: 5;">
+    <div id="board" class="absolute bottom-4 left-1/2 hidden items-center gap-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4" style="transform: translateX(-50%); width: 640px; max-width: 90%; z-index: 5;">
       <div id="board-symbol" class="w-14 h-14 rounded-xl flex items-center justify-center text-3xl flex-shrink-0"></div>
       <div class="min-w-0 flex-1 space-y-1">
-        <p class="text-xs uppercase tracking-widest text-gray-400">📣 The board</p>
+        <p class="text-xs uppercase tracking-widest text-[var(--color-text-muted)]">📣 The board</p>
         <p id="board-name" class="text-sm font-bold"></p>
         <p id="board-text" class="text-lg whitespace-pre-line break-words"></p>
       </div>
       <img id="board-qr" alt="Scan the link" class="rounded-lg flex-shrink-0 hidden" width="110" height="110" />
     </div>
-    <div id="presenter" class="absolute inset-0 hidden items-center justify-center bg-gray-950/80" style="z-index: 10;">
-      <div class="bg-gray-900 border border-purple-500 rounded-3xl p-10 max-w-xl w-full mx-4 text-center space-y-4 shadow-2xl">
+    <div id="presenter" class="absolute inset-0 hidden items-center justify-center bg-[var(--color-bg)]" style="z-index: 10;">
+      <div class="bg-[var(--color-surface)] border-purple-500 rounded-3xl p-10 max-w-xl w-full mx-4 text-center space-y-4 shadow-2xl">
         <p id="presenter-hype" class="text-lg text-purple-300 italic"></p>
         <div id="presenter-symbol" class="text-7xl"></div>
         <div id="presenter-persona">
           <p id="presenter-name" class="text-3xl font-black mt-2"></p>
-          <p id="presenter-tagline" class="text-gray-400 text-sm italic"></p>
+          <p id="presenter-tagline" class="text-[var(--color-text-muted)] text-sm italic"></p>
         </div>
         <div id="presenter-identity" class="hidden">
           <p id="presenter-handle" class="text-3xl font-black text-pink-400"></p>
-          <p id="presenter-real-name" class="text-gray-400 text-sm"></p>
+          <p id="presenter-real-name" class="text-[var(--color-text-muted)] text-sm"></p>
         </div>
-        <div class="border-t border-gray-700 pt-4 space-y-1">
+        <div class="border-t border-[var(--color-border)] pt-4 space-y-1">
           <p id="presenter-title" class="text-xl font-bold"></p>
-          <p id="presenter-description" class="text-gray-400 text-sm"></p>
-          <a id="presenter-repo" class="text-indigo-400 text-sm underline" target="_blank" rel="noopener"></a>
+          <p id="presenter-description" class="text-[var(--color-text-muted)] text-sm"></p>
+          <a id="presenter-repo" class="text-[var(--color-accent-muted)] text-sm underline" target="_blank" rel="noopener"></a>
         </div>
-        <div id="presenter-question" class="hidden border-t border-gray-700 pt-4 space-y-1">
+        <div id="presenter-question" class="hidden border-t border-[var(--color-border)] pt-4 space-y-1">
           <p id="question-asker" class="text-sm font-bold"></p>
           <p id="question-text" class="text-xl font-bold"></p>
         </div>
@@ -104,18 +104,26 @@
     <div id="empty-state" class="absolute inset-0 flex items-center justify-center">
       <div class="text-center">
         <p class="text-6xl mb-4">📱</p>
-        <p class="text-gray-400 text-2xl font-semibold">Scan the QR code to join!</p>
-        <p class="text-gray-700 text-sm mt-2">Participants appear here as they register</p>
+        <p class="text-[var(--color-text-muted)] text-2xl font-semibold">Scan the QR code to join!</p>
+        <p class="text-[var(--color-text-muted)] text-sm mt-2">Participants appear here as they register</p>
       </div>
     </div>
   </div>
 
-  <footer class="flex-shrink-0 px-8 py-3 border-t border-gray-800 font-mono text-sm text-gray-500 overflow-hidden" style="height:44px">
+  <footer class="flex-shrink-0 px-8 py-3 border-t border-[var(--color-border)] font-mono text-sm text-[var(--color-text-muted)] overflow-hidden" style="height:44px">
     <p id="ticker">&nbsp;</p>
   </footer>
 
 <script>
 const colorMap = {{.Palette}};
+
+// The node stroke and label fill are theme chrome: they read the injected
+// --color-* variables at runtime instead of duplicating the hexes here.
+function themeVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+const nodeStroke = themeVar('--color-surface');
+const labelFill = themeVar('--color-text-muted');
 
 // The join QR points to /user — at the close it becomes the recap QR (below)
 let recapQrUrl = null;
@@ -269,7 +277,7 @@ function updateGraph(data) {
     .call(drag());
   nodeEnter.append('circle')
     .attr('r', 42)
-    .attr('stroke', '#111827')
+    .attr('stroke', nodeStroke)
     .attr('stroke-width', 3);
   nodeEnter.append('text')
     .attr('class', 'sym')
@@ -282,7 +290,7 @@ function updateGraph(data) {
     .attr('text-anchor', 'middle')
     .attr('y', 58)
     .attr('font-size', '11px')
-    .attr('fill', '#9ca3af')
+    .attr('fill', labelFill)
     .style('pointer-events', 'none');
 
   const nodeAll = nodeEnter.merge(nodeSel);
@@ -315,7 +323,7 @@ function updateGraph(data) {
       const li = document.createElement('li');
       li.className = 'flex items-center gap-2';
       const rank = document.createElement('span');
-      rank.className = 'text-gray-500 w-5';
+      rank.className = 'text-[var(--color-text-muted)] w-5';
       rank.textContent = (i + 1) + '.';
       const symbol = document.createElement('span');
       symbol.textContent = c.persona_symbol || '';
@@ -323,7 +331,7 @@ function updateGraph(data) {
       name.style.color = colorMap[c.persona_color] || '#9ca3af';
       name.textContent = c.persona_name || '';
       const count = document.createElement('span');
-      count.className = 'ml-auto text-gray-400';
+      count.className = 'ml-auto text-[var(--color-text-muted)]';
       count.textContent = c.connections;
       li.append(rank, symbol, name, count);
       list.appendChild(li);

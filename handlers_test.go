@@ -644,3 +644,51 @@ func TestRoot_RedirectsToTheLandingPageAndUnknownPathsAreNotFound(t *testing.T) 
 		t.Errorf("/nope: want 404, got %d", resp.StatusCode)
 	}
 }
+
+// TestAdminPublicTheme covers the Host's Public theme pick (#172): the
+// console's swatch form posts to /admin/public-theme, lands back on the
+// console with a 303, and the choice persists in the event state — where
+// the public surfaces' handlers read it.
+func TestAdminPublicTheme(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+
+	resp := post(t, srv, "/admin/public-theme", url.Values{"theme": {"daylight"}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("POST /admin/public-theme: want 303, got %d", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/admin" {
+		t.Errorf("Location: want /admin, got %s", loc)
+	}
+	if got := deps.events.PublicTheme(); got != "daylight" {
+		t.Errorf("the choice must persist, want daylight, got %q", got)
+	}
+
+	// The console's swatch row marks the stored choice current, and every
+	// swatch posts its own named input.
+	admin := readBody(t, get(t, srv, "/admin"))
+	if !strings.Contains(admin, `value="daylight"`) {
+		t.Error("the console's swatch row should carry the daylight choice")
+	}
+	if !strings.Contains(admin, "ring-2 ring-indigo-500") {
+		t.Error("the current theme's swatch should be marked with the ring")
+	}
+	for _, theme := range themes {
+		if !strings.Contains(admin, `value="`+theme.Name+`"`) {
+			t.Errorf("the console's swatch row should carry a form for %s", theme.Label)
+		}
+	}
+}
+
+// TestPublicTheme_RidesTheBigScreen pins the screen handler's render data:
+// the Big Screen injects the Host's chosen theme, not the default.
+func TestPublicTheme_RidesTheBigScreen(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.events.SetPublicTheme("daylight"); err != nil {
+		t.Fatalf("SetPublicTheme: %v", err)
+	}
+
+	body := readBody(t, get(t, srv, "/bigscreen"))
+	if !strings.Contains(body, "--color-bg:#f9fafb") {
+		t.Error("the Big Screen should render the Daylight theme the Host picked")
+	}
+}

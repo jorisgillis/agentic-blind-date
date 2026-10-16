@@ -56,10 +56,10 @@ func TestPhase_EveryPhaseHasItsOwnWords(t *testing.T) {
 		advanceConfirm string
 		buttonClass    string
 	}{
-		{PhaseOnboarding, "Waiting for participants", "", "", "", "bg-gray-700 hover:bg-gray-600"},
+		{PhaseOnboarding, "Waiting for participants", "", "", "", "bg-[var(--color-surface-alt)] hover:bg-[var(--color-surface-hover)]"},
 		{PhaseSocial, "Matches revealed! 🎉", "🎉 The matches are revealed!", "🎉 Start the social — reveal every match", "Advance to the social? Every match becomes visible to everyone.", "bg-pink-600 hover:bg-pink-500"},
 		{PhaseShowTell, "Show & tell time! 🎤", "🎤 Show & tell time!", "🎤 Start show & tell", "Advance to show & tell? Sign-up and the question queue go live.", "bg-purple-600 hover:bg-purple-500"},
-		{PhaseClosed, "The event is closed. See you next time! 👋", "👋 The event is closed. Thanks for playing!", "🔒 Close the event", "Close the event? The evening ends — recap pages persist.", "bg-gray-700 hover:bg-gray-600"},
+		{PhaseClosed, "The event is closed. See you next time! 👋", "👋 The event is closed. Thanks for playing!", "🔒 Close the event", "Close the event? The evening ends — recap pages persist.", "bg-[var(--color-surface-alt)] hover:bg-[var(--color-surface-hover)]"},
 	} {
 		t.Run(string(tc.phase), func(t *testing.T) {
 			if got := tc.phase.Label(); got != tc.label {

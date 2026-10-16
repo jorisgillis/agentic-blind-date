@@ -152,7 +152,7 @@ func (p Phase) ButtonClass() string {
 	case PhaseShowTell:
 		return "bg-purple-600 hover:bg-purple-500"
 	}
-	return "bg-gray-700 hover:bg-gray-600"
+	return "bg-[var(--color-surface-alt)] hover:bg-[var(--color-surface-hover)]"
 }
 
 // Phase predicates, for templates (which cannot use the constants).
@@ -228,6 +228,29 @@ func (s *EventStore) Reveal() error {
 
 func (s *EventStore) set(phase Phase) error {
 	_, err := s.db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, phase)
+	if err == nil {
+		s.db.changed()
+	}
+	return err
+}
+
+// PublicTheme returns the Host's choice of theme for the public pages —
+// the Big Screen, the landing page and the event recap. Anything unreadable
+// counts as the default; themeByName absorbs a stored name that is no longer
+// in the registry.
+func (s *EventStore) PublicTheme() string {
+	var name string
+	if err := s.db.db.QueryRow(`SELECT value FROM event_state WHERE key = 'public_theme'`).Scan(&name); err != nil {
+		return themeDefault
+	}
+	return name
+}
+
+// SetPublicTheme stores the Host's choice of theme for the public pages.
+// The value is stored as-is — the lenient rule: the picker can only submit
+// registry names, and themeByName absorbs anything else at render.
+func (s *EventStore) SetPublicTheme(name string) error {
+	_, err := s.db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('public_theme', ?)`, name)
 	if err == nil {
 		s.db.changed()
 	}

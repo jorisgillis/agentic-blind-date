@@ -151,7 +151,7 @@ func (h *Handler) Landing(w http.ResponseWriter, r *http.Request) {
 		}
 		http.SetCookie(w, &http.Cookie{Name: cookieName, Path: "/", MaxAge: -1})
 	}
-	h.render(w, "landing.html", nil)
+	h.render(w, "landing.html", map[string]any{"PublicTheme": h.events.PublicTheme()})
 }
 
 func setParticipantCookie(w http.ResponseWriter, id string) {
@@ -1151,7 +1151,13 @@ func (h *Handler) EventRecap(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, "event-recap.html", h.closing.Recap())
+	// The Public theme rides alongside the recap's own data: the handler
+	// resolves the name so the template's head stays one line.
+	recap := h.closing.Recap()
+	h.render(w, "event-recap.html", struct {
+		EventRecap
+		PublicTheme string
+	}{recap, h.events.PublicTheme()})
 }
 
 // GET /admin/export — the host's export pack, downloaded as JSON (the
@@ -1471,7 +1477,7 @@ func (h *Handler) showtellQuestionsSignature() string {
 
 // GET /bigscreen
 func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "screen.html", map[string]any{"Palette": paletteHex()})
+	h.render(w, "screen.html", map[string]any{"Palette": paletteHex(), "PublicTheme": h.events.PublicTheme()})
 }
 
 // GET /bigscreen/graph-data  — kept as fallback; big screen now uses /bigscreen/stream
@@ -1646,7 +1652,21 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 		"ShowTell":          h.showtellQueueData(),
 		"ShowTellQuestions": h.showtellQuestionsData(),
 		"Board":             h.boardModerationData(),
+		"Themes":            themes,
+		"PublicTheme":       h.events.PublicTheme(),
 	})
+}
+
+// POST /admin/public-theme: the Host picks the Public theme — the theme of
+// the public pages (the Big Screen, the landing page, the event recap). The
+// value is stored as-is (the lenient rule — themeByName absorbs unknown
+// names at render), and the console reloads via the 303.
+func (h *Handler) AdminPublicTheme(w http.ResponseWriter, r *http.Request) {
+	if err := h.events.SetPublicTheme(strings.TrimSpace(r.FormValue("theme"))); err != nil {
+		http.Error(w, "saving the public theme failed: "+err.Error(), 500)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 // POST /admin/phase: the host advances the event to a later phase (the "to"

@@ -8,56 +8,56 @@
   <script src="https://cdn.tailwindcss.com"></script>
   {{themeCSS ""}}
 </head>
-<body class="bg-gray-950 text-white min-h-screen px-6 py-10">
+<body class="bg-[var(--color-bg)] text-[var(--color-text)] min-h-screen px-6 py-10">
   {{/* No auto-refresh here, unlike the host console: it would wipe a chosen file. */}}
   <div class="max-w-sm mx-auto space-y-6">
 
     <div class="text-center">
       <h1 class="text-2xl font-black">Slides</h1>
-      <p class="text-gray-500 text-sm mt-1">Every Participant sees these on their personal page</p>
+      <p class="text-[var(--color-text-muted)] text-sm mt-1">Every Participant sees these on their personal page</p>
     </div>
 
     {{if .Notice}}
-    <div class="bg-indigo-900/50 border border-indigo-700 text-indigo-100 rounded-xl p-4 text-sm text-center">
+    <div class="bg-[var(--color-surface-alt)] border border-[var(--color-accent)] text-[var(--color-accent-muted)] rounded-xl p-4 text-sm text-center">
       {{.Notice}}
     </div>
     {{end}}
 
-    <form action="/admin/slides" method="POST" enctype="multipart/form-data" class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+    <form action="/admin/slides" method="POST" enctype="multipart/form-data" class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 space-y-3">
       <p class="font-bold text-sm">Upload slides</p>
       <input type="text" name="title" placeholder="Title of the talk" required maxlength="120"
-        class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+        class="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm">
       <input type="text" name="speaker" placeholder="Speaker" required maxlength="120"
-        class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+        class="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm">
       <input type="file" name="file" accept="application/pdf,.pdf" required
-        class="w-full text-sm text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-800 file:px-3 file:py-2 file:text-white">
-      <p class="text-gray-500 text-xs">A PDF, up to {{.MaxMB}} MB.</p>
-      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-3 transition-colors text-sm">
+        class="w-full text-sm text-[var(--color-text-muted)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--color-surface-alt)] file:px-3 file:py-2 file:text-[var(--color-text)]">
+      <p class="text-[var(--color-text-muted)] text-xs">A PDF, up to {{.MaxMB}} MB.</p>
+      <button type="submit" class="w-full bg-[var(--color-accent)] hover:brightness-110 text-[var(--color-accent-text)] font-bold rounded-xl py-3 transition-colors text-sm">
         Upload
       </button>
     </form>
 
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+    <div class="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-5 space-y-3">
       <p class="font-bold text-sm">Uploaded</p>
       {{range .Decks}}
       <div class="flex items-center gap-3">
         <div class="min-w-0 flex-1">
-          <a href="/slides/{{.ID}}" target="_blank" class="block text-sm font-medium truncate text-indigo-300">{{.Title}}</a>
-          <p class="text-gray-500 text-xs truncate">{{.Speaker}} · {{fileSize .Size}} · {{.CreatedAt.Format "15:04"}}</p>
+          <a href="/slides/{{.ID}}" target="_blank" class="block text-sm font-medium truncate text-[var(--color-accent-muted)]">{{.Title}}</a>
+          <p class="text-[var(--color-text-muted)] text-xs truncate">{{.Speaker}} · {{fileSize .Size}} · {{.CreatedAt.Format "15:04"}}</p>
         </div>
         <form action="/admin/slides/remove" method="POST">
           <input type="hidden" name="id" value="{{.ID}}">
-          <button type="submit" class="text-xs text-gray-400 hover:text-red-400 bg-gray-800 rounded-lg px-3 py-1.5"
+          <button type="submit" class="text-xs text-[var(--color-text-muted)] hover:text-red-400 bg-[var(--color-surface-alt)] rounded-lg px-3 py-1.5"
             onclick="return confirm('Remove these slides for everyone?')">Remove</button>
         </form>
       </div>
       {{else}}
-      <p class="text-gray-500 text-sm">Nothing uploaded yet.</p>
+      <p class="text-[var(--color-text-muted)] text-sm">Nothing uploaded yet.</p>
       {{end}}
     </div>
 
     <div class="text-center">
-      <a href="/admin" class="text-indigo-400 hover:text-indigo-300 text-sm">← Back to the host console</a>
+      <a href="/admin" class="text-[var(--color-accent-muted)] hover:brightness-110 text-sm">← Back to the host console</a>
     </div>
 
   </div>
