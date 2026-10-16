@@ -112,6 +112,15 @@ The public display for the event — the Graph, the activity ticker and the join
 
 In every phase the Big Screen also rotates the Board's newest approved Posts in a card with a QR of the Post's link — except while a presenter is on stage.
 
+### Theme
+A named set of color roles that paints a page. Two exist: Midnight (the dark default) and Daylight (light). Each Participant picks a Theme for their personal pages in Settings; the Host picks the Public Theme.
+
+### Public Theme
+The Host-selected Theme shared by every public-facing page: the Big Screen, the landing page, and the Public Event Recap. One theme for all public surfaces; Participants' personal pages are never affected by it.
+
+### Business Card
+The Persona identity block — emoji, name and tagline on the Persona's color. The one surface where the Persona color survives theming: the page is painted by its Theme, the Business Card keeps its Persona color.
+
 ### Interview
 The question-and-answer process where participants provide information about themselves. Consists of:
 - **Fixed Questions**: Standard questions all participants answer
@@ -305,3 +314,6 @@ The **Relationship module** owns Relationship State and enforces the Key Invaria
 | Slide Deck | A meet-up speaker's slides as one PDF, uploaded by the Host with a title and the speaker's name, shown to every Participant on their personal page in every phase. Not part of Show & Tell; deleted on Reset |
 | Board | The shared space where Participants post short messages and links, Bluesky-style; shown on personal pages, the Big Screen, the Public Event Recap and the Host Export Pack |
 | Post | One short plain-text message (≤280 characters) on the Board, attributed to the poster's Persona; `pending` → `approved` or `rejected` by the Host; max 10 per Participant; deleted on Reset |
+| Theme | A named palette of color roles that paints a page — Midnight (dark, default) or Daylight (light); picked per Participant in Settings |
+| Public Theme | The Host-picked Theme for the public pages: the Big Screen, the landing page and the Public Event Recap |
+| Business Card | The Persona identity block (emoji, name, tagline) on its Persona color — the one surface where the Persona color survives theming |
