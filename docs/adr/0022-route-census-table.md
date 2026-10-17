@@ -6,7 +6,9 @@ Accepted (2026-10-17)
 
 ## Context
 
-The app registers **84 routes** in a single registration site, `buildMux()` in `main.go`: 11 full HTML pages, 24 HTMX fragments, 13 JSON/SSE endpoints, 3 binary endpoints (QR PNG, PDF inline/download), 1 markdown endpoint (`/admin/export`), the `GET /` redirect, and the rest form POST actions. Yet green tests hide broken pages: the three e2e journeys cover only the registration/interview/meet-handshake spine (~15 routes), leaving 12 groups of routes with no journey at all — settings and theming, dossier and mission, recap, show & tell, slides, board, big screen, host console, debug data, QR, and the four SSE streams that only ever act as page side effects.
+The app registers **67 routes** in a single registration site, `buildMux()` in `main.go`: 11 full HTML pages, 15 HTMX fragments, 9 JSON endpoints, 5 SSE streams, 3 binary endpoints (QR PNG, PDF inline/download), 1 markdown endpoint (`/admin/export`), the `GET /` redirect, and 22 form POST actions. Yet green tests hide broken pages: the three e2e journeys cover only the registration/interview/meet-handshake spine (~15 routes), leaving 12 groups of routes with no journey at all — settings and theming, dossier and mission, recap, show & tell, slides, board, big screen, host console, debug data, QR, and the SSE streams that only ever act as page side effects.
+
+> Amended 2026-10-17, at implementation: the census counted the real registration site and found **67 routes**, not the 84 the inventory narrative claimed — the inventory's own tables are numbered 1–67, so the "84" was a miscount in the research digest, never a property of the code. The kind split above is the enforced one (the census test asserts it); the inventory's "24 fragments / 13 JSON/SSE" collapsed fragment-POST pairs and data routes differently. Routes the J4–J13 table left homeless were assigned as they were censused: `/qr`→J3, the pipeline/wait streams→J1, the match stream→J3, the showtell stream→J8, the screen stream→J11, `/data/state`→J1.
 
 Two failure modes need a structural answer: a route whose page silently stops rendering (no test asserts it exists), and a route that exists but no flow ever exercises (the coverage gap). An imperative mux cannot answer "what exists?" without reading every registration line.
 
@@ -19,9 +21,9 @@ Two failure modes need a structural answer: a route whose page silently stops re
 **Census assertions per kind** (Go test, `httptest` + seeded test DB):
 
 - **Pages** (11): rendered against seeded fixtures, asserting the inventory's stable marker (heading / `#id` / `<title>`) — e.g. landing `#joinForm`, wait `#wait-status`, big screen `#graph` + `#phase-label`
-- **Fragments** (24): top-level `#id` present (`#pipeline-area`, `#dossier`, `#mission-card`, …)
-- **JSON** (13): status, content-type, and top-level shape keys per route
-- **SSE** (4): event-wait pattern asserting at least one event payload
+- **Fragments** (15): top-level `#id` present (`#pipeline-area`, `#dossier`, `#mission-card`, …)
+- **JSON** (9): status, content-type, and top-level shape keys per route
+- **SSE** (5): event-wait pattern asserting at least one event payload
 - **Binary** (3): content-type plus non-trivial size bounds (QR PNG, PDF)
 - **`GET /`**: 302 redirect target; **`GET /admin/export`**: markdown content-type
 
