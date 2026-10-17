@@ -131,16 +131,27 @@ func (iv *Interview) Submit(p *Participant, raw string) (done bool, err error) {
 	if err := validateAnswer(next.Question, answer); err != nil {
 		return false, err
 	}
-
-	answers := make(map[string]string, len(p.Answers)+1)
-	for k, v := range p.Answers {
-		answers[k] = v
-	}
-	answers[next.Question.ID] = answer
+	answers := withAnswer(p.Answers, next.Question.ID, answer)
 	if err := iv.store.Change(ParticipantChange{ID: p.ID, Answers: answers}); err != nil {
 		return false, err
 	}
 	p.Answers = answers
+	return iv.completeIfDone(p)
+}
+
+// withAnswer returns a copy of answers plus the given answer.
+func withAnswer(answers map[string]string, id, answer string) map[string]string {
+	out := make(map[string]string, len(answers)+1)
+	for k, v := range answers {
+		out[k] = v
+	}
+	out[id] = answer
+	return out
+}
+
+// completeIfDone completes the Interview when the recorded answer was the
+// last one.
+func (iv *Interview) completeIfDone(p *Participant) (bool, error) {
 	if iv.Next(p) != nil {
 		return false, nil
 	}
@@ -169,30 +180,45 @@ func (iv *Interview) complete(p *Participant) error {
 // extraAnswersFrom maps answers to the Extra Questions onto ExtraAnswers.
 // It returns nil when none of the Extra Questions were answered.
 func extraAnswersFrom(answers map[string]string) *ExtraAnswers {
-	asked := false
-	for _, q := range ExtraQuestions {
-		if _, ok := answers[q.ID]; ok {
-			asked = true
-		}
-	}
-	if !asked {
+	if !askedExtraQuestions(answers) {
 		return nil
 	}
-	var languages []string
-	if err := json.Unmarshal([]byte(answers["extra_0"]), &languages); err != nil && answers["extra_0"] != "" {
-		languages = []string{answers["extra_0"]}
-	}
-	var devEnv []string
-	if env := answers["extra_2"]; env != "" {
-		devEnv = []string{env}
-	}
 	return &ExtraAnswers{
-		Languages:      languages,
+		Languages:      extraLanguages(answers["extra_0"]),
 		ProjectType:    answers["extra_1"],
-		DevEnvironment: devEnv,
+		DevEnvironment: nonEmptyList(answers["extra_2"]),
 		WeirdestBug:    answers["extra_3"],
 		Keyboard:       answers["extra_4"],
 	}
+}
+
+// askedExtraQuestions reports whether any Extra Question was answered.
+func askedExtraQuestions(answers map[string]string) bool {
+	for _, q := range ExtraQuestions {
+		if _, ok := answers[q.ID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// extraLanguages parses the languages answer: a JSON array, or a single
+// language when it is not valid JSON (an empty answer stays empty).
+func extraLanguages(answer string) []string {
+	var languages []string
+	if err := json.Unmarshal([]byte(answer), &languages); err != nil && answer != "" {
+		languages = []string{answer}
+	}
+	return languages
+}
+
+// nonEmptyList wraps a single answer in a one-element list; an empty answer
+// stays nil.
+func nonEmptyList(answer string) []string {
+	if answer != "" {
+		return []string{answer}
+	}
+	return nil
 }
 
 func validateAnswer(q Question, answer string) error {
@@ -231,14 +257,35 @@ func comparableAnswer(id string) bool {
 // answer" lines in interview order, so the answers make sense without the
 // question ids. Answers with no stored question fall back to their id.
 func interviewText(p *Participant) string {
-	var lines []string
+	lines := answeredLines(p)
+	if len(lines) == 0 {
+		return "(none)"
+	}
+	return strings.Join(lines, "\n")
+}
+
+// answeredLines renders the answers as "question → answer" lines: stored
+// questions in interview order first, then any remaining answers by id.
+func answeredLines(p *Participant) []string {
+	lines, seen := questionLines(p)
+	return append(lines, unaskedLines(p, seen)...)
+}
+
+// questionLines renders the answers to stored questions, in interview order.
+func questionLines(p *Participant) ([]string, map[string]bool) {
 	seen := map[string]bool{}
+	var lines []string
 	for _, q := range p.Questions {
 		if a, ok := p.Answers[q.ID]; ok {
 			lines = append(lines, fmt.Sprintf("- %s → %s", q.Text, a))
 			seen[q.ID] = true
 		}
 	}
+	return lines, seen
+}
+
+// unaskedLines renders the answers with no stored question, by id.
+func unaskedLines(p *Participant, seen map[string]bool) []string {
 	var rest []string
 	for id := range p.Answers {
 		if !seen[id] {
@@ -246,13 +293,11 @@ func interviewText(p *Participant) string {
 		}
 	}
 	sort.Strings(rest)
+	var lines []string
 	for _, id := range rest {
 		lines = append(lines, fmt.Sprintf("- %s → %s", id, p.Answers[id]))
 	}
-	if len(lines) == 0 {
-		return "(none)"
-	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 // indent prefixes every line of s.

@@ -172,6 +172,33 @@ type followCheck struct {
 	secondFollowsFirst bool
 }
 
+// orderedPair orders two handles like the follow cache key: the
+// lexicographically lower first.
+func orderedPair(a, b string) (first, second string) {
+	first, second = a, b
+	if second < first {
+		first, second = second, first
+	}
+	return first, second
+}
+
+// directed reads the cached follow relationship from the querying side: the
+// cache stores it in the key's order, so the answer flips with the query.
+func (c followCheck) directed(firstIsA bool) (aFollowsB, bFollowsA bool) {
+	if firstIsA {
+		return c.firstFollowsSecond, c.secondFollowsFirst
+	}
+	return c.secondFollowsFirst, c.firstFollowsSecond
+}
+
+// newFollowCheck stores a follow relationship in the cache key's order.
+func newFollowCheck(firstIsA bool, aFollowsB, bFollowsA bool) followCheck {
+	if firstIsA {
+		return followCheck{firstFollowsSecond: aFollowsB, secondFollowsFirst: bFollowsA}
+	}
+	return followCheck{firstFollowsSecond: bFollowsA, secondFollowsFirst: aFollowsB}
+}
+
 // mutualFollow reports whether a follows b and whether b follows a. Follow
 // relationships are cached in memory per unordered handle pair for the
 // duration of the event, so the heuristic PairScore and the LLM follow notes
@@ -179,10 +206,7 @@ type followCheck struct {
 // follow pair per event. The lock is held across the API call so concurrent
 // scorers wait for one check instead of racing duplicate calls.
 func (m *Matcher) mutualFollow(a, b string) (aFollowsB, bFollowsA bool) {
-	first, second := a, b
-	if second < first {
-		first, second = second, first
-	}
+	first, second := orderedPair(a, b)
 	key := first + ":" + second
 
 	m.followMu.Lock()
@@ -192,17 +216,10 @@ func (m *Matcher) mutualFollow(a, b string) (aFollowsB, bFollowsA bool) {
 	}
 	if cached, ok := m.follows[key]; ok {
 		logger("matcher").Debug("follow cache hit", "pair", key)
-		if first == a {
-			return cached.firstFollowsSecond, cached.secondFollowsFirst
-		}
-		return cached.secondFollowsFirst, cached.firstFollowsSecond
+		return cached.directed(first == a)
 	}
 	aFollowsB, bFollowsA = m.github.CheckMutualFollow(a, b)
-	cached := followCheck{firstFollowsSecond: aFollowsB, secondFollowsFirst: bFollowsA}
-	if first != a {
-		cached = followCheck{firstFollowsSecond: bFollowsA, secondFollowsFirst: aFollowsB}
-	}
-	m.follows[key] = cached
+	m.follows[key] = newFollowCheck(first == a, aFollowsB, bFollowsA)
 	return aFollowsB, bFollowsA
 }
 
@@ -211,13 +228,18 @@ func (m *Matcher) followNote(p1, p2 *Participant) string {
 		return ""
 	}
 	aFollowsB, bFollowsA := m.mutualFollow(p1.GitHubHandle, p2.GitHubHandle)
+	return followSentence(p1.PersonaName, p2.PersonaName, aFollowsB, bFollowsA)
+}
+
+// followSentence describes the pair's follow relationship for the LLM.
+func followSentence(nameA, nameB string, aFollowsB, bFollowsA bool) string {
 	switch {
 	case aFollowsB && bFollowsA:
-		return fmt.Sprintf("\n\nNote: %s and %s already follow each other on GitHub!", p1.PersonaName, p2.PersonaName)
+		return fmt.Sprintf("\n\nNote: %s and %s already follow each other on GitHub!", nameA, nameB)
 	case aFollowsB:
-		return fmt.Sprintf("\n\nNote: %s already follows %s on GitHub.", p1.PersonaName, p2.PersonaName)
+		return fmt.Sprintf("\n\nNote: %s already follows %s on GitHub.", nameA, nameB)
 	case bFollowsA:
-		return fmt.Sprintf("\n\nNote: %s already follows %s on GitHub.", p2.PersonaName, p1.PersonaName)
+		return fmt.Sprintf("\n\nNote: %s already follows %s on GitHub.", nameB, nameA)
 	}
 	return ""
 }
@@ -249,87 +271,96 @@ func nonNil(s []string) []string {
 
 // PairScore calculates a numeric compatibility score between two participants.
 func (m *Matcher) PairScore(a, b *Participant) int {
-	score := 0
-
-	aP := a.Profile
-	if aP == nil {
+	if a.Profile == nil || b.Profile == nil {
 		return 0
 	}
-	bP := b.Profile
-	if bP == nil {
+	return profileScore(a.Profile, b.Profile) + answerScore(a, b) + m.followScore(a, b)
+}
+
+// profileScore scores what the two profiles share: +3 per shared language,
+// +2 per shared topic, +2 for the same project type, +1 per shared dev
+// environment.
+func profileScore(aP, bP *GitHubProfile) int {
+	return 3*countShared(aP.Languages, bP.Languages) +
+		2*countShared(aP.TopTopics, bP.TopTopics) +
+		projectTypeScore(aP, bP) +
+		countShared(devEnvironments(aP), devEnvironments(bP))
+}
+
+// countShared counts the values of other that also appear in set.
+func countShared(set, other []string) int {
+	shared := make(map[string]bool, len(set))
+	for _, v := range set {
+		shared[v] = true
+	}
+	n := 0
+	for _, v := range other {
+		if shared[v] {
+			n++
+		}
+	}
+	return n
+}
+
+// projectTypeScore is +2 when both chose the same non-empty project type.
+func projectTypeScore(aP, bP *GitHubProfile) int {
+	if aP.ExtraAnswers == nil || bP.ExtraAnswers == nil {
 		return 0
 	}
+	if aP.ExtraAnswers.ProjectType != "" && aP.ExtraAnswers.ProjectType == bP.ExtraAnswers.ProjectType {
+		return 2
+	}
+	return 0
+}
 
-	// Score shared languages: +3 per match
-	aLangs := map[string]bool{}
-	for _, l := range aP.Languages {
-		aLangs[l] = true
+// devEnvironments lists the profile's dev environments; the Extra Questions
+// may not have been asked.
+func devEnvironments(p *GitHubProfile) []string {
+	if p.ExtraAnswers == nil {
+		return nil
 	}
-	for _, l := range bP.Languages {
-		if aLangs[l] {
-			score += 3
-		}
-	}
+	return p.ExtraAnswers.DevEnvironment
+}
 
-	// Score shared topics: +2 per match
-	aTopics := map[string]bool{}
-	for _, t := range aP.TopTopics {
-		aTopics[t] = true
-	}
-	for _, t := range bP.TopTopics {
-		if aTopics[t] {
-			score += 2
-		}
-	}
-
-	// Score shared project types: +2 if same
-	if aP.ExtraAnswers != nil && bP.ExtraAnswers != nil {
-		if aP.ExtraAnswers.ProjectType != "" && aP.ExtraAnswers.ProjectType == bP.ExtraAnswers.ProjectType {
-			score += 2
-		}
-	}
-
-	// Score shared dev environments: +1 per match
-	if aP.ExtraAnswers != nil && bP.ExtraAnswers != nil {
-		aDevEnv := map[string]bool{}
-		for _, e := range aP.ExtraAnswers.DevEnvironment {
-			aDevEnv[e] = true
-		}
-		for _, e := range bP.ExtraAnswers.DevEnvironment {
-			if aDevEnv[e] {
-				score++
-			}
-		}
-	}
-
-	// Score matching interview answers: +1 per match
-	aAns := a.Answers
-	if aAns == nil {
-		aAns = map[string]string{}
-	}
-	bAns := b.Answers
-	if bAns == nil {
-		bAns = map[string]string{}
-	}
-
-	for k, av := range aAns {
+// answerScore is +1 per interview question the pair answered identically.
+func answerScore(a, b *Participant) int {
+	bAns := answersOf(b)
+	n := 0
+	for k, av := range answersOf(a) {
 		if bv, ok := bAns[k]; ok && comparableAnswer(k) && av == bv {
-			score++
+			n++
 		}
 	}
+	return n
+}
 
-	// Score the GitHub follow relationship: +5 if mutual, +3 if one-way
-	if a.HasGitHub && b.HasGitHub {
-		aFollowsB, bFollowsA := m.mutualFollow(a.GitHubHandle, b.GitHubHandle)
-		switch {
-		case aFollowsB && bFollowsA:
-			score += 5
-		case aFollowsB || bFollowsA:
-			score += 3
-		}
+// answersOf returns the Participant's interview answers; a Participant who
+// answered none has an empty set.
+func answersOf(p *Participant) map[string]string {
+	if p.Answers == nil {
+		return map[string]string{}
 	}
+	return p.Answers
+}
 
-	return score
+// followScore scores the GitHub follow relationship: +5 if mutual, +3 if
+// one-way.
+func (m *Matcher) followScore(a, b *Participant) int {
+	if !a.HasGitHub || !b.HasGitHub {
+		return 0
+	}
+	return followPoints(m.mutualFollow(a.GitHubHandle, b.GitHubHandle))
+}
+
+// followPoints maps a follow relationship onto its score.
+func followPoints(aFollowsB, bFollowsA bool) int {
+	if aFollowsB && bFollowsA {
+		return 5
+	}
+	if aFollowsB != bFollowsA {
+		return 3
+	}
+	return 0
 }
 
 // Match is a Pair chosen by the Matcher, with its LLM assessment.
@@ -352,8 +383,13 @@ func (m *Matcher) MatchPool(participants []*Participant) []Match {
 	}
 	candidates := m.candidatePairs(participants)
 	m.db.LogActivity(fmt.Sprintf("🔍 Evaluating %d candidate pairs...", len(candidates)))
-	scored := byScoreDesc(m.assessAll(candidates))
+	matches := greedyTake(byScoreDesc(m.assessAll(candidates)))
+	return append(matches, m.assessAll(m.greedyMatch(unpairedParticipants(participants, matches)))...)
+}
 
+// greedyTake pairs the assessed candidates by descending LLM score while
+// both Participants are free.
+func greedyTake(scored []Match) []Match {
 	var matches []Match
 	taken := map[string]bool{}
 	for _, s := range scored {
@@ -362,14 +398,28 @@ func (m *Matcher) MatchPool(participants []*Participant) []Match {
 			taken[s.A.ID], taken[s.B.ID] = true, true
 		}
 	}
+	return matches
+}
 
+// pairedIDs lists the Participants already in one of the Matches.
+func pairedIDs(matches []Match) map[string]bool {
+	taken := map[string]bool{}
+	for _, s := range matches {
+		taken[s.A.ID], taken[s.B.ID] = true, true
+	}
+	return taken
+}
+
+// unpairedParticipants lists the Participants no Match took.
+func unpairedParticipants(participants []*Participant, matches []Match) []*Participant {
+	taken := pairedIDs(matches)
 	var leftover []*Participant
 	for _, p := range participants {
 		if !taken[p.ID] {
 			leftover = append(leftover, p)
 		}
 	}
-	return append(matches, m.assessAll(m.greedyMatch(leftover))...)
+	return leftover
 }
 
 // MatchNewcomer finds a partner for a Participant who just became ready, among
@@ -474,16 +524,23 @@ func (m *Matcher) candidatePairs(participants []*Participant) [][2]*Participant 
 	var pairs [][2]*Participant
 	seen := map[string]bool{}
 	for _, p := range participants {
-		if p.PipelineStep != StepReady {
+		pairs = append(pairs, m.readyPairs(p, participants, seen)...)
+	}
+	return pairs
+}
+
+// readyPairs collects p's top ready candidates as unique Pairs.
+func (m *Matcher) readyPairs(p *Participant, all []*Participant, seen map[string]bool) [][2]*Participant {
+	if p.PipelineStep != StepReady {
+		return nil
+	}
+	var pairs [][2]*Participant
+	for _, candidate := range m.topCandidates(p, all) {
+		if candidate.PipelineStep != StepReady || seen[pairKey(p, candidate)] {
 			continue
 		}
-		for _, candidate := range m.topCandidates(p, participants) {
-			if candidate.PipelineStep != StepReady || seen[pairKey(p, candidate)] {
-				continue
-			}
-			seen[pairKey(p, candidate)] = true
-			pairs = append(pairs, [2]*Participant{p, candidate})
-		}
+		seen[pairKey(p, candidate)] = true
+		pairs = append(pairs, [2]*Participant{p, candidate})
 	}
 	return pairs
 }
@@ -496,19 +553,25 @@ func (m *Matcher) greedyMatch(participants []*Participant) [][2]*Participant {
 		if matched[i] {
 			continue
 		}
-		bestScore, bestIdx := -1, -1
-		for j, other := range participants {
-			if i == j || matched[j] {
-				continue
-			}
-			if score := m.PairScore(p, other); score > bestScore {
-				bestScore, bestIdx = score, j
-			}
-		}
-		if bestIdx >= 0 {
-			pairs = append(pairs, [2]*Participant{p, participants[bestIdx]})
-			matched[i], matched[bestIdx] = true, true
+		if j := m.bestPartner(i, participants, matched); j >= 0 {
+			pairs = append(pairs, [2]*Participant{p, participants[j]})
+			matched[i], matched[j] = true, true
 		}
 	}
 	return pairs
+}
+
+// bestPartner finds the unmatched Participant (other than i themselves) with
+// the highest heuristic PairScore against i, or -1 when there is none.
+func (m *Matcher) bestPartner(i int, participants []*Participant, matched []bool) int {
+	bestScore, bestIdx := -1, -1
+	for j, other := range participants {
+		if i == j || matched[j] {
+			continue
+		}
+		if score := m.PairScore(participants[i], other); score > bestScore {
+			bestScore, bestIdx = score, j
+		}
+	}
+	return bestIdx
 }

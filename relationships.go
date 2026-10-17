@@ -36,25 +36,40 @@ func strPtr(s string) *string { return &s }
 func (r *Relationships) Pair(m Match) (displaced []string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	sides := [][2]*Participant{{m.A, m.B}, {m.B, m.A}}
-	var changes []ParticipantChange
-	for _, side := range sides {
-		p, err := r.store.Get(side[0].ID)
-		if err != nil {
-			return nil, err
-		}
-		if former := p.MatchedWith; former != "" && former != side[1].ID {
-			changes = append(changes, ParticipantChange{ID: former, MatchedWith: strPtr(""), Match: &matchResult{}})
-			displaced = append(displaced, former)
-		}
+	changes, displaced, err := r.breakFormerMatches(m)
+	if err != nil {
+		return nil, err
 	}
-	for _, side := range sides {
+	for _, side := range pairSides(m) {
 		changes = append(changes, ParticipantChange{ID: side[0].ID, MatchedWith: strPtr(side[1].ID), Match: m.Result})
 	}
 	if err := r.store.Change(changes...); err != nil {
 		return nil, err
 	}
 	return displaced, nil
+}
+
+// pairSides lists a Match's two sides, each as (who, whom).
+func pairSides(m Match) [][2]*Participant {
+	return [][2]*Participant{{m.A, m.B}, {m.B, m.A}}
+}
+
+// breakFormerMatches unpairs both sides' existing partners, returning the
+// unpair changes and the partners displaced by the new Match.
+func (r *Relationships) breakFormerMatches(m Match) ([]ParticipantChange, []string, error) {
+	var changes []ParticipantChange
+	var displaced []string
+	for _, side := range pairSides(m) {
+		p, err := r.store.Get(side[0].ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if former := p.MatchedWith; former != "" && former != side[1].ID {
+			changes = append(changes, ParticipantChange{ID: former, MatchedWith: strPtr(""), Match: &matchResult{}})
+			displaced = append(displaced, former)
+		}
+	}
+	return changes, displaced, nil
 }
 
 // PartnerOf returns a Participant's partner and the assessment of their Match,

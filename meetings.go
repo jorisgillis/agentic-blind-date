@@ -169,71 +169,120 @@ func (ms *Meetings) Confirm(confirmer, target *Participant, origin MeetingOrigin
 
 	a, b := canonicalPair(confirmer.ID, target.ID)
 	now := time.Now()
-	completed := false
-	err = ms.db.inTx(func(tx *sql.Tx) error {
-		m, err := meetingRow(tx.QueryRow(selectMeeting+` WHERE participant_a = ? AND participant_b = ?`, a, b))
-		if err != nil {
-			return err
-		}
-		if m == nil {
-			// The first side: create the canonical row, tagging the origin
-			// from the initiator's perspective — a current Match meets as match.
-			if confirmer.MatchedWith == target.ID {
-				origin = OriginMatch
-			}
-			m = &Meeting{A: a, B: b, Origin: origin}
-			if confirmer.ID == a {
-				m.AConfirmedAt = &now
-			} else {
-				m.BConfirmedAt = &now
-			}
-			_, err := tx.Exec(`INSERT INTO meetings (participant_a, participant_b, a_confirmed_at, b_confirmed_at, origin) VALUES (?, ?, ?, ?, ?)`,
-				a, b, m.AConfirmedAt, m.BConfirmedAt, m.Origin)
-			if err != nil {
-				return err
-			}
-			meeting = m
-			return nil
-		}
-		// The same side confirming again is a friendly no-op.
-		if m.ConfirmedBy(confirmer.ID) {
-			already = true
-			meeting = m
-			return nil
-		}
-		if confirmer.ID == a {
-			m.AConfirmedAt = &now
-			_, err = tx.Exec(`UPDATE meetings SET a_confirmed_at = ? WHERE participant_a = ? AND participant_b = ?`, now, a, b)
-		} else {
-			m.BConfirmedAt = &now
-			_, err = tx.Exec(`UPDATE meetings SET b_confirmed_at = ? WHERE participant_a = ? AND participant_b = ?`, now, a, b)
-		}
-		if err != nil {
-			return err
-		}
-		if m.AConfirmedAt != nil && m.BConfirmedAt != nil {
-			m.CompletedAt = &now
-			if _, err := tx.Exec(`UPDATE meetings SET completed_at = ? WHERE participant_a = ? AND participant_b = ?`, now, a, b); err != nil {
-				return err
-			}
-			completed = true
-		}
-		meeting = m
-		return nil
-	})
+	meeting, already, completed, err := ms.confirmTx(confirmer, target, a, b, origin, now)
 	if err != nil {
 		return nil, false, err
 	}
 	logger("meetings").Debug("meeting confirmation", "a", a, "b", b, "origin", meeting.Origin, "completed", completed, "already", already)
 	if completed {
-		// The announcement names the pair in canonical order.
-		x, y := confirmer, target
-		if meeting.B == confirmer.ID {
-			x, y = target, confirmer
-		}
-		ms.db.LogActivity(fmt.Sprintf("🤝 %s and %s met!", x.PersonaName, y.PersonaName))
+		ms.announce(confirmer, target, meeting)
 	}
 	return meeting, already, nil
+}
+
+// confirmOutcome is one confirm attempt's result.
+type confirmOutcome struct {
+	meeting   *Meeting
+	already   bool
+	completed bool
+}
+
+// confirmTx runs the two-sided confirm handshake in one transaction.
+func (ms *Meetings) confirmTx(confirmer, target *Participant, a, b string, origin MeetingOrigin, now time.Time) (*Meeting, bool, bool, error) {
+	var outcome confirmOutcome
+	err := ms.db.inTx(func(tx *sql.Tx) error {
+		var err error
+		outcome, err = ms.confirmInTx(tx, confirmer, target, a, b, origin, now)
+		return err
+	})
+	if err != nil {
+		return nil, false, false, err
+	}
+	return outcome.meeting, outcome.already, outcome.completed, nil
+}
+
+// confirmInTx confirms one side of the pair's canonical row inside tx:
+// creating the row on the first confirm, or completing the handshake on it.
+func (ms *Meetings) confirmInTx(tx *sql.Tx, confirmer, target *Participant, a, b string, origin MeetingOrigin, now time.Time) (confirmOutcome, error) {
+	m, err := meetingRow(tx.QueryRow(selectMeeting+` WHERE participant_a = ? AND participant_b = ?`, a, b))
+	if err != nil {
+		return confirmOutcome{}, err
+	}
+	if m == nil {
+		return createMeeting(tx, confirmer, target, a, b, origin, now)
+	}
+	return confirmExisting(tx, m, confirmer, a, b, now)
+}
+
+// createMeeting creates the canonical row on the first confirm, tagging the
+// origin from the initiator's perspective — a current Match meets as match.
+func createMeeting(tx *sql.Tx, confirmer, target *Participant, a, b string, origin MeetingOrigin, now time.Time) (confirmOutcome, error) {
+	if confirmer.MatchedWith == target.ID {
+		origin = OriginMatch
+	}
+	m := &Meeting{A: a, B: b, Origin: origin}
+	if confirmer.ID == a {
+		m.AConfirmedAt = &now
+	} else {
+		m.BConfirmedAt = &now
+	}
+	_, err := tx.Exec(`INSERT INTO meetings (participant_a, participant_b, a_confirmed_at, b_confirmed_at, origin) VALUES (?, ?, ?, ?, ?)`,
+		a, b, m.AConfirmedAt, m.BConfirmedAt, m.Origin)
+	if err != nil {
+		return confirmOutcome{}, err
+	}
+	return confirmOutcome{meeting: m}, nil
+}
+
+// confirmExisting records the other side's confirm on the existing row. The
+// same side confirming again is a friendly no-op.
+func confirmExisting(tx *sql.Tx, m *Meeting, confirmer *Participant, a, b string, now time.Time) (confirmOutcome, error) {
+	if m.ConfirmedBy(confirmer.ID) {
+		return confirmOutcome{meeting: m, already: true}, nil
+	}
+	if err := confirmSide(tx, m, confirmer.ID == a, now, a, b); err != nil {
+		return confirmOutcome{}, err
+	}
+	completed, err := markCompleted(tx, m, now, a, b)
+	if err != nil {
+		return confirmOutcome{}, err
+	}
+	return confirmOutcome{meeting: m, completed: completed}, nil
+}
+
+// confirmSide stamps the confirmer's side of the row.
+func confirmSide(tx *sql.Tx, m *Meeting, asA bool, now time.Time, a, b string) error {
+	if asA {
+		m.AConfirmedAt = &now
+		_, err := tx.Exec(`UPDATE meetings SET a_confirmed_at = ? WHERE participant_a = ? AND participant_b = ?`, now, a, b)
+		return err
+	}
+	m.BConfirmedAt = &now
+	_, err := tx.Exec(`UPDATE meetings SET b_confirmed_at = ? WHERE participant_a = ? AND participant_b = ?`, now, a, b)
+	return err
+}
+
+// markCompleted marks the meeting completed when both sides have confirmed,
+// reporting whether it just completed.
+func markCompleted(tx *sql.Tx, m *Meeting, now time.Time, a, b string) (bool, error) {
+	completed := m.AConfirmedAt != nil && m.BConfirmedAt != nil
+	if completed {
+		m.CompletedAt = &now
+		if _, err := tx.Exec(`UPDATE meetings SET completed_at = ? WHERE participant_a = ? AND participant_b = ?`, now, a, b); err != nil {
+			return false, err
+		}
+	}
+	return completed, nil
+}
+
+// announce proclaims the completed meeting on the ticker, naming the pair in
+// canonical order.
+func (ms *Meetings) announce(confirmer, target *Participant, m *Meeting) {
+	x, y := confirmer, target
+	if m.B == confirmer.ID {
+		x, y = target, confirmer
+	}
+	ms.db.LogActivity(fmt.Sprintf("🤝 %s and %s met!", x.PersonaName, y.PersonaName))
 }
 
 // Between returns the Meeting between two Participants, or nil when they

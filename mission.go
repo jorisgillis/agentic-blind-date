@@ -88,18 +88,19 @@ func (m *Missions) GenerateFor(id string) (*MissionCard, error) {
 	if !m.events.State().MissionCardsLive() {
 		return nil, nil
 	}
-	existing, err := m.Get(id)
+	card, err := m.Get(id)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
-		return existing, nil
+	if card != nil {
+		return card, nil
 	}
-	others, err := m.store.AllByStep(StepReady)
-	if err != nil {
-		return nil, fmt.Errorf("mission card for %s: %w", id, err)
-	}
-	me, err := m.store.Get(id)
+	return m.createCard(id)
+}
+
+// createCard generates, saves and announces a new card for the Participant.
+func (m *Missions) createCard(id string) (*MissionCard, error) {
+	me, others, err := m.cardPool(id)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +114,20 @@ func (m *Missions) GenerateFor(id string) (*MissionCard, error) {
 	logger("mission").Debug("mission card generated", "participant", id, "tiles", len(card.Tiles))
 	m.db.LogActivity(fmt.Sprintf("🃏 %s got a mission card", me.PersonaName))
 	return card, nil
+}
+
+// cardPool fetches the Participant and the ready pool their card is built
+// from.
+func (m *Missions) cardPool(id string) (*Participant, []*Participant, error) {
+	others, err := m.store.AllByStep(StepReady)
+	if err != nil {
+		return nil, nil, fmt.Errorf("mission card for %s: %w", id, err)
+	}
+	me, err := m.store.Get(id)
+	if err != nil {
+		return nil, nil, err
+	}
+	return me, others, nil
 }
 
 // GenerateAll generates a Mission card for every ready Participant, in a
@@ -160,17 +175,24 @@ func (m *Missions) generate(me *Participant, others []*Participant) (*MissionCar
 		return nil, fmt.Errorf("mission card for %s: %w", me.ID, err)
 	}
 	tiles := selectTiles(me, others, stamped, m.matcher.PairScore)
+	applyReasons(tiles, m.agent.Reasons(me, tilesAroundCenter(tiles), others))
+	return &MissionCard{ParticipantID: me.ID, Tiles: tiles}, nil
+}
 
-	// One batched LLM call for the surrounding tiles' reasons, in grid
-	// order; on failure the generic reason stands — card generation never
-	// blocks on the LLM.
+// tilesAroundCenter lists the tiles around the center, in grid order.
+func tilesAroundCenter(tiles []MissionTile) []MissionTile {
 	var surrounding []MissionTile
 	for _, t := range tiles {
 		if t.Position != centerPosition {
 			surrounding = append(surrounding, t)
 		}
 	}
-	reasons := m.agent.Reasons(me, surrounding, others)
+	return surrounding
+}
+
+// applyReasons fills the surrounding tiles' reasons in grid order; the center
+// keeps its static reason.
+func applyReasons(tiles []MissionTile, reasons []string) {
 	next := 0
 	for i := range tiles {
 		if tiles[i].Position == centerPosition {
@@ -179,8 +201,6 @@ func (m *Missions) generate(me *Participant, others []*Participant) (*MissionCar
 		tiles[i].Reason = reasons[next]
 		next++
 	}
-
-	return &MissionCard{ParticipantID: me.ID, Tiles: tiles}, nil
 }
 
 // save stores the card, announcing it on the change feed so personal pages
@@ -281,6 +301,12 @@ func (m *Missions) RemoveParticipant(id string) error {
 	return err
 }
 
+// tilePick is one surrounding tile's Person and why it is on the card.
+type tilePick struct {
+	p    *Participant
+	kind MissionTileKind
+}
+
 // selectTiles picks me's 3×3 grid from the other ready Participants: the
 // center (position 4) is their Match, or their top-affinity pick when
 // unmatched; the 8 surrounding tiles are 4 affinity picks (the highest
@@ -289,61 +315,119 @@ func (m *Missions) RemoveParticipant(id string) error {
 // are excluded from the surrounding tiles, and no person appears twice. The
 // order is deterministic: score descending, then id.
 func selectTiles(me *Participant, others []*Participant, met map[string]bool, score func(a, b *Participant) int) []MissionTile {
-	byID := make(map[string]*Participant, len(others))
+	candidates := tileCandidates(me, others, met)
+	affinity := ranked(candidates, affinityScore(me, score))
+	center, kind := pickCenter(me, others, affinity)
+	return assembleTiles(center, kind, surroundingPicks(me, affinity, center))
+}
+
+// affinityScore adapts the pair heuristic into ranked's per-candidate score.
+func affinityScore(me *Participant, score func(a, b *Participant) int) func(*Participant) int {
+	return func(o *Participant) int { return score(me, o) }
+}
+
+// differenceScoreOf adapts the difference heuristic into ranked's
+// per-candidate score.
+func differenceScoreOf(me *Participant) func(*Participant) int {
+	return func(o *Participant) int { return differenceScore(me, o) }
+}
+
+// tileCandidates lists the Participants who can be a surrounding tile: not
+// me, not already met, not my Match (the center, not a surrounding tile).
+func tileCandidates(me *Participant, others []*Participant, met map[string]bool) []*Participant {
 	var candidates []*Participant
 	for _, o := range others {
-		byID[o.ID] = o
-		switch {
-		case o.ID == me.ID, met[o.ID], me.IsMatched() && o.ID == me.MatchedWith:
-			// Me, the already-met and my Match (the center, not a
-			// surrounding tile) are not candidates.
-		default:
+		if eligibleTileCandidate(me, o, met) {
 			candidates = append(candidates, o)
 		}
 	}
+	return candidates
+}
 
-	// The center: their Match, or the top-affinity pick when unmatched.
-	var center *Participant
-	centerKind := TileAffinity
-	if me.IsMatched() {
-		if match, ok := byID[me.MatchedWith]; ok {
-			center, centerKind = match, TileMatch
+func eligibleTileCandidate(me, o *Participant, met map[string]bool) bool {
+	if o.ID == me.ID || met[o.ID] {
+		return false
+	}
+	return !me.IsMatched() || o.ID != me.MatchedWith
+}
+
+// pickCenter picks the center: their Match when they have one in the pool,
+// otherwise the top-affinity pick. Unmatched centers are TileAffinity.
+func pickCenter(me *Participant, others, affinity []*Participant) (*Participant, MissionTileKind) {
+	if match, ok := matchedCenter(me, others); ok {
+		return match, TileMatch
+	}
+	if len(affinity) > 0 {
+		return affinity[0], TileAffinity
+	}
+	return nil, TileAffinity
+}
+
+func matchedCenter(me *Participant, others []*Participant) (*Participant, bool) {
+	if !me.IsMatched() {
+		return nil, false
+	}
+	return participantByID(me.MatchedWith, others)
+}
+
+func participantByID(id string, all []*Participant) (*Participant, bool) {
+	for _, o := range all {
+		if o.ID == id {
+			return o, true
 		}
 	}
-	affinity := ranked(candidates, func(o *Participant) int { return score(me, o) })
-	if center == nil && len(affinity) > 0 {
-		center = affinity[0]
-	}
+	return nil, false
+}
 
-	// The 8 surrounding tiles: 4 affinity picks, then 4 wildcards.
+// surroundingPicks picks the 8 tiles around the center: 4 affinity picks,
+// then 4 wildcards (deliberately different — opposites attract).
+func surroundingPicks(me *Participant, affinity []*Participant, center *Participant) []tilePick {
+	rest := excludingCenter(affinity, center)
+	picks := take(rest, 4)
+	wildcards := take(ranked(rest[len(picks):], differenceScoreOf(me)), 4)
+	var out []tilePick
+	for _, p := range picks {
+		out = append(out, tilePick{p: p, kind: TileAffinity})
+	}
+	for _, p := range wildcards {
+		out = append(out, tilePick{p: p, kind: TileWildcard})
+	}
+	return out
+}
+
+// excludingCenter drops the center from the affinity ranking.
+func excludingCenter(affinity []*Participant, center *Participant) []*Participant {
 	var rest []*Participant
 	for _, o := range affinity {
-		if center != nil && o.ID == center.ID {
-			continue
+		if center == nil || o.ID != center.ID {
+			rest = append(rest, o)
 		}
-		rest = append(rest, o)
 	}
-	picks := take(rest, 4)
-	wildcards := take(ranked(rest[len(picks):], func(o *Participant) int { return differenceScore(me, o) }), 4)
+	return rest
+}
 
+// assembleTiles lays the tiles out on the grid: the center at position 4,
+// the picks around it in order, skipping the center square.
+func assembleTiles(center *Participant, kind MissionTileKind, picks []tilePick) []MissionTile {
 	var tiles []MissionTile
 	if center != nil {
-		tiles = append(tiles, newTile(centerPosition, centerKind, center, centerReason(centerKind)))
+		tiles = append(tiles, newTile(centerPosition, kind, center, centerReason(kind)))
 	}
 	position := 0
-	for _, group := range []struct {
-		picks []*Participant
-		kind  MissionTileKind
-	}{{picks, TileAffinity}, {wildcards, TileWildcard}} {
-		for _, o := range group.picks {
-			for position == centerPosition {
-				position++
-			}
-			tiles = append(tiles, newTile(position, group.kind, o, ""))
-			position++
-		}
+	for _, pick := range picks {
+		position = skipCenter(position)
+		tiles = append(tiles, newTile(position, pick.kind, pick.p, ""))
+		position++
 	}
 	return tiles
+}
+
+// skipCenter advances a surrounding position past the center square.
+func skipCenter(position int) int {
+	for position == centerPosition {
+		position++
+	}
+	return position
 }
 
 // ranked orders the Participants by score descending, ties broken by id, so
@@ -391,31 +475,37 @@ func centerReason(kind MissionTileKind) string {
 // exactly one side, +1 per interview question the pair answered differently.
 // Wildcard tiles are the deliberately different picks — opposites attract.
 func differenceScore(a, b *Participant) int {
-	score := 0
+	return languageDifference(a, b) + answerDifference(a, b)
+}
+
+// languageDifference counts the languages on exactly one side.
+func languageDifference(a, b *Participant) int {
 	aLangs, bLangs := languageSet(a), languageSet(b)
+	n := 0
 	for l := range aLangs {
 		if !bLangs[l] {
-			score++
+			n++
 		}
 	}
 	for l := range bLangs {
 		if !aLangs[l] {
-			score++
+			n++
 		}
 	}
-	aAnswers, bAnswers := a.Answers, b.Answers
-	if aAnswers == nil {
-		aAnswers = map[string]string{}
-	}
-	if bAnswers == nil {
-		bAnswers = map[string]string{}
-	}
-	for k, av := range aAnswers {
+	return n
+}
+
+// answerDifference counts the interview questions the pair answered
+// differently.
+func answerDifference(a, b *Participant) int {
+	bAnswers := answersOf(b)
+	n := 0
+	for k, av := range answersOf(a) {
 		if bv, ok := bAnswers[k]; ok && comparableAnswer(k) && av != bv {
-			score++
+			n++
 		}
 	}
-	return score
+	return n
 }
 
 func languageSet(p *Participant) map[string]bool {
@@ -471,24 +561,35 @@ Respond with ONLY valid JSON — no markdown:
 {"reasons": ["<one line per tile, in tile order>", ...]}
 `
 	reply, err := AskStructured(a.llm, system, missionPrompt(me, tiles, others), func(r missionReasonsReply) error {
-		if len(r.Reasons) != len(tiles) {
-			return fmt.Errorf("mission reply has %d reasons, want %d", len(r.Reasons), len(tiles))
-		}
-		for _, reason := range r.Reasons {
-			if strings.TrimSpace(reason) == "" {
-				return errors.New("mission reply has an empty reason")
-			}
-		}
-		return nil
+		return validateMissionReasons(r.Reasons, len(tiles))
 	})
 	if err != nil {
 		return nil, err
 	}
-	reasons := make([]string, len(reply.Reasons))
-	for i, r := range reply.Reasons {
-		reasons[i] = strings.TrimSpace(r)
+	return trimmedReasons(reply.Reasons), nil
+}
+
+// validateMissionReasons rejects a reply that does not hold exactly one
+// non-empty reason per tile.
+func validateMissionReasons(reasons []string, want int) error {
+	if len(reasons) != want {
+		return fmt.Errorf("mission reply has %d reasons, want %d", len(reasons), want)
 	}
-	return reasons, nil
+	for _, reason := range reasons {
+		if strings.TrimSpace(reason) == "" {
+			return errors.New("mission reply has an empty reason")
+		}
+	}
+	return nil
+}
+
+// trimmedReasons trims every reason, in place order.
+func trimmedReasons(reasons []string) []string {
+	trimmed := make([]string, len(reasons))
+	for i, r := range reasons {
+		trimmed[i] = strings.TrimSpace(r)
+	}
+	return trimmed
 }
 
 // missionPrompt describes the Participant and every tile's Persona for the

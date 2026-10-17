@@ -137,6 +137,20 @@ func (o *Onboarding) finish(p *Participant) {
 // Interests are logged rather than leaving the Participant stuck.
 func (o *Onboarding) becomeReady(p *Participant) {
 	o.db.LogActivity("🎭 Crafting a new persona...")
+	persona := o.craftPersona(p)
+	if err := o.store.Change(ParticipantChange{ID: p.ID, PipelineStep: stepPtr(StepReady)}); err != nil {
+		logger("onboarding").Error("becoming ready", "participant", p.ID, "err", err)
+		return
+	}
+	logger("onboarding").Debug("participant ready", "participant", p.ID, "persona", persona.Name)
+	o.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))
+	o.afterReady(p)
+}
+
+// craftPersona creates the Persona from the Participant's profile and saves
+// it, then saves their Interests. Both failures are logged: the Participant
+// still becomes ready.
+func (o *Onboarding) craftPersona(p *Participant) Persona {
 	if p.Profile == nil {
 		p.Profile = &GitHubProfile{}
 	}
@@ -147,13 +161,12 @@ func (o *Onboarding) becomeReady(p *Participant) {
 	if err := o.store.Change(ParticipantChange{ID: p.ID, Interests: interestsOf(p.Profile)}); err != nil {
 		logger("onboarding").Warn("saving the interests, continuing without them", "participant", p.ID, "err", err)
 	}
-	if err := o.store.Change(ParticipantChange{ID: p.ID, PipelineStep: stepPtr(StepReady)}); err != nil {
-		logger("onboarding").Error("becoming ready", "participant", p.ID, "err", err)
-		return
-	}
-	logger("onboarding").Debug("participant ready", "participant", p.ID, "persona", persona.Name)
-	o.db.LogActivity(fmt.Sprintf("✅ %s is ready for matching!", persona.Name))
+	return persona
+}
 
+// afterReady hands the freshly ready Participant to Continuous Matching and
+// deals their Mission card.
+func (o *Onboarding) afterReady(p *Participant) {
 	if err := o.matchmaking.MatchNewcomer(p); err != nil {
 		logger("onboarding").Error("continuous matching", "participant", p.ID, "err", err)
 	}

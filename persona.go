@@ -104,21 +104,36 @@ var personaSymbols = []string{"🦊", "🦁", "🐯", "🐺", "🦝", "🦔", "�
 // ("class|symbol") is already used: a random one among the least used, so every
 // combination is used once before any repeats, and repeats then cycle.
 func nextLook(uses map[string]int) (color, symbol string) {
+	least := leastUsedLooks(uses)
+	pick := least[rand.Intn(len(least))] //nolint:gosec // G404: cosmetic — picks among the least-used persona looks; no security decision rides on it
+	return pick[0], pick[1]
+}
+
+// leastUsedLooks lists the colour/symbol combinations used fewest times.
+func leastUsedLooks(uses map[string]int) [][2]string {
+	fewest := minLookUses(uses)
 	var least [][2]string
-	fewest := -1
 	for _, c := range personaPalette {
 		for _, s := range personaSymbols {
-			n := uses[c.Class+"|"+s]
-			switch {
-			case fewest == -1 || n < fewest:
-				fewest, least = n, [][2]string{{c.Class, s}}
-			case n == fewest:
+			if uses[c.Class+"|"+s] == fewest {
 				least = append(least, [2]string{c.Class, s})
 			}
 		}
 	}
-	pick := least[rand.Intn(len(least))] //nolint:gosec // G404: cosmetic — picks among the least-used persona looks; no security decision rides on it
-	return pick[0], pick[1]
+	return least
+}
+
+// minLookUses reports the fewest times any colour/symbol combination is used.
+func minLookUses(uses map[string]int) int {
+	fewest := -1
+	for _, c := range personaPalette {
+		for _, s := range personaSymbols {
+			if n := uses[c.Class+"|"+s]; fewest == -1 || n < fewest {
+				fewest = n
+			}
+		}
+	}
+	return fewest
 }
 
 // paletteHex maps each Persona colour class to its hex, for the Big Screen.

@@ -46,26 +46,65 @@ type meetCodeStore interface {
 // the id; a collision re-derives deterministically with a salt.
 func ensureMeetCode(s meetCodeStore, id string) (string, error) {
 	for salt := 0; ; salt++ {
-		var code string
-		if err := s.QueryRow(`SELECT COALESCE(meet_code, '') FROM participants WHERE id = ?`, id).Scan(&code); err != nil {
+		code, retry, err := meetCodeStep(s, id, salt)
+		if err != nil {
 			return "", err
 		}
-		if code != "" {
+		if !retry {
 			return code, nil
 		}
-		candidate := deriveMeetCode(id, salt)
-		res, err := s.Exec(`UPDATE participants SET meet_code = ? WHERE id = ? AND (meet_code IS NULL OR meet_code = '')`, candidate, id)
-		if err != nil {
-			if isUniqueViolation(err) {
-				continue // collision: re-derive with the next salt
-			}
-			return "", err
-		}
-		if rowsAffected(res) == 1 {
-			return candidate, nil
-		}
-		// Lost a race: the row got a code meanwhile — loop and read it back.
 	}
+}
+
+// meetCodeStep is one derivation attempt: the Participant's stored code when
+// they have one, otherwise a freshly derived and stored one. retry reports
+// that the attempt collided (or lost a race) and the next salt should be
+// tried.
+func meetCodeStep(s meetCodeStore, id string, salt int) (code string, retry bool, err error) {
+	stored, err := readMeetCode(s, id)
+	if err != nil {
+		return "", false, err
+	}
+	if stored != "" {
+		return stored, false, nil
+	}
+	assigned, err := assignMeetCode(s, id, salt)
+	if err != nil {
+		return "", false, err
+	}
+	if assigned != "" {
+		return assigned, false, nil
+	}
+	return "", true, nil
+}
+
+// readMeetCode reads the Participant's stored meet code; "" when they have
+// none.
+func readMeetCode(s meetCodeStore, id string) (string, error) {
+	var code string
+	if err := s.QueryRow(`SELECT COALESCE(meet_code, '') FROM participants WHERE id = ?`, id).Scan(&code); err != nil {
+		return "", err
+	}
+	return code, nil
+}
+
+// assignMeetCode derives and stores the Participant's meet code when the row
+// has none yet. A UNIQUE collision returns "" without error: the caller
+// re-derives with the next salt.
+func assignMeetCode(s meetCodeStore, id string, salt int) (string, error) {
+	candidate := deriveMeetCode(id, salt)
+	res, err := s.Exec(`UPDATE participants SET meet_code = ? WHERE id = ? AND (meet_code IS NULL OR meet_code = '')`, candidate, id)
+	if isUniqueViolation(err) {
+		return "", nil // collision: the caller re-derives with the next salt
+	}
+	if err != nil {
+		return "", err
+	}
+	assigned := "" // a lost race: the row got a code meanwhile
+	if rowsAffected(res) == 1 {
+		assigned = candidate
+	}
+	return assigned, nil
 }
 
 // isUniqueViolation reports whether err is SQLite's UNIQUE constraint
@@ -78,18 +117,8 @@ func isUniqueViolation(err error) bool {
 // backfillMeetCodes assigns meet codes to the Participants who registered
 // before meet codes existed. It runs once at startup (NewDB).
 func backfillMeetCodes(db *DB) error {
-	rows, err := db.db.Query(`SELECT id FROM participants WHERE meet_code IS NULL OR meet_code = ''`)
+	ids, err := participantsWithoutMeetCode(db)
 	if err != nil {
-		return err
-	}
-	defer closeRows(rows)
-	var ids []string
-	for rows.Next() {
-		var id string
-		_ = rows.Scan(&id) // a TEXT column into a string: cannot fail
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -98,4 +127,21 @@ func backfillMeetCodes(db *DB) error {
 		}
 	}
 	return nil
+}
+
+// participantsWithoutMeetCode lists the ids of the Participants with no meet
+// code.
+func participantsWithoutMeetCode(db *DB) ([]string, error) {
+	rows, err := db.db.Query(`SELECT id FROM participants WHERE meet_code IS NULL OR meet_code = ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer closeRows(rows)
+	var ids []string
+	for rows.Next() {
+		var id string
+		_ = rows.Scan(&id) // a TEXT column into a string: cannot fail
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

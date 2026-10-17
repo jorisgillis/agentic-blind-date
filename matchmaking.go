@@ -51,25 +51,42 @@ func (mm *Matchmaking) Rematch() error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
-	participants, err := mm.participants.AllByStep(StepReady)
+	participants, err := mm.readyPool()
 	if err != nil {
 		return err
-	}
-	if len(participants) < 2 {
-		return fmt.Errorf("need at least 2 ready participants, got %d", len(participants))
 	}
 	if err := mm.relations.UnpairAll(); err != nil {
 		return err
 	}
 	mm.db.LogActivity("🔮 The matchmaker agents are at work...")
 
-	for _, m := range mm.matcher.MatchPool(participants) {
+	if err := mm.storeAll(mm.matcher.MatchPool(participants)); err != nil {
+		return err
+	}
+
+	mm.db.LogActivity("💞 Rematch complete")
+	return nil
+}
+
+// readyPool fetches the ready Participants, requiring a pairable pool.
+func (mm *Matchmaking) readyPool() ([]*Participant, error) {
+	participants, err := mm.participants.AllByStep(StepReady)
+	if err != nil {
+		return nil, err
+	}
+	if len(participants) < 2 {
+		return nil, fmt.Errorf("need at least 2 ready participants, got %d", len(participants))
+	}
+	return participants, nil
+}
+
+// storeAll records every Match through the Relationship module.
+func (mm *Matchmaking) storeAll(matches []Match) error {
+	for _, m := range matches {
 		if _, err := mm.store(m); err != nil {
 			return err
 		}
 	}
-
-	mm.db.LogActivity("💞 Rematch complete")
 	return nil
 }
 
@@ -114,18 +131,7 @@ func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []s
 	if err != nil {
 		return nil, nil, fmt.Errorf("ParticipantStore.All: %w", err)
 	}
-	frozen := mm.events.State().MatchingFrozen()
-	var newcomer *Participant
-	var others []*Participant
-	for _, p := range all {
-		switch {
-		case p.ID == id:
-			newcomer = p
-		case exclude[p.ID]:
-		case p.PipelineStep == StepReady && (!frozen || !p.IsMatched()):
-			others = append(others, p)
-		}
-	}
+	newcomer, others := splitPool(all, id, exclude, mm.events.State().MatchingFrozen())
 	if newcomer == nil {
 		return nil, nil, nil
 	}
@@ -140,10 +146,36 @@ func (mm *Matchmaking) matchOne(id string, exclude map[string]bool) (*Match, []s
 	if err != nil {
 		return nil, nil, err
 	}
+	mm.announceTakeOver(newcomer, m, displaced)
+	return m, displaced, nil
+}
+
+// splitPool separates the Participant with the given id from their candidate
+// pool: everyone else who is a candidate.
+func splitPool(all []*Participant, id string, exclude map[string]bool, frozen bool) (newcomer *Participant, others []*Participant) {
+	for _, p := range all {
+		switch {
+		case p.ID == id:
+			newcomer = p
+		case exclude[p.ID]:
+		case isCandidate(p, frozen):
+			others = append(others, p)
+		}
+	}
+	return newcomer, others
+}
+
+// isCandidate reports whether p can be matched with: ready, and — once
+// matching is frozen — not already matched.
+func isCandidate(p *Participant, frozen bool) bool {
+	return p.PipelineStep == StepReady && (!frozen || !p.IsMatched())
+}
+
+// announceTakeOver proclaims a take-over on the ticker.
+func (mm *Matchmaking) announceTakeOver(newcomer *Participant, m *Match, displaced []string) {
 	if len(displaced) > 0 {
 		mm.db.LogActivity(fmt.Sprintf("🔄 %s took over %s's previous match", newcomer.PersonaName, m.B.PersonaName))
 	}
-	return m, displaced, nil
 }
 
 // store records a Match through the Relationship module and returns the
