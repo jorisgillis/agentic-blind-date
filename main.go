@@ -98,89 +98,15 @@ func main() {
 	}
 }
 
+// buildMux registers every route in the census table (ADR-0022) — the table
+// in routes.go is the single registration site; a route cannot exist outside
+// it, and the census test fails on any drift between the two.
 func buildMux(h *Handler) http.Handler {
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		http.Redirect(w, r, "/user", http.StatusFound)
-	})
-
-	mux.HandleFunc("GET /user", h.Landing)
-	mux.HandleFunc("POST /user/join", h.Join)
-	mux.HandleFunc("GET /user/onboard/{id}", h.Onboard)
-	mux.HandleFunc("GET /user/pipeline/{id}", h.PipelineStatus)
-	mux.HandleFunc("POST /user/answer/{id}", h.SubmitAnswer)
-	mux.HandleFunc("GET /user/wait/{id}", h.Wait)
-	mux.HandleFunc("GET /user/wait-status/{id}", h.WaitStatus)
-	mux.HandleFunc("GET /user/persona/{id}", h.PersonaCard)
-	mux.HandleFunc("GET /user/phase-header/{id}", h.PhaseHeader)
-	mux.HandleFunc("GET /user/phase-content/{id}", h.PhaseContent)
-	mux.HandleFunc("GET /user/match/{id}", h.Match)
-	mux.HandleFunc("GET /user/dossier/{id}", h.Dossier)
-	mux.HandleFunc("GET /user/mission/{id}", h.MissionCard)
-	mux.HandleFunc("GET /user/m/{id}", h.Meet)
-	mux.HandleFunc("POST /user/met/{id}", h.ConfirmMeeting)
-	mux.HandleFunc("GET /user/meet-status/{id}", h.MeetStatus)
-	mux.HandleFunc("GET /user/match-stream/{id}", h.MatchStream)
-	mux.HandleFunc("GET /user/settings/{id}", h.Settings)
-	mux.HandleFunc("POST /user/settings/{id}", h.SaveSettings)
-	mux.HandleFunc("POST /user/theme/{id}", h.SaveTheme)
-	mux.HandleFunc("GET /user/recap-link/{id}", h.RecapLink)
-	mux.HandleFunc("GET /user/recap/{token}", h.Recap)
-	mux.HandleFunc("POST /user/showtell/signup/{id}", h.ShowTellSignup)
-	mux.HandleFunc("GET /user/showtell/{id}", h.ShowTellStatus)
-	mux.HandleFunc("GET /user/slides/{id}", h.Slides)
-	mux.HandleFunc("POST /user/showtell/question/{id}", h.ShowTellQuestion)
-	mux.HandleFunc("GET /user/board/{id}", h.BoardSection)
-	mux.HandleFunc("POST /user/board/{id}", h.BoardPost)
-	mux.HandleFunc("POST /user/board/{id}/delete", h.BoardDelete)
-
-	mux.HandleFunc("GET /slides/{id}", h.SlideDeckOpen)
-	mux.HandleFunc("GET /slides/{id}/download", h.SlideDeckDownload)
-
-	mux.HandleFunc("GET /recap", h.EventRecap)
-	mux.HandleFunc("GET /qr", h.QR)
-
-	mux.HandleFunc("GET /bigscreen", h.Screen)
-	mux.HandleFunc("GET /bigscreen/graph-data", h.GraphData)
-	mux.HandleFunc("GET /bigscreen/stream", h.ScreenStream)
-
-	mux.HandleFunc("GET /user/pipeline-stream/{id}", h.PipelineStream)
-	mux.HandleFunc("GET /user/wait-stream/{id}", h.WaitStream)
-
-	mux.HandleFunc("GET /data", h.DataIndex)
-	mux.HandleFunc("GET /data/participants", h.DataParticipants)
-	mux.HandleFunc("GET /data/participant/{id}", h.DataParticipant)
-	mux.HandleFunc("DELETE /data/participant/{id}", h.DeleteParticipant)
-	mux.HandleFunc("GET /data/activity", h.DataActivity)
-	mux.HandleFunc("GET /data/state", h.DataState)
-	mux.HandleFunc("GET /data/meetings", h.DataMeetings)
-	mux.HandleFunc("GET /data/leaderboard", h.DataLeaderboard)
-	mux.HandleFunc("GET /data/channels", h.DataChannels)
-	mux.HandleFunc("GET /data/missioncard/{id}", h.DataMissionCard)
-
-	mux.HandleFunc("GET /admin", h.Admin)
-	mux.HandleFunc("POST /admin/phase", h.AdvancePhase)
-	mux.HandleFunc("POST /admin/reveal", h.TriggerReveal)
-	mux.HandleFunc("POST /admin/reset", h.Reset)
-	mux.HandleFunc("POST /admin/rematch", h.Rematch)
-	mux.HandleFunc("POST /admin/showtell/stage", h.ShowTellStage)
-	mux.HandleFunc("POST /admin/showtell/move", h.ShowTellMove)
-	mux.HandleFunc("POST /admin/showtell/remove", h.ShowTellRemove)
-	mux.HandleFunc("POST /admin/showtell/question", h.ShowTellQuestionAction)
-	mux.HandleFunc("GET /admin/showtell-queue", h.ShowTellQueue)
-	mux.HandleFunc("GET /admin/showtell-questions", h.ShowTellQuestions)
-	mux.HandleFunc("GET /admin/showtell-stream", h.ShowTellStream)
-	mux.HandleFunc("GET /admin/export", h.AdminExport)
-	mux.HandleFunc("GET /admin/slides", h.AdminSlides)
-	mux.HandleFunc("POST /admin/slides", h.AdminSlidesUpload)
-	mux.HandleFunc("POST /admin/slides/remove", h.AdminSlidesRemove)
-	mux.HandleFunc("POST /admin/board", h.AdminBoard)
-	mux.HandleFunc("POST /admin/public-theme", h.AdminPublicTheme)
-
+	for _, rt := range routes {
+		mux.HandleFunc(rt.Pattern, func(w http.ResponseWriter, r *http.Request) {
+			rt.Handler(h, w, r)
+		})
+	}
 	return mux
 }
