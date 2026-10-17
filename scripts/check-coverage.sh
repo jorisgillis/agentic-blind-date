@@ -6,6 +6,9 @@
 set -e
 
 profile=${1:-coverage.out}
+if [ ! -f "$profile" ]; then
+    go test -coverprofile="$profile" .
+fi
 missing=$(go tool cover -func="$profile" | grep -v '^total:' | awk '$2 != "main" && $3 != "100.0%"')
 
 if [ -n "$missing" ]; then
