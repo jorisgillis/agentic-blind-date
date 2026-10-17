@@ -1,0 +1,9 @@
+# gremlins configuration — ADR-0024 (mutation testing on the decision logic).
+#
+# timeout-coefficient 60 is MANDATORY: at the default settings gremlins
+# mis-measures the coverage baseline on this repo (~0.2 s) and classifies
+# every mutant as TIMED OUT (measured 2026-10-17: 36/36 timed out at
+# defaults and at coefficient 20; coefficient 60 gave 33 killed / 0 lived /
+# 3 timed out on one file). Do not lower it.
+unleash:
+  timeout-coefficient: 60

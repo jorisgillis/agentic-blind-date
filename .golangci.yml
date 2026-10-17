@@ -1,0 +1,28 @@
+# golangci-lint v2 configuration — ADR-0021.
+#
+# The v2 default linter set (errcheck, govet, ineffassign, staticcheck, unused)
+# plus the curated additions from the Go metrics survey: gosec, errorlint,
+# bodyclose. The gosec file/directory permission rule set is suppressed:
+# these flag os.Open/os.Create/os.WriteFile permission pedantry and
+# user-controlled-variable false positives that carry no decision signal in
+# this repo (see docs/adr/0021-single-quality-command.md).
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+  settings:
+    gosec:
+      excludes:
+        # Permission-rule set (suppressed per ADR-0021 and the metrics survey):
+        - G204 # unvalidated user input as part of a subprocess command
+        - G301 # expect directory permissions to be 0750 or less
+        - G302 # poor file permissions on chmod/chown
+        - G303 # creating files with permissions above 0600
+        - G304 # file inclusion via a variable (test fixtures trip this)
+        - G305 # file traversal when extracting a zip/tar archive
+        - G306 # poor file permissions on os.WriteFile
+        - G307 # deferring Close on an os.File before a return
