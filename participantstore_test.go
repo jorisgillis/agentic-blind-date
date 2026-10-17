@@ -328,6 +328,7 @@ func TestParticipantStore_ChangeReportsAGenuineDatabaseFailure(t *testing.T) {
 		{"matched with", "pair", ParticipantChange{MatchedWith: strPtr("q")}},
 		{"profile", "profile", ParticipantChange{Profile: &GitHubProfile{}}},
 		{"answers", "answers", ParticipantChange{Answers: map[string]string{"a": "b"}}},
+		{"theme", "theme", ParticipantChange{Theme: strPtr("daylight")}},
 		{"advance step", "pipeline_step", ParticipantChange{PipelineStep: stepPtr(StepInterviewing)}},
 	}
 	for _, c := range cases {

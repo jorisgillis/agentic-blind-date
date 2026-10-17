@@ -33,6 +33,13 @@ func TestHandlers_ReportFailedSavesAsErrors(t *testing.T) {
 			t.Errorf("want 500, got %d", resp.StatusCode)
 		}
 	})
+	t.Run("picking the public theme", func(t *testing.T) {
+		srv, deps := newTestServer(t, nil, nil)
+		failWrites(t, deps.db, "public_theme")
+		if resp := post(t, srv, "/admin/public-theme", url.Values{"theme": {"daylight"}}); resp.StatusCode != 500 {
+			t.Errorf("want 500, got %d", resp.StatusCode)
+		}
+	})
 	t.Run("resetting", func(t *testing.T) {
 		srv, deps := newTestServer(t, nil, nil)
 		seed(t, deps.db, "p", "P", "ready")

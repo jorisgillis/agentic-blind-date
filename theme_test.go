@@ -125,6 +125,23 @@ func TestSaveTheme_UnknownParticipantIsNotFound(t *testing.T) {
 	}
 }
 
+// TestSaveTheme_AFailedSaveIsAnError covers the save's failure path: the
+// theme write fails in the database itself, and the response is a 500 —
+// no redirect, the choice unapplied.
+func TestSaveTheme_AFailedSaveIsAnError(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "The Gopher", "ready")
+	breakOnFault(t, deps.db, "theme")
+
+	resp := post(t, srv, "/user/theme/a", url.Values{"theme": {"daylight"}})
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("POST /user/theme/a: want 500, got %d", resp.StatusCode)
+	}
+	if got := reload(t, deps.db, "a").Theme; got != "midnight" {
+		t.Errorf("the failed save must leave the theme alone, got %q", got)
+	}
+}
+
 // picker is the theme-picker block of the settings section: the markup from
 // the block's own label on.
 func picker(body string) string {

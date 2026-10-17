@@ -15,7 +15,7 @@ import (
 // "showtell_read", "showtell_question_read" and "participant_read", a read)
 // is, not which SQL column it touches: "create", "persona_lookup", "delete",
 // "interests", "persona", "profile", "answers", "pipeline_step",
-// "start_interview", "pair", "unpair", "activity_read", "meet_code",
+// "start_interview", "pair", "unpair", "theme", "activity_read", "meet_code",
 // "meet_insert", "meet_update", "meet_complete", "meet_delete",
 // "meet_backfill_read", "meet_read", "mission_insert", "mission_delete",
 // "mission_read", "connection_read", "channel_insert", "channel_delete",
@@ -25,6 +25,7 @@ import (
 // "showtell_question_update", "showtell_question_delete",
 // "showtell_question_read", "slide_insert", "slide_delete", "slide_read", "slide_query_read", "board_insert", "board_update",
 // "board_delete", "board_read", "board_query_read", "participant_read", "presenter_identity_read",
+// "public_theme",
 // "reset_participants", "reset_activity", "reset_event_state",
 // "reset_meetings", "reset_mission_cards", "reset_contact_channels",
 // "reset_recaps", "reset_showtell_signups", "reset_showtell_questions", "reset_slide_decks" and "reset_board_posts".
@@ -115,6 +116,7 @@ func writeFaults(message string) map[string][2]string {
 		"profile":                  trigger("profile", "UPDATE", "participants", "NEW.profile_json <> OLD.profile_json"),
 		"answers":                  trigger("answers", "UPDATE", "participants", "NEW.answers_json <> OLD.answers_json"),
 		"pipeline_step":            trigger("pipeline_step", "UPDATE", "participants", "NEW.pipeline_step <> OLD.pipeline_step"),
+		"theme":                    trigger("theme", "UPDATE", "participants", "NEW.theme <> OLD.theme"),
 		"start_interview":          trigger("start_interview", "UPDATE", "participants", "NEW.questions <> OLD.questions OR NEW.profile_json <> OLD.profile_json"),
 		"pair":                     trigger("pair", "UPDATE OF matched_with", "participants", "NEW.matched_with <> ''"),
 		"unpair":                   trigger("unpair", "UPDATE OF matched_with", "participants", "NEW.matched_with = ''"),
@@ -140,6 +142,7 @@ func writeFaults(message string) map[string][2]string {
 		"reset_participants":       trigger("reset_participants", "DELETE", "participants", ""),
 		"reset_activity":           trigger("reset_activity", "DELETE", "activity_log", ""),
 		"reset_event_state":        trigger("reset_event_state", "INSERT", "event_state", ""),
+		"public_theme":             trigger("public_theme", "INSERT", "event_state", "NEW.key = 'public_theme'"),
 		"reset_meetings":           trigger("reset_meetings", "DELETE", "meetings", ""),
 		"reset_mission_cards":      trigger("reset_mission_cards", "DELETE", "mission_cards", ""),
 		"reset_contact_channels":   trigger("reset_contact_channels", "DELETE", "contact_channels", ""),

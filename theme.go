@@ -69,15 +69,11 @@ var themes = []Theme{
 		}},
 }
 
-// themeByName returns the named Theme; unknown names get the default.
+// themeByName returns the named Theme; unknown names get the default —
+// the registry's first entry, which themeDefault names.
 func themeByName(name string) Theme {
 	for _, t := range themes {
 		if t.Name == name {
-			return t
-		}
-	}
-	for _, t := range themes {
-		if t.Name == themeDefault {
 			return t
 		}
 	}
