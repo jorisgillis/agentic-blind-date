@@ -135,16 +135,40 @@ func (b *Board) queryPosts(clause string, args ...any) ([]Post, error) {
 // needs 1–280 characters, the Participant must be ready, the event not closed,
 // and the Participant may hold at most 10 pending or approved Posts.
 func (b *Board) Post(p *Participant, text string) error {
+	text, err := trimPostText(text)
+	if err != nil {
+		return err
+	}
+	if err := b.postAllowed(p); err != nil {
+		return err
+	}
+	return b.insertPost(p, text)
+}
+
+// trimPostText normalizes a Post's text and enforces its 1–280 characters.
+func trimPostText(text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if n := utf8.RuneCountInString(text); n == 0 || n > maxPostLength {
-		return fmt.Errorf("%w: a post needs 1–%d characters", ErrInvalidPost, maxPostLength)
+		return "", fmt.Errorf("%w: a post needs 1–%d characters", ErrInvalidPost, maxPostLength)
 	}
-	if phase := b.events.State(); phase.IsClosed() {
+	return text, nil
+}
+
+// postAllowed checks the posting guards: the event not closed, the
+// Participant ready — a Post needs a Persona.
+func (b *Board) postAllowed(p *Participant) error {
+	if b.events.State().IsClosed() {
 		return ErrBoardClosed
 	}
 	if !p.PipelineStep.IsReady() {
 		return ErrNotReady
 	}
+	return nil
+}
+
+// insertPost records the Post, pending the Host's approval, under the
+// Participant's cap on the Posts they hold.
+func (b *Board) insertPost(p *Participant, text string) error {
 	return b.db.inTx(func(tx *sql.Tx) error {
 		var held int
 		err := tx.QueryRow(`SELECT COUNT(*) FROM board_posts WHERE participant_id = ? AND status IN (?, ?)`,
@@ -186,6 +210,23 @@ func (b *Board) Moderate(id int64, to PostStatus) (*Post, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	post, err := b.postByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if !canMovePost(post.Status, to) {
+		return nil, fmt.Errorf("%w: %s → %s", ErrInvalidPostTransition, post.Status, to)
+	}
+	if err := b.setPostStatus(id, to); err != nil {
+		return nil, err
+	}
+	post.Status = to
+	b.announcePost(post, to)
+	return post, nil
+}
+
+// postByID fetches one Post by id, or ErrPostNotFound.
+func (b *Board) postByID(id int64) (*Post, error) {
 	posts, err := b.queryPosts(`WHERE b.id = ?`, id)
 	if err != nil {
 		return nil, err
@@ -193,22 +234,22 @@ func (b *Board) Moderate(id int64, to PostStatus) (*Post, error) {
 	if len(posts) == 0 {
 		return nil, ErrPostNotFound
 	}
-	post := &posts[0]
-	if !canMovePost(post.Status, to) {
-		return nil, fmt.Errorf("%w: %s → %s", ErrInvalidPostTransition, post.Status, to)
-	}
-	err = b.db.inTx(func(tx *sql.Tx) error {
+	return &posts[0], nil
+}
+
+// setPostStatus moves a Post to its new status.
+func (b *Board) setPostStatus(id int64, to PostStatus) error {
+	return b.db.inTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`UPDATE board_posts SET status = ? WHERE id = ?`, to, id)
 		return err
 	})
-	if err != nil {
-		return nil, err
-	}
-	post.Status = to
+}
+
+// announcePost logs the Post reaching the Board.
+func (b *Board) announcePost(post *Post, to PostStatus) {
 	if to == PostApproved {
 		b.db.LogActivity(fmt.Sprintf("📣 %s %s posted on the board", post.PersonaSymbol, post.PersonaName))
 	}
-	return post, nil
 }
 
 // Delete removes the Participant's own Post, in any status. A Post that is not

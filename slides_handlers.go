@@ -95,12 +95,7 @@ func (h *Handler) AdminSlidesUpload(w http.ResponseWriter, r *http.Request) {
 	// The cap on the whole request leaves room for the form fields around the file.
 	r.Body = http.MaxBytesReader(w, r.Body, maxSlideDeckBytes+1<<20)
 	if err := r.ParseMultipartForm(8 << 20); err != nil { //nolint:gosec // G120: bounded twice — the MaxBytesReader above caps the request, the 8 MB is the in-memory spool
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
-			reject(fmt.Sprintf("That file is too large (the limit is %d MB).", maxSlideDeckBytes>>20))
-			return
-		}
-		reject("The upload could not be read.")
+		reject(slideUploadError(err))
 		return
 	}
 	// Cleanup of the spooled temp files; the close error cannot matter.
@@ -127,6 +122,16 @@ func (h *Handler) AdminSlidesUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	logger("handler").Info("slide deck uploaded", "deck", deck.ID, "size", deck.Size)
 	http.Redirect(w, r, "/admin/slides?notice="+url.QueryEscape("📑 Uploaded “"+deck.Title+"”."), http.StatusSeeOther)
+}
+
+// slideUploadError is why the upload's multipart form could not be read, as
+// the upload page shows it.
+func slideUploadError(err error) string {
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		return fmt.Sprintf("That file is too large (the limit is %d MB).", maxSlideDeckBytes>>20)
+	}
+	return "The upload could not be read."
 }
 
 // POST /admin/slides/remove — the Host takes a deck down (the "id" form value).
