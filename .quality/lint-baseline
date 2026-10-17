@@ -2,4 +2,9 @@
 # check profile tolerates. Gate: current <= this number. Retrofit
 # commits decrement it monotonically; at zero this file is deleted and
 # the bare strict gate (any finding fails) remains.
+#
+# 77 is the measured count on the integrated tree with the final
+# .golangci.yml config (50 errcheck, 17 gosec, 5 errorlint, 3 bodyclose,
+# 1 ineffassign, 1 govet) — the spec's "~75" was the research estimate
+# before the census and step-zero code landed.
 77

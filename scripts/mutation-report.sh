@@ -58,7 +58,7 @@ while [ "$#" -gt 0 ]; do
         --dry-run) DRY_RUN=1 ;;
         --waivers)
             [ "$#" -ge 2 ] || { echo "$PROG: --waivers needs a value" >&2; exit 2; }
-            WAVERS_FILE="$2"
+            WAIVERS_FILE="$2"
             shift
             ;;
         -h | --help)
@@ -94,7 +94,11 @@ WAIVERS="$(waiver_lines)"
 # "file:line:col TYPE — justification", so the identity is a prefix match
 # on non-comment lines.
 is_waived() {
-    printf '%s\n' "$WAIVERS" | grep -qF -- "$1"
+    # Match the mutant identity (the first two whitespace-separated
+    # tokens of each waiver line, ahead of the justification) exactly:
+    # a waiver for "x.go:10:2 CONDITIONALS" must not also waive
+    # "x.go:10:2 CONDITIONALS_BOUNDARY".
+    printf '%s\n' "$WAIVERS" | awk '{print $1" "$2}' | grep -qxF -- "$1"
 }
 
 if [ "$DRY_RUN" = 1 ]; then

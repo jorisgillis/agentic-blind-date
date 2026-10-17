@@ -7,7 +7,9 @@ set -e
 
 profile=${1:-coverage.out}
 if [ ! -f "$profile" ]; then
-    go test -coverprofile="$profile" .
+    # Same invocation as quality.sh check (ADR-0021): a standalone gate
+    # run must not silently score a weaker test command.
+    go test -shuffle=on -race -coverprofile="$profile" .
 fi
 missing=$(go tool cover -func="$profile" | grep -v '^total:' | awk '$2 != "main" && $3 != "100.0%"')
 

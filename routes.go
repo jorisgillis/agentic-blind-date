@@ -4,12 +4,17 @@ import "net/http"
 
 // The route census table (ADR-0022): the app's single registration site.
 // Every route is one row — the pattern in Go 1.22 "METHOD /path" form, the
-// handler, the kind of response it serves, the stable existence marker that
-// proves it rendered (a heading / #id / <title> for pages, the top-level #id
-// for fragments, a shape descriptor for JSON, the Location target for form
-// actions) and the journey that covers it (J1–J3 are the existing e2e
-// journeys; J4–J13 are the retrofit groups). The census test iterates the
-// table, so a route cannot exist outside it.
+// handler, the kind of response it serves, the stable existence marker
+// that proves it served, and the journey that covers it (J1–J3 are the
+// existing e2e journeys; J4–J13 are the retrofit groups). The census test
+// iterates the table, so a route cannot exist outside it.
+//
+// The marker means different things per kind, and the census test asserts
+// it accordingly: a heading / #id / <title> for pages, the top-level #id
+// for fragments, a top-level shape descriptor for JSON, a content-type
+// for binaries and markdown, the redirect target for redirect routes,
+// and — for actions — the response's signature (a Location or
+// HX-Redirect target, or a bare status like "200").
 
 // routeKind classifies a route by what it serves; the census test asserts
 // each kind its own way.

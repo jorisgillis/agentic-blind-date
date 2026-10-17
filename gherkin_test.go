@@ -1,9 +1,9 @@
-// PROTOTYPE (wayfinder #184): godog bindings for the draft happy-flow
-// features. Thrown away once the Gherkin conventions are decided — the
-// point is the .feature voice, not these bindings. They reuse the
-// in-package test fakes (fakeLLM, fakeGitHub, newTestServer) instead of
-// the Node e2e stubs: same seams (LLM persona + matchmaker scripted like
-// the stubs script them), in-process and fast.
+// Gherkin journey bindings (ADR-0025): the seed adopted from the
+// wayfinder prototype. The steps reuse the in-package test fakes
+// (fakeLLM, fakeGitHub, newTestServer) instead of the Node e2e stubs:
+// same seams (LLM persona + matchmaker scripted like the stubs script
+// them), in-process and fast. A single bindings file until size demands
+// a domain split over the one shared world.
 package main
 
 import (

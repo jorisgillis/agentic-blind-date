@@ -1,6 +1,5 @@
-# PROTOTYPE (wayfinder #184): a draft Gherkin voice for this repo — thrown
-# away once the conventions are decided. Given steps are past tense (context
-# that already happened), When steps present tense (the behavior under test).
+# Given steps are past tense (context that already happened), When steps
+# present tense (the behavior under test).
 Feature: Meeting a match with Meet Codes
   During the Social, two matched participants confirm a physical meeting
   with each other's Meet Codes.

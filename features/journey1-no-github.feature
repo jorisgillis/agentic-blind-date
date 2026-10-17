@@ -1,8 +1,6 @@
-# PROTOTYPE (wayfinder #184): a draft Gherkin voice for this repo — thrown
-# away once the conventions are decided. The steps are deliberately
-# declarative: no routes, no form fields, no selectors — the bindings own all
-# of that. Domain language follows CONTEXT.md: Participant, Interview,
-# Persona, Meet Code, Meeting.
+# The steps are declarative: no routes, no form fields, no selectors — the
+# bindings own all of that. Domain language follows CONTEXT.md:
+# Participant, Interview, Persona, Meet Code, Meeting.
 Feature: Joining without a GitHub account
   A participant without a GitHub profile joins the event, answers their
   Interview, and receives a Persona.
