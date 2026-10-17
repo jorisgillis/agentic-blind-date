@@ -1,0 +1,16 @@
+# Mutation testing waivers (ADR-0024 escape hatch).
+#
+# One line per waived mutant, matching its issue-title identity exactly:
+#
+#     file:line:col TYPE — one-line justification
+#
+# Example:
+#
+#     meetings.go:354:10 CONDITIONALS_NEGATION — threshold is intentionally loose; pinned in #123
+#
+# A waiver means the surviving mutant is explained: the nightly survivor
+# workflow (scripts/mutation-report.sh) skips it and never opens an issue
+# for it. Waivers are debt — every entry carries a justification and an
+# owner, and is reviewed like code.
+#
+# No entries yet.
