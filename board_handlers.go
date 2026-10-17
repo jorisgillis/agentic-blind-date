@@ -28,19 +28,25 @@ func (h *Handler) boardData(p *Participant) map[string]any {
 	if err != nil {
 		logger("handler").Warn("board posts", "participant", p.ID, "err", err)
 	}
+	return map[string]any{
+		"Me":        p,
+		"Posts":     posts,
+		"Open":      p.PipelineStep.IsReady() && !h.events.State().IsClosed(),
+		"Remaining": max(maxPostsPerParticipant-heldPosts(posts, p), 0),
+		"MaxLength": maxPostLength,
+	}
+}
+
+// heldPosts is how many Posts the Participant holds — the pending and
+// approved ones counting against their cap.
+func heldPosts(posts []Post, p *Participant) int {
 	held := 0
 	for _, post := range posts {
 		if post.ParticipantID == p.ID && post.Status != PostRejected {
 			held++
 		}
 	}
-	return map[string]any{
-		"Me":        p,
-		"Posts":     posts,
-		"Open":      p.PipelineStep.IsReady() && !h.events.State().IsClosed(),
-		"Remaining": max(maxPostsPerParticipant-held, 0),
-		"MaxLength": maxPostLength,
-	}
+	return held
 }
 
 // POST /user/board/{id} — the Participant's Post. It waits for the Host's
@@ -53,17 +59,8 @@ func (h *Handler) BoardPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = h.board.Post(p, r.FormValue("text"))
-	var reason string
-	switch {
-	case errors.Is(err, ErrInvalidPost):
-		reason = err.Error()
-	case errors.Is(err, ErrBoardClosed):
-		reason = "The board is closed: the evening is over."
-	case errors.Is(err, ErrNotReady):
-		reason = "You can post once your persona is ready."
-	case errors.Is(err, ErrPostCap):
-		reason = "You have used all your posts: delete one to post again."
-	case err != nil:
+	reason := postRefusalReason(err)
+	if err != nil && reason == "" {
 		logger("handler").Error("posting to the board", "participant", p.ID, "err", err)
 		http.Error(w, "posting failed: "+err.Error(), 500)
 		return
@@ -76,6 +73,23 @@ func (h *Handler) BoardPost(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Posted"] = true
 	h.render(w, "fragment-board.html", data)
+}
+
+// postRefusalReason is why the Board refused the Post, as the section shows
+// it; empty when the Post went through or the failure is not the
+// Participant's.
+func postRefusalReason(err error) string {
+	switch {
+	case errors.Is(err, ErrInvalidPost):
+		return err.Error()
+	case errors.Is(err, ErrBoardClosed):
+		return "The board is closed: the evening is over."
+	case errors.Is(err, ErrNotReady):
+		return "You can post once your persona is ready."
+	case errors.Is(err, ErrPostCap):
+		return "You have used all your posts: delete one to post again."
+	}
+	return ""
 }
 
 // POST /user/board/{id}/delete — the Participant takes one of their own Posts
@@ -131,26 +145,39 @@ func (h *Handler) AdminBoard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "That post is not on the board.", http.StatusBadRequest)
 		return
 	}
-	var to PostStatus
-	switch r.FormValue("action") {
-	case "approved":
-		to = PostApproved
-	case "rejected":
-		to = PostRejected
-	default:
+	to, ok := moderationStatus(r.FormValue("action"))
+	if !ok {
 		http.Error(w, "Unknown action — approved or rejected.", http.StatusBadRequest)
 		return
 	}
-	_, err = h.board.Moderate(id, to)
+	if _, err := h.board.Moderate(id, to); err != nil {
+		h.moderateError(w, id, err)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// moderationStatus maps the Host's decision to the Post status it moves the
+// Post to; ok is false for an unknown decision.
+func moderationStatus(action string) (to PostStatus, ok bool) {
+	switch action {
+	case "approved":
+		return PostApproved, true
+	case "rejected":
+		return PostRejected, true
+	}
+	return PostApproved, false
+}
+
+// moderateError renders a moderation decision's failure.
+func (h *Handler) moderateError(w http.ResponseWriter, id int64, err error) {
 	switch {
 	case errors.Is(err, ErrPostNotFound):
 		http.Error(w, "That post is not on the board.", http.StatusNotFound)
 	case errors.Is(err, ErrInvalidPostTransition):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case err != nil:
+	default:
 		logger("handler").Error("moderating a post", "post", id, "err", err)
 		http.Error(w, "updating the board failed: "+err.Error(), 500)
-	default:
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 	}
 }

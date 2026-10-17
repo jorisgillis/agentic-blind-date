@@ -43,40 +43,57 @@ func (c *Closing) Stats() EventStats {
 	s.Participants = c.db.ParticipantCount()
 	s.Ready = c.db.ReadyCount()
 	s.Matched = c.db.MatchedCount()
+	c.meetingStats(&s)
+	c.questionStats(&s)
+	return s
+}
+
+// meetingStats counts the completed meetings and the contact details that
+// changed hands on them. A number that cannot be read comes back as zero.
+func (c *Closing) meetingStats(s *EventStats) {
 	meetings, err := c.meetings.All()
 	if err != nil {
 		logger("closing").Warn("closing stats, meetings", "err", err)
-	} else {
-		for _, m := range meetings {
-			if !m.Completed() {
-				continue // a connection is a completed meeting
-			}
-			s.Meetings++
-			// A contact exchange is a contact detail that changed hands: an
-			// opted-in channel with a value, on a completed meeting. The
-			// count only — the values never leave their owners' recap pages.
-			for _, side := range []string{m.A, m.B} {
-				channels, err := c.channels.Channels(side)
-				if err != nil {
-					logger("closing").Warn("closing stats, channels", "participant", side, "err", err)
-				} else {
-					s.ContactExchanges += len(shared(channels))
-				}
-			}
-		}
+		return
 	}
+	for _, m := range meetings {
+		c.countMeeting(s, m)
+	}
+}
+
+// countMeeting counts one meeting: a completed meeting is a connection, and
+// a contact exchange is a contact detail that changed hands — an opted-in
+// channel with a value, on a completed meeting. The count only — the values
+// never leave their owners' recap pages.
+func (c *Closing) countMeeting(s *EventStats, m Meeting) {
+	if !m.Completed() {
+		return // a connection is a completed meeting
+	}
+	s.Meetings++
+	for _, side := range []string{m.A, m.B} {
+		channels, err := c.channels.Channels(side)
+		if err != nil {
+			logger("closing").Warn("closing stats, channels", "participant", side, "err", err)
+			continue
+		}
+		s.ContactExchanges += len(shared(channels))
+	}
+}
+
+// questionStats counts the audience questions asked and answered. A number
+// that cannot be read comes back as zero.
+func (c *Closing) questionStats(s *EventStats) {
 	questions, err := c.showtell.Questions()
 	if err != nil {
 		logger("closing").Warn("closing stats, questions", "err", err)
-	} else {
-		s.Questions = len(questions)
-		for _, q := range questions {
-			if q.Status == QuestionAnswered {
-				s.QuestionsAnswered++
-			}
+		return
+	}
+	s.Questions = len(questions)
+	for _, q := range questions {
+		if q.Status == QuestionAnswered {
+			s.QuestionsAnswered++
 		}
 	}
-	return s
 }
 
 // audienceParticipationTarget is the audience-participation success metric:
@@ -254,43 +271,69 @@ func (c *Closing) BestMatches() []ExportMatch {
 		logger("closing").Warn("closing best matches", "err", err)
 		return nil
 	}
-	byID := make(map[string]*Participant, len(participants))
-	for _, p := range participants {
-		byID[p.ID] = p
-	}
+	byID := participantsByID(participants)
 	out := []ExportMatch{}
 	for _, p := range participants {
-		if !p.IsMatched() || p.Assessment == nil {
-			continue
+		if m, ok := exportMatchFor(p, byID); ok {
+			out = append(out, m)
 		}
-		partner, ok := byID[p.MatchedWith]
-		if !ok {
-			continue // the partner left the event; the pair is no longer nameable
-		}
-		if p.ID > partner.ID {
-			continue // the partner's row already spoke for the pair
-		}
-		out = append(out, ExportMatch{
-			Score:       p.Assessment.Score,
-			Reason:      p.Assessment.Reason,
-			Icebreakers: p.Assessment.Icebreakers,
-			A:           personaOf(p),
-			B:           personaOf(partner),
-		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
-		}
-		if out[i].A.Name != out[j].A.Name {
-			return out[i].A.Name < out[j].A.Name
-		}
-		return out[i].B.Name < out[j].B.Name
-	})
+	sortBestMatches(out)
 	if len(out) > bestMatchesLimit {
 		out = out[:bestMatchesLimit]
 	}
 	return out
+}
+
+// participantsByID indexes the Participants by id, for the pair joins.
+func participantsByID(participants []*Participant) map[string]*Participant {
+	byID := make(map[string]*Participant, len(participants))
+	for _, p := range participants {
+		byID[p.ID] = p
+	}
+	return byID
+}
+
+// exportMatchFor renders one matched Participant's pair as an anonymized
+// export match: the score, the reason and the icebreakers. One entry per
+// pair — the lexicographically lower id speaks for it — and a Match whose
+// partner has left the event is skipped. ok is false when the Participant
+// does not name a pair to show.
+func exportMatchFor(p *Participant, byID map[string]*Participant) (ExportMatch, bool) {
+	if !p.IsMatched() || p.Assessment == nil {
+		return ExportMatch{}, false
+	}
+	partner, ok := byID[p.MatchedWith]
+	if !ok {
+		return ExportMatch{}, false // the partner left the event; the pair is no longer nameable
+	}
+	if p.ID > partner.ID {
+		return ExportMatch{}, false // the partner's row already spoke for the pair
+	}
+	return ExportMatch{
+		Score:       p.Assessment.Score,
+		Reason:      p.Assessment.Reason,
+		Icebreakers: p.Assessment.Icebreakers,
+		A:           personaOf(p),
+		B:           personaOf(partner),
+	}, true
+}
+
+// sortBestMatches ranks the export matches best-first, with the pair's
+// Persona names breaking score ties.
+func sortBestMatches(matches []ExportMatch) {
+	sort.Slice(matches, func(i, j int) bool { return betterExportMatch(matches[i], matches[j]) })
+}
+
+// betterExportMatch orders by score first, then the pair's Persona names.
+func betterExportMatch(a, b ExportMatch) bool {
+	if a.Score != b.Score {
+		return a.Score > b.Score
+	}
+	if a.A.Name != b.A.Name {
+		return a.A.Name < b.A.Name
+	}
+	return a.B.Name < b.B.Name
 }
 
 // ExportPack is the host's post-meetup blast pack: the evening's headline
@@ -320,39 +363,51 @@ func (c *Closing) Pack() ExportPack {
 		logger("closing").Warn("closing pack, leaderboard", "err", err)
 	}
 	ranked := standings(board)
-	pack := ExportPack{
+	return ExportPack{
 		Stats:       stats,
 		Success:     successMetrics(stats, ranked),
 		Leaderboard: ranked,
+		TopPersonas: c.topPersonas(board),
 		BestMatches: c.BestMatches(),
 		ShowTell:    c.Talks(),
 		Board:       c.Posts(),
 	}
-	// The top Personas: the top of the leaderboard, with their taglines. The
-	// raw board carries the Participant ids for the join; the pack itself
-	// keeps personas only.
-	taglines := map[string]string{}
-	if participants, err := c.store.All(); err != nil {
-		logger("closing").Warn("closing pack, participants", "err", err)
-	} else {
-		for _, p := range participants {
-			taglines[p.ID] = p.PersonaTagline
-		}
-	}
+}
+
+// topPersonas is the pack's top-personas list: the top of the leaderboard,
+// with their taglines. The raw board carries the Participant ids for the
+// join; the pack itself keeps personas only.
+func (c *Closing) topPersonas(board []ConnectionStanding) []ExportPersona {
+	taglines := c.personaTaglines()
 	top := board
 	if len(top) > topPersonasLimit {
 		top = top[:topPersonasLimit]
 	}
-	pack.TopPersonas = make([]ExportPersona, 0, len(top))
+	out := make([]ExportPersona, 0, len(top))
 	for _, s := range top {
-		pack.TopPersonas = append(pack.TopPersonas, ExportPersona{
+		out = append(out, ExportPersona{
 			Name:    s.Name,
 			Symbol:  s.Symbol,
 			Color:   s.Color,
 			Tagline: taglines[s.ID],
 		})
 	}
-	return pack
+	return out
+}
+
+// personaTaglines maps the Participants' ids to their Persona taglines; an
+// unreadable Participant list comes back empty.
+func (c *Closing) personaTaglines() map[string]string {
+	taglines := map[string]string{}
+	participants, err := c.store.All()
+	if err != nil {
+		logger("closing").Warn("closing pack, participants", "err", err)
+		return taglines
+	}
+	for _, p := range participants {
+		taglines[p.ID] = p.PersonaTagline
+	}
+	return taglines
 }
 
 // EventRecap is the public event recap's content: the evening's stats, the
@@ -401,89 +456,121 @@ func renderExportMarkdown(pack ExportPack) string {
 	b.WriteString("# Agentic Blind Date — the evening, recapped\n\n")
 	fmt.Fprintf(&b, "%d participants · %d completed meetings · %d contact details exchanged · %d questions asked (%d answered)\n\n",
 		pack.Stats.Participants, pack.Stats.Meetings, pack.Stats.ContactExchanges, pack.Stats.Questions, pack.Stats.QuestionsAnswered)
+	renderSuccessMarkdown(&b, pack.Success)
+	renderLeaderboardMarkdown(&b, pack.Leaderboard)
+	renderTopPersonasMarkdown(&b, pack.TopPersonas)
+	renderBestMatchesMarkdown(&b, pack.BestMatches)
+	renderShowTellMarkdown(&b, pack.ShowTell)
+	renderBoardMarkdown(&b, pack.Board)
+	b.WriteString("\n---\n\n_Personas and counts only — no contact details, no handles._\n")
+	return b.String()
+}
 
+// renderSuccessMarkdown renders the "How the evening went" section.
+func renderSuccessMarkdown(b *strings.Builder, s SuccessMetrics) {
 	b.WriteString("## How the evening went\n\n")
-	fmt.Fprintf(&b, "- 🤝 %d completed %s, %d %s made\n",
-		pack.Success.Meetings, plural("meeting", pack.Success.Meetings),
-		pack.Success.Connections, plural("connection", pack.Success.Connections))
-	fmt.Fprintf(&b, "- ❓ %d questions answered", pack.Success.QuestionsAnswered)
-	if pack.Success.AudienceParticipation {
+	fmt.Fprintf(b, "- 🤝 %d completed %s, %d %s made\n",
+		s.Meetings, plural("meeting", s.Meetings),
+		s.Connections, plural("connection", s.Connections))
+	fmt.Fprintf(b, "- ❓ %d questions answered", s.QuestionsAnswered)
+	if s.AudienceParticipation {
 		b.WriteString(" — the audience-participation goal (10+) is met ✅\n")
 	} else {
 		b.WriteString(" — the audience-participation goal (10+) is not met yet\n")
 	}
+}
 
+// renderLeaderboardMarkdown renders the leaderboard section, with the crown
+// on the top entry.
+func renderLeaderboardMarkdown(b *strings.Builder, board []ExportStanding) {
 	b.WriteString("\n## 🏆 Leaderboard\n\n")
-	if len(pack.Leaderboard) == 0 {
+	if len(board) == 0 {
 		b.WriteString("No connections were made.\n")
-	} else {
-		for i, s := range pack.Leaderboard {
-			trophy := ""
-			if i == 0 {
-				trophy = " 👑"
-			}
-			fmt.Fprintf(&b, "%d. %s %s — %d %s%s\n",
-				s.Rank, s.Symbol, s.Name, s.Connections, plural("connection", s.Connections), trophy)
-		}
+		return
 	}
+	for i, s := range board {
+		trophy := ""
+		if i == 0 {
+			trophy = " 👑"
+		}
+		fmt.Fprintf(b, "%d. %s %s — %d %s%s\n",
+			s.Rank, s.Symbol, s.Name, s.Connections, plural("connection", s.Connections), trophy)
+	}
+}
 
+// renderTopPersonasMarkdown renders the top-personas section, taglines
+// included when they exist.
+func renderTopPersonasMarkdown(b *strings.Builder, personas []ExportPersona) {
 	b.WriteString("\n## 🌟 Top personas\n\n")
-	if len(pack.TopPersonas) == 0 {
+	if len(personas) == 0 {
 		b.WriteString("No participants.\n")
-	} else {
-		for _, p := range pack.TopPersonas {
-			fmt.Fprintf(&b, "- %s **%s**", p.Symbol, p.Name)
-			if p.Tagline != "" {
-				fmt.Fprintf(&b, " — %s", p.Tagline)
-			}
-			b.WriteString("\n")
-		}
+		return
 	}
+	for _, p := range personas {
+		fmt.Fprintf(b, "- %s **%s**", p.Symbol, p.Name)
+		if p.Tagline != "" {
+			fmt.Fprintf(b, " — %s", p.Tagline)
+		}
+		b.WriteString("\n")
+	}
+}
 
+// renderBestMatchesMarkdown renders the best-matches section, with the
+// reason and the icebreakers when they exist.
+func renderBestMatchesMarkdown(b *strings.Builder, matches []ExportMatch) {
 	b.WriteString("\n## 💘 Best matches\n\n")
-	if len(pack.BestMatches) == 0 {
+	if len(matches) == 0 {
 		b.WriteString("No matches were scored.\n")
-	} else {
-		for _, m := range pack.BestMatches {
-			fmt.Fprintf(&b, "- %s %s 💘 %s %s — %d%%\n", m.A.Symbol, m.A.Name, m.B.Symbol, m.B.Name, m.Score)
-			if m.Reason != "" {
-				fmt.Fprintf(&b, "  > %s\n", m.Reason)
-			}
-			for _, ice := range m.Icebreakers {
-				fmt.Fprintf(&b, "  - %s\n", ice)
-			}
+		return
+	}
+	for _, m := range matches {
+		fmt.Fprintf(b, "- %s %s 💘 %s %s — %d%%\n", m.A.Symbol, m.A.Name, m.B.Symbol, m.B.Name, m.Score)
+		if m.Reason != "" {
+			fmt.Fprintf(b, "  > %s\n", m.Reason)
+		}
+		for _, ice := range m.Icebreakers {
+			fmt.Fprintf(b, "  - %s\n", ice)
 		}
 	}
+}
 
+// renderShowTellMarkdown renders the show & tell section.
+func renderShowTellMarkdown(b *strings.Builder, talks []ExportTalk) {
 	b.WriteString("\n## 🎤 Show & tell\n\n")
-	if len(pack.ShowTell) == 0 {
+	if len(talks) == 0 {
 		b.WriteString("No talks were signed up.\n")
-	} else {
-		for _, talk := range pack.ShowTell {
-			fmt.Fprintf(&b, "- **%s** — %s %s", talk.Title, talk.Presenter.Symbol, talk.Presenter.Name)
-			if talk.Status == SignupPresented {
-				b.WriteString(" (presented)")
-			}
-			b.WriteString("\n")
-			if talk.Description != "" {
-				fmt.Fprintf(&b, "  %s\n", talk.Description)
-			}
-			if talk.RepoURL != "" {
-				fmt.Fprintf(&b, "  <%s>\n", talk.RepoURL)
-			}
-		}
+		return
 	}
+	for _, talk := range talks {
+		renderTalkMarkdown(b, talk)
+	}
+}
 
+// renderTalkMarkdown renders one talk: its presented state, and its
+// description and repo link when they exist.
+func renderTalkMarkdown(b *strings.Builder, talk ExportTalk) {
+	fmt.Fprintf(b, "- **%s** — %s %s", talk.Title, talk.Presenter.Symbol, talk.Presenter.Name)
+	if talk.Status == SignupPresented {
+		b.WriteString(" (presented)")
+	}
+	b.WriteString("\n")
+	if talk.Description != "" {
+		fmt.Fprintf(b, "  %s\n", talk.Description)
+	}
+	if talk.RepoURL != "" {
+		fmt.Fprintf(b, "  <%s>\n", talk.RepoURL)
+	}
+}
+
+// renderBoardMarkdown renders the board section, one line per Post.
+func renderBoardMarkdown(b *strings.Builder, posts []ExportPost) {
 	b.WriteString("\n## 📣 Board\n\n")
-	if len(pack.Board) == 0 {
+	if len(posts) == 0 {
 		b.WriteString("Nothing was posted.\n")
-	} else {
-		for _, post := range pack.Board {
-			// One line per Post, so a multi-line Post cannot break the list.
-			fmt.Fprintf(&b, "- %s **%s**: %s\n", post.Poster.Symbol, post.Poster.Name, strings.Join(strings.Fields(post.Text), " "))
-		}
+		return
 	}
-
-	b.WriteString("\n---\n\n_Personas and counts only — no contact details, no handles._\n")
-	return b.String()
+	for _, post := range posts {
+		// One line per Post, so a multi-line Post cannot break the list.
+		fmt.Fprintf(b, "- %s **%s**: %s\n", post.Poster.Symbol, post.Poster.Name, strings.Join(strings.Fields(post.Text), " "))
+	}
 }

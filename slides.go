@@ -58,38 +58,74 @@ func NewSlideDecks(db *DB, dir string) *SlideDecks {
 // name are required, the filename must end in .pdf, and the content must start
 // like a PDF and fit the size cap. A failure leaves neither a row nor a file.
 func (s *SlideDecks) Add(title, speaker, filename string, content io.Reader) (*SlideDeck, error) {
+	title, speaker, filename, err := normalizeDeckInput(title, speaker, filename)
+	if err != nil {
+		return nil, err
+	}
+	if err := requirePDF(content); err != nil {
+		return nil, err
+	}
+	stored, size, err := s.writeDeckFile(content)
+	if err != nil {
+		return nil, err
+	}
+	deck := &SlideDeck{Title: title, Speaker: speaker, Filename: filename, Size: size, stored: stored}
+	if err := s.insertDeck(deck, filepath.Join(s.dir, stored)); err != nil {
+		return nil, err
+	}
+	deck.CreatedAt = time.Now()
+	return deck, nil
+}
+
+// normalizeDeckInput trims the upload's fields and checks the ones that are
+// required: the title, the speaker's name, and a filename ending in .pdf.
+func normalizeDeckInput(title, speaker, filename string) (string, string, string, error) {
 	title = strings.TrimSpace(title)
 	speaker = strings.TrimSpace(speaker)
 	filename = filepath.Base(strings.TrimSpace(filename))
 	switch {
 	case title == "":
-		return nil, &InvalidSlideDeckError{"Give the slides a title."}
+		return "", "", "", &InvalidSlideDeckError{"Give the slides a title."}
 	case speaker == "":
-		return nil, &InvalidSlideDeckError{"Give the speaker's name."}
+		return "", "", "", &InvalidSlideDeckError{"Give the speaker's name."}
 	case !strings.EqualFold(filepath.Ext(filename), ".pdf"):
-		return nil, &InvalidSlideDeckError{"The slides must be a PDF file."}
+		return "", "", "", &InvalidSlideDeckError{"The slides must be a PDF file."}
 	}
+	return title, speaker, filename, nil
+}
 
+// requirePDF checks that the upload's content starts like a PDF, consuming
+// the magic bytes.
+func requirePDF(content io.Reader) error {
 	magic := make([]byte, len(pdfMagic))
 	if _, err := io.ReadFull(content, magic); err != nil || string(magic) != pdfMagic {
-		return nil, &InvalidSlideDeckError{"That file is not a PDF."}
+		return &InvalidSlideDeckError{"That file is not a PDF."}
 	}
+	return nil
+}
 
+// writeDeckFile writes the PDF — magic bytes included — under a generated
+// name, and returns the name and the size. A failed write leaves no file.
+func (s *SlideDecks) writeDeckFile(content io.Reader) (stored string, size int64, err error) {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
-		return nil, err
+		return "", 0, err
 	}
-	stored := uuid.NewString() + ".pdf"
+	stored = uuid.NewString() + ".pdf"
 	path := filepath.Join(s.dir, stored)
-	size, err := writeCapped(path, io.MultiReader(strings.NewReader(pdfMagic), content))
+	size, err = writeCapped(path, io.MultiReader(strings.NewReader(pdfMagic), content))
 	if err != nil {
 		_ = os.Remove(path) // best effort: Sweep removes any orphan
-		return nil, err
+		return "", 0, err
 	}
+	return stored, size, nil
+}
 
-	deck := &SlideDeck{Title: title, Speaker: speaker, Filename: filename, Size: size, stored: stored}
-	err = s.db.inTx(func(tx *sql.Tx) error {
+// insertDeck records the written file as a new Slide Deck; on failure the
+// written file goes too — best effort: Sweep removes any orphan.
+func (s *SlideDecks) insertDeck(deck *SlideDeck, path string) error {
+	err := s.db.inTx(func(tx *sql.Tx) error {
 		res, err := tx.Exec(`INSERT INTO slide_decks (title, speaker, filename, stored_name, size) VALUES (?, ?, ?, ?, ?)`,
-			title, speaker, filename, stored, size)
+			deck.Title, deck.Speaker, deck.Filename, deck.stored, deck.Size)
 		if err != nil {
 			return err
 		}
@@ -97,11 +133,9 @@ func (s *SlideDecks) Add(title, speaker, filename string, content io.Reader) (*S
 		return err
 	})
 	if err != nil {
-		_ = os.Remove(path) // best effort: Sweep removes any orphan
-		return nil, err
+		_ = os.Remove(path)
 	}
-	deck.CreatedAt = time.Now()
-	return deck, nil
+	return err
 }
 
 // writeCapped writes r to a new file at path, refusing more than the size cap.
@@ -223,10 +257,21 @@ func (s *SlideDecks) Sweep() error {
 	if err != nil {
 		return err
 	}
+	return s.removeOrphans(keptDeckNames(decks))
+}
+
+// keptDeckNames is the set of files the Slide Decks point at.
+func keptDeckNames(decks []SlideDeck) map[string]bool {
 	keep := make(map[string]bool, len(decks))
 	for _, d := range decks {
 		keep[d.stored] = true
 	}
+	return keep
+}
+
+// removeOrphans deletes every file in the slides directory that no Slide
+// Deck points at (best effort). A missing directory is fine.
+func (s *SlideDecks) removeOrphans(keep map[string]bool) error {
 	entries, err := os.ReadDir(s.dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -235,11 +280,17 @@ func (s *SlideDecks) Sweep() error {
 		return err
 	}
 	for _, e := range entries {
-		if !e.IsDir() && !keep[e.Name()] {
-			// Best effort: a file that will not go is tried again at the next sweep.
-			// ReadDir yields plain names of the app's own files: no traversal.
-			_ = os.Remove(filepath.Join(s.dir, e.Name())) //nolint:gosec // G703: e.Name() is a base name from ReadDir, never user input
-		}
+		s.sweepFile(e, keep)
 	}
 	return nil
+}
+
+// sweepFile deletes one orphaned file. Best effort: a file that will not go
+// is tried again at the next sweep. ReadDir yields plain names of the app's
+// own files: no traversal.
+func (s *SlideDecks) sweepFile(entry os.DirEntry, keep map[string]bool) {
+	if entry.IsDir() || keep[entry.Name()] {
+		return
+	}
+	_ = os.Remove(filepath.Join(s.dir, entry.Name())) //nolint:gosec // G703: e.Name() is a base name from ReadDir, never user input
 }

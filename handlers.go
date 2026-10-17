@@ -21,32 +21,51 @@ type Badge struct {
 	Color string
 }
 
+func isGitHubDinosaur(p GitHubProfile) bool { return p.AccountAgeDays/365 >= 10 }
+
+func isGitHubCelebrity(p GitHubProfile) bool { return p.TotalStars >= 100 }
+
+func isHoarder(p GitHubProfile) bool { return p.PublicRepos >= 50 }
+
+func isPolyglot(p GitHubProfile) bool { return len(p.Languages) >= 5 }
+
+func isStoryteller(p GitHubProfile) bool { return p.HasProfileReadme }
+
+func isFreshBlood(p GitHubProfile) bool {
+	return p.AccountAgeDays > 0 && p.AccountAgeDays < 180
+}
+
+func isLurker(p GitHubProfile) bool {
+	return p.Followers >= 100 && p.PublicRepos < 5
+}
+
+func isFocused(p GitHubProfile) bool { return len(p.Languages) == 1 }
+
+// badgeRule pairs the profile test that earns a badge with the badge it
+// earns.
+type badgeRule struct {
+	earned func(GitHubProfile) bool
+	badge  Badge
+}
+
+// badgeRules is the badge cascade, in display order.
+var badgeRules = []badgeRule{
+	{isGitHubDinosaur, Badge{"🦕", "GitHub Dinosaur", "bg-yellow-200"}},
+	{isGitHubCelebrity, Badge{"⭐", "GitHub Celebrity", "bg-amber-200"}},
+	{isHoarder, Badge{"🗂", "The Hoarder", "bg-orange-200"}},
+	{isPolyglot, Badge{"🌍", "Polyglot", "bg-green-200"}},
+	{isStoryteller, Badge{"📖", "Storyteller", "bg-blue-200"}},
+	{isFreshBlood, Badge{"🆕", "Fresh Blood", "bg-pink-200"}},
+	{isLurker, Badge{"🔭", "Lurker", "bg-purple-200"}},
+	{isFocused, Badge{"🎯", "Focused", "bg-teal-200"}},
+}
+
 func computeBadges(p GitHubProfile) []Badge {
 	var out []Badge
-	years := p.AccountAgeDays / 365
-	if years >= 10 {
-		out = append(out, Badge{"🦕", "GitHub Dinosaur", "bg-yellow-200"})
-	}
-	if p.TotalStars >= 100 {
-		out = append(out, Badge{"⭐", "GitHub Celebrity", "bg-amber-200"})
-	}
-	if p.PublicRepos >= 50 {
-		out = append(out, Badge{"🗂", "The Hoarder", "bg-orange-200"})
-	}
-	if len(p.Languages) >= 5 {
-		out = append(out, Badge{"🌍", "Polyglot", "bg-green-200"})
-	}
-	if p.HasProfileReadme {
-		out = append(out, Badge{"📖", "Storyteller", "bg-blue-200"})
-	}
-	if p.AccountAgeDays > 0 && p.AccountAgeDays < 180 {
-		out = append(out, Badge{"🆕", "Fresh Blood", "bg-pink-200"})
-	}
-	if p.Followers >= 100 && p.PublicRepos < 5 {
-		out = append(out, Badge{"🔭", "Lurker", "bg-purple-200"})
-	}
-	if len(p.Languages) == 1 {
-		out = append(out, Badge{"🎯", "Focused", "bg-teal-200"})
+	for _, rule := range badgeRules {
+		if rule.earned(p) {
+			out = append(out, rule.badge)
+		}
 	}
 	return out
 }
@@ -273,13 +292,8 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	done, err := h.onboarding.Answer(p, r.FormValue("answer"))
-	var invalid *InvalidAnswerError
-	switch {
-	case errors.Is(err, ErrInterviewOver), errors.As(err, &invalid):
-		http.Error(w, err.Error(), 400)
-		return
-	case err != nil:
-		http.Error(w, "saving answer failed", 500)
+	if err != nil {
+		answerError(w, err)
 		return
 	}
 
@@ -289,6 +303,19 @@ func (h *Handler) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "fragment-question.html", h.interview.Next(p))
+}
+
+// answerError renders an interview answer's failure: a rejected answer —
+// the Interview is over, or the answer itself is invalid — is a client error
+// carrying the reason; anything else is a save failure.
+func answerError(w http.ResponseWriter, err error) {
+	var invalid *InvalidAnswerError
+	switch {
+	case errors.Is(err, ErrInterviewOver), errors.As(err, &invalid):
+		http.Error(w, err.Error(), 400)
+	default:
+		http.Error(w, "saving answer failed", 500)
+	}
 }
 
 // GET /user/wait/{id}
@@ -307,24 +334,29 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 	if p.Profile != nil {
 		profile = *p.Profile
 	}
-	answers := p.Answers // reading a nil map is fine
-	questions := p.Questions
-
-	type QAPair struct {
-		Question string
-		Answer   string
-	}
-	var qaPairs []QAPair
-	for _, q := range questions {
-		if ans, ok := answers[q.ID]; ok {
-			qaPairs = append(qaPairs, QAPair{Question: q.Text, Answer: ans})
-		}
-	}
 
 	data := h.waitPageData(p)
 	data["Profile"] = profile
-	data["QAPairs"] = qaPairs
+	data["QAPairs"] = answeredPairs(p)
 	h.render(w, "wait.html", data)
+}
+
+// qaPair is one of the wait page's answered interview questions.
+type qaPair struct {
+	Question string
+	Answer   string
+}
+
+// answeredPairs pairs the Participant's interview questions with their
+// answers, in question order.
+func answeredPairs(p *Participant) []qaPair {
+	var pairs []qaPair
+	for _, q := range p.Questions {
+		if ans, ok := p.Answers[q.ID]; ok {
+			pairs = append(pairs, qaPair{Question: q.Text, Answer: ans})
+		}
+	}
+	return pairs
 }
 
 // GET /user/wait-status/{id}  — HTMX, refreshed when the wait stream says so
@@ -436,6 +468,11 @@ func (h *Handler) phaseHeaderQueueBadge(p *Participant, phase Phase) *phaseHeade
 	if signup == nil {
 		return nil
 	}
+	return h.queueBadgeForSignup(signup, p)
+}
+
+// queueBadgeForSignup renders the sign-up as the phase header's queue badge.
+func (h *Handler) queueBadgeForSignup(signup *ShowTellSignup, p *Participant) *phaseHeaderBadge {
 	switch signup.Status {
 	case SignupOnStage:
 		return &phaseHeaderBadge{Text: "On stage now", OnStage: true}
@@ -452,28 +489,41 @@ func (h *Handler) phaseHeaderQueueBadge(p *Participant, phase Phase) *phaseHeade
 func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase, mission *MissionView) string {
 	switch phase {
 	case PhaseSocial:
-		if mission == nil {
-			return "Mission: your card is being prepared"
-		}
-		stamped := 0
-		for _, tile := range stampedTiles(mission) {
-			if tile.Stamped {
-				stamped++
-			}
-		}
-		return fmt.Sprintf("Mission: %d of %d tiles stamped", stamped, len(mission.Card.Tiles))
+		return socialPhaseStatus(mission)
 	case PhaseShowTell:
 		return "Show & tell: audience questions open"
 	case PhaseClosed:
 		return "Your recap is kept — scan the recap QR at the bottom of the page"
 	}
+	return fmt.Sprintf("Interview: %d of %d answered", answeredCount(p), len(p.Questions))
+}
+
+// socialPhaseStatus is the phase header's status line during the social:
+// the Mission card's stamped tiles, or the preparing note while the card is
+// still being made.
+func socialPhaseStatus(mission *MissionView) string {
+	if mission == nil {
+		return "Mission: your card is being prepared"
+	}
+	stamped := 0
+	for _, tile := range stampedTiles(mission) {
+		if tile.Stamped {
+			stamped++
+		}
+	}
+	return fmt.Sprintf("Mission: %d of %d tiles stamped", stamped, len(mission.Card.Tiles))
+}
+
+// answeredCount is how many of the Participant's interview questions they
+// answered.
+func answeredCount(p *Participant) int {
 	answered := 0
 	for _, q := range p.Questions {
 		if _, ok := p.Answers[q.ID]; ok {
 			answered++
 		}
 	}
-	return fmt.Sprintf("Interview: %d of %d answered", answered, len(p.Questions))
+	return answered
 }
 
 // waitStatusData is the wait page's status section. A matched Participant
@@ -759,50 +809,75 @@ func (h *Handler) Meet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if code := normalizeMeetCode(r.URL.Query().Get("me")); code != "" {
-		me, err := h.store.GetByMeetCode(code)
-		if err != nil {
-			http.Error(w, "Hmm, that meet code doesn't belong to anyone at this event.", 400)
+		if !h.meetCodeLogin(w, code) {
 			return
 		}
-		setParticipantCookie(w, me.ID)
 		http.Redirect(w, r, "/user/m/"+target.ID, http.StatusSeeOther)
 		return
 	}
-
-	var me *Participant
-	if c, err := r.Cookie(cookieName); err == nil {
-		if p, err := h.store.Get(c.Value); err == nil {
-			me = p
-		}
-	}
-	allowed := h.events.State().AllowsMeetings()
-
-	var already, completed bool
-	if me != nil && me.ID != target.ID {
-		if m, err := h.meetings.Between(me.ID, target.ID); err == nil && m != nil {
-			already = m.ConfirmedBy(me.ID)
-			completed = m.Completed()
-		}
-	}
-
-	// The viewer's theme surrounds the target's business card: the viewer
-	// logged-in gets their choice, an anonymous viewer gets the default.
-	// The handler resolves the name because Me is a possibly-nil
-	// *Participant and field access on nil errors at template-execution
-	// time — the template gets a plain string.
-	themeName := ""
-	if me != nil {
-		themeName = me.Theme // themeByName absorbs ""
-	}
+	me := h.participantFromCookie(r)
+	already, completed := h.meetFlags(me, target)
 
 	h.render(w, "meet.html", map[string]any{
 		"Target":    target,
 		"Me":        me,
-		"Allowed":   allowed,
+		"Allowed":   h.events.State().AllowsMeetings(),
 		"Already":   already,
 		"Completed": completed,
-		"ThemeName": themeName,
+		// The viewer's theme surrounds the target's business card: the viewer
+		// logged-in gets their choice, an anonymous viewer gets the default.
+		// The handler resolves the name because Me is a possibly-nil
+		// *Participant and field access on nil errors at template-execution
+		// time — the template gets a plain string.
+		"ThemeName": viewerThemeName(me),
 	})
+}
+
+// meetCodeLogin resolves the ?me= meet code to its Participant and logs the
+// viewer in as them — the same trust level as the code-based confirm itself.
+// It reports whether the request may continue.
+func (h *Handler) meetCodeLogin(w http.ResponseWriter, code string) bool {
+	me, err := h.store.GetByMeetCode(code)
+	if err != nil {
+		http.Error(w, "Hmm, that meet code doesn't belong to anyone at this event.", 400)
+		return false
+	}
+	setParticipantCookie(w, me.ID)
+	return true
+}
+
+// participantFromCookie is the logged-in Participant, nil for an anonymous
+// viewer — a cookie that no longer resolves to one reads as anonymous.
+func (h *Handler) participantFromCookie(r *http.Request) *Participant {
+	c, err := r.Cookie(cookieName)
+	if err != nil {
+		return nil
+	}
+	p, _ := h.store.Get(c.Value)
+	return p
+}
+
+// meetFlags reports whether the logged-in Participant has already confirmed
+// a meeting with the target, and whether that meeting completed.
+func (h *Handler) meetFlags(me, target *Participant) (already, completed bool) {
+	if me == nil || me.ID == target.ID {
+		return already, completed
+	}
+	m, err := h.meetings.Between(me.ID, target.ID)
+	if err == nil && m != nil {
+		already = m.ConfirmedBy(me.ID)
+		completed = m.Completed()
+	}
+	return already, completed
+}
+
+// viewerThemeName is the viewer's theme choice: their own when logged in,
+// the default for an anonymous viewer.
+func viewerThemeName(me *Participant) string {
+	if me == nil {
+		return ""
+	}
+	return me.Theme
 }
 
 // POST /user/met/{id} — confirm the meeting with the target named by the
@@ -820,24 +895,40 @@ func (h *Handler) ConfirmMeeting(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if c, err := r.Cookie(cookieName); err != nil || c.Value != confirmerID {
-		http.Error(w, "We don't know who you are — open your meet page and enter your meet code.", 400)
+	if !isViewer(w, r, confirmerID) {
 		return
 	}
 	meeting, already, err := h.meetings.Confirm(confirmer, target, OriginOther)
+	if err != nil {
+		confirmMeetingError(w, err)
+		return
+	}
+	h.render(w, "fragment-meet-result.html", map[string]any{
+		"Target":    target,
+		"Already":   already,
+		"Completed": meeting.Completed(),
+	})
+}
+
+// isViewer checks that the participant cookie names the given Participant;
+// a viewer who cannot be named gets the meet-code prompt and false.
+func isViewer(w http.ResponseWriter, r *http.Request, id string) bool {
+	if c, err := r.Cookie(cookieName); err == nil && c.Value == id {
+		return true
+	}
+	http.Error(w, "We don't know who you are — open your meet page and enter your meet code.", 400)
+	return false
+}
+
+// confirmMeetingError renders the confirm handshake's failure.
+func confirmMeetingError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrSelfMeeting):
 		http.Error(w, "You can't meet yourself — go find someone else!", 400)
 	case errors.Is(err, ErrMeetingsClosed):
 		http.Error(w, "Meeting confirmation is only open during the social and show & tell.", 400)
-	case err != nil:
-		http.Error(w, "confirming the meeting failed: "+err.Error(), 500)
 	default:
-		h.render(w, "fragment-meet-result.html", map[string]any{
-			"Target":    target,
-			"Already":   already,
-			"Completed": meeting.Completed(),
-		})
+		http.Error(w, "confirming the meeting failed: "+err.Error(), 500)
 	}
 }
 
@@ -913,34 +1004,52 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	last := h.pageSignature(first, onMatchPage)
-	lastPhase := h.events.State()
-	synced := false
-	h.watch(w, r, func() bool {
-		p, err := h.store.Get(id)
-		if err != nil {
-			return true
-		}
-		if now := h.events.State(); now != lastPhase {
-			lastPhase = now
-			sseEvent(w, "phase")
-		}
-		// One sync refresh on connect, like the pipeline stream: a page that
-		// rendered before the stream opened may have missed the only change
-		// it will ever see (a meeting completing between render and connect),
-		// and the opening signature already carries it — push would never
-		// fire on its own.
-		if !synced {
-			synced = true
-			sseEvent(w, "refresh")
-			return false
-		}
-		if now := h.pageSignature(p, onMatchPage); now != last {
-			last = now
-			sseEvent(w, "refresh")
-		}
+	st := &matchStreamState{id: id, last: h.pageSignature(first, onMatchPage), lastPhase: h.events.State()}
+	h.watch(w, r, func() bool { return h.matchStreamCheck(w, st) })
+}
+
+// matchStreamState is the match stream's own memory between checks: the
+// signature and phase last pushed, and whether the opening sync happened.
+type matchStreamState struct {
+	id        string
+	last      string
+	lastPhase Phase
+	synced    bool
+}
+
+// matchStreamCheck is the match stream's one look at the current state: a
+// 'phase' event on a phase change, the opening sync's refresh, and a
+// 'refresh' when the page's composed signature changed.
+func (h *Handler) matchStreamCheck(w http.ResponseWriter, st *matchStreamState) bool {
+	p, err := h.store.Get(st.id)
+	if err != nil {
+		return true
+	}
+	h.emitPhaseEvent(w, &st.lastPhase)
+	// One sync refresh on connect, like the pipeline stream: a page that
+	// rendered before the stream opened may have missed the only change it
+	// will ever see (a meeting completing between render and connect), and
+	// the opening signature already carries it — push would never fire on
+	// its own.
+	if !st.synced {
+		st.synced = true
+		sseEvent(w, "refresh")
 		return false
-	})
+	}
+	if now := h.pageSignature(p, onMatchPage); now != st.last {
+		st.last = now
+		sseEvent(w, "refresh")
+	}
+	return false
+}
+
+// emitPhaseEvent emits a distinct 'phase' event when the phase moved since
+// the last look, so the phase header updates live and the region swaps.
+func (h *Handler) emitPhaseEvent(w http.ResponseWriter, last *Phase) {
+	if now := h.events.State(); now != *last {
+		*last = now
+		sseEvent(w, "phase")
+	}
 }
 
 // ── contact exchange: settings + the post-meeting prompt ───────────────────
@@ -1080,38 +1189,78 @@ func (h *Handler) Recap(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) recapData(p *Participant) map[string]any {
 	dossier, match := h.dossierData(p)
 	dossier["Unlocked"] = true // the recap always shows the dossier
+	signup, questions := h.recapShowTell(p)
+	board := h.recapLeaderboard(p)
+	champion := championOf(board)
 
-	type connectionView struct {
-		Other    *Participant
-		Revealed []ContactChannel
+	return map[string]any{
+		"Me":                p,
+		"Match":             match,
+		"Dossier":           dossier,
+		"Connections":       h.recapConnections(p),
+		"Shared":            shared(h.recapChannels(p)),
+		"ShowTellSignup":    signup,
+		"ShowTellQuestions": questions,
+		"ConnectionCount":   h.meetings.Connections(p.ID),
+		"Rank":              rankOf(board, p.ID),
+		"Champion":          champion != nil && champion.ID == p.ID,
 	}
-	var connections []connectionView
+}
+
+// recapConnectionView is one of the recap page's connections: the other
+// side, with the contact channels they shared with the Participant.
+type recapConnectionView struct {
+	Other    *Participant
+	Revealed []ContactChannel
+}
+
+// recapConnections is the recap page's connections: one view per completed
+// meeting — a connection is a completed meeting — with the channels those
+// connections shared with them.
+func (h *Handler) recapConnections(p *Participant) []recapConnectionView {
 	ms, err := h.meetings.ForParticipant(p.ID)
 	if err != nil {
 		logger("handler").Warn("recap meetings", "participant", p.ID, "err", err)
 	}
+	var connections []recapConnectionView
 	for _, m := range ms {
-		if !m.Completed() {
-			continue // a connection is a completed meeting
+		if v, ok := h.recapConnection(p, m); ok {
+			connections = append(connections, v)
 		}
-		other, err := h.store.Get(m.Other(p.ID))
-		if err != nil {
-			continue // the other side left the event
-		}
-		ex, err := h.channels.Exchanged(&m, p.ID)
-		if err != nil {
-			logger("handler").Warn("recap channels revealed", "participant", p.ID, "by", other.ID, "err", err)
-		}
-		connections = append(connections, connectionView{Other: other, Revealed: ex.Revealed})
 	}
+	return connections
+}
 
+// recapConnection is one completed meeting as a recap connection; ok is
+// false when the meeting did not complete or the other side left the event.
+func (h *Handler) recapConnection(p *Participant, m Meeting) (recapConnectionView, bool) {
+	if !m.Completed() {
+		return recapConnectionView{}, false // a connection is a completed meeting
+	}
+	other, err := h.store.Get(m.Other(p.ID))
+	if err != nil {
+		return recapConnectionView{}, false // the other side left the event
+	}
+	ex, err := h.channels.Exchanged(&m, p.ID)
+	if err != nil {
+		logger("handler").Warn("recap channels revealed", "participant", p.ID, "by", other.ID, "err", err)
+	}
+	return recapConnectionView{Other: other, Revealed: ex.Revealed}, true
+}
+
+// recapChannels is the contact channels the Participant shares themselves;
+// an unreadable list comes back empty.
+func (h *Handler) recapChannels(p *Participant) []ContactChannel {
 	mine, err := h.channels.Channels(p.ID)
 	if err != nil {
 		logger("handler").Warn("recap contact channels", "participant", p.ID, "err", err)
 	}
+	return mine
+}
 
-	// The Participant's show & tell items: their sign-up and the questions
-	// they asked, with how each ended up.
+// recapShowTell is the Participant's show & tell items for the recap: their
+// sign-up and the questions they asked. Read failures degrade to none.
+func (h *Handler) recapShowTell(p *Participant) (*ShowTellSignup, []ShowTellQuestion) {
 	signup, err := h.showtell.ForParticipant(p.ID)
 	if err != nil {
 		logger("handler").Warn("recap show & tell sign-up", "participant", p.ID, "err", err)
@@ -1120,25 +1269,17 @@ func (h *Handler) recapData(p *Participant) map[string]any {
 	if err != nil {
 		logger("handler").Warn("recap show & tell questions", "participant", p.ID, "err", err)
 	}
+	return signup, questions
+}
 
+// recapLeaderboard is the connection leaderboard; an unreadable board comes
+// back empty.
+func (h *Handler) recapLeaderboard(p *Participant) []ConnectionStanding {
 	board, err := h.meetings.Leaderboard()
 	if err != nil {
 		logger("handler").Warn("recap leaderboard", "participant", p.ID, "err", err)
 	}
-	champion := championOf(board)
-
-	return map[string]any{
-		"Me":                p,
-		"Match":             match,
-		"Dossier":           dossier,
-		"Connections":       connections,
-		"Shared":            shared(mine),
-		"ShowTellSignup":    signup,
-		"ShowTellQuestions": questions,
-		"ConnectionCount":   h.meetings.Connections(p.ID),
-		"Rank":              rankOf(board, p.ID),
-		"Champion":          champion != nil && champion.ID == p.ID,
-	}
+	return board
 }
 
 // ── the closing ceremony: the public event recap + the host export pack ────
@@ -1229,31 +1370,49 @@ func (h *Handler) showtellData(p *Participant) map[string]any {
 		"Open":    h.events.State().AllowsShowTell(),
 		"AskOpen": h.events.State().IsShowTell(),
 	}
-	signup, err := h.showtell.ForParticipant(p.ID)
-	if err != nil {
-		logger("handler").Warn("show & tell sign-up", "participant", p.ID, "err", err)
-	}
-	if signup != nil {
+	if signup := h.mySignup(p); signup != nil {
 		data["Signup"] = signup
 		data["Position"] = h.showtell.QueuePosition(p.ID)
 	}
 	// The question form binds to whoever is on stage; its button is disabled
 	// while the stage is empty.
+	if presenter := h.onStagePresenter(); presenter != nil {
+		data["Presenter"] = presenter
+	}
+	if questions := h.myShowTellQuestions(p); len(questions) > 0 {
+		data["MyQuestions"] = questions
+	}
+	return data
+}
+
+// mySignup is the Participant's show & tell sign-up, if any; a read failure
+// degrades to none.
+func (h *Handler) mySignup(p *Participant) *ShowTellSignup {
+	signup, err := h.showtell.ForParticipant(p.ID)
+	if err != nil {
+		logger("handler").Warn("show & tell sign-up", "participant", p.ID, "err", err)
+	}
+	return signup
+}
+
+// onStagePresenter is whoever is on stage, nil while the stage is empty; a
+// read failure degrades to an empty stage.
+func (h *Handler) onStagePresenter() *ShowTellSignup {
 	presenter, err := h.showtell.OnStage()
 	if err != nil {
 		logger("handler").Warn("on-stage presenter", "err", err)
 	}
-	if presenter != nil {
-		data["Presenter"] = presenter
-	}
+	return presenter
+}
+
+// myShowTellQuestions is the Participant's own audience questions; a read
+// failure degrades to none.
+func (h *Handler) myShowTellQuestions(p *Participant) []ShowTellQuestion {
 	questions, err := h.showtell.QuestionsForParticipant(p.ID)
 	if err != nil {
 		logger("handler").Warn("show & tell questions", "participant", p.ID, "err", err)
 	}
-	if len(questions) > 0 {
-		data["MyQuestions"] = questions
-	}
-	return data
+	return questions
 }
 
 // POST /user/showtell/question/{id} — ask the presenter on stage a question,
@@ -1267,6 +1426,17 @@ func (h *Handler) ShowTellQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = h.showtell.Ask(p, r.FormValue("question"))
+	if err != nil {
+		askQuestionError(w, err)
+		return
+	}
+	data := h.showtellData(p)
+	data["Asked"] = true
+	h.render(w, "fragment-showtell.html", data)
+}
+
+// askQuestionError renders an audience question's failure.
+func askQuestionError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrShowTellClosed):
 		http.Error(w, "Questions are only open during show & tell.", 400)
@@ -1274,12 +1444,8 @@ func (h *Handler) ShowTellQuestion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Nobody is on stage — questions open when a presenter is up.", 400)
 	case errors.Is(err, ErrInvalidQuestion):
 		http.Error(w, err.Error(), 400)
-	case err != nil:
-		http.Error(w, "asking your question failed: "+err.Error(), 500)
 	default:
-		data := h.showtellData(p)
-		data["Asked"] = true
-		h.render(w, "fragment-showtell.html", data)
+		http.Error(w, "asking your question failed: "+err.Error(), 500)
 	}
 }
 
@@ -1294,17 +1460,43 @@ func (h *Handler) ShowTellStage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "That sign-up is not in the queue.", 400)
 		return
 	}
-	switch r.FormValue("action") {
-	case "stage":
-		_, err = h.showtell.Stage(id)
-	case "reveal":
-		_, err = h.showtell.RevealIdentity(id)
-	case "done":
-		_, err = h.showtell.Done(id)
-	default:
+	err = h.showtellStageAction(r.FormValue("action"), id)
+	if err == nil {
+		// Only the success path redirects — an error below already wrote the
+		// response, and a second WriteHeader would be superfluous.
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	}
+	if errors.Is(err, errUnknownShowTellAction) {
 		http.Error(w, "Unknown action — stage, reveal or done.", 400)
 		return
 	}
+	h.showtellStageError(w, err)
+}
+
+// errUnknownShowTellAction marks a presenter-mode action outside the known
+// set; the handler maps it to its client error.
+var errUnknownShowTellAction = errors.New("unknown presenter-mode action")
+
+// showtellStageAction performs the host's presenter-mode action on a
+// sign-up.
+func (h *Handler) showtellStageAction(action string, id int64) error {
+	switch action {
+	case "stage":
+		_, err := h.showtell.Stage(id)
+		return err
+	case "reveal":
+		_, err := h.showtell.RevealIdentity(id)
+		return err
+	case "done":
+		_, err := h.showtell.Done(id)
+		return err
+	}
+	return errUnknownShowTellAction
+}
+
+// showtellStageError renders a presenter-mode action's failure.
+func (h *Handler) showtellStageError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrShowTellClosed):
 		http.Error(w, "Presenter mode is only live during show & tell.", 400)
@@ -1312,12 +1504,8 @@ func (h *Handler) ShowTellStage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "That sign-up is not in the queue.", 404)
 	case errors.Is(err, ErrAlreadyOnStage), errors.Is(err, ErrNotOnStage), errors.Is(err, ErrSignupNotQueued):
 		http.Error(w, err.Error(), 400)
-	case err != nil:
-		http.Error(w, "updating the show & tell queue failed: "+err.Error(), 500)
 	default:
-		// Only the success path redirects — an http.Error above already
-		// wrote the response, and a second WriteHeader would be superfluous.
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		http.Error(w, "updating the show & tell queue failed: "+err.Error(), 500)
 	}
 }
 
@@ -1361,19 +1549,32 @@ func (h *Handler) ShowTellQuestionAction(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "That question is not in the queue.", 400)
 		return
 	}
-	var to QuestionStatus
-	switch r.FormValue("action") {
-	case "asked":
-		to = QuestionAsked
-	case "answered":
-		to = QuestionAnswered
-	case "dismissed":
-		to = QuestionDismissed
-	default:
+	to, ok := questionStatusFor(r.FormValue("action"))
+	if !ok {
 		http.Error(w, "Unknown action — asked, answered or dismissed.", 400)
 		return
 	}
 	_, err = h.showtell.TransitionQuestion(id, to)
+	h.showtellQuestionError(w, err)
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// questionStatusFor maps the host's question-queue action to the status it
+// moves the question to; ok is false for an unknown action.
+func questionStatusFor(action string) (to QuestionStatus, ok bool) {
+	switch action {
+	case "asked":
+		return QuestionAsked, true
+	case "answered":
+		return QuestionAnswered, true
+	case "dismissed":
+		return QuestionDismissed, true
+	}
+	return QuestionDismissed, false
+}
+
+// showtellQuestionError renders a question-queue action's failure.
+func (h *Handler) showtellQuestionError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrShowTellClosed):
 		http.Error(w, "The question queue is only live during show & tell.", 400)
@@ -1384,7 +1585,6 @@ func (h *Handler) ShowTellQuestionAction(w http.ResponseWriter, r *http.Request)
 	case err != nil:
 		http.Error(w, "updating the question queue failed: "+err.Error(), 500)
 	}
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 // GET /admin/showtell-queue — HTMX, the host console's show & tell queue,
@@ -1731,38 +1931,38 @@ func (h *Handler) Rematch(w http.ResponseWriter, r *http.Request) {
 // DELETE /data/participant/{id}
 func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.relations.Remove(id); errors.Is(err, ErrParticipantNotFound) {
-		http.NotFound(w, r)
-		return
-	} else if err != nil {
+	if err := h.relations.Remove(id); err != nil {
+		if errors.Is(err, ErrParticipantNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if err := h.meetings.RemoveParticipant(id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	if err := h.missions.RemoveParticipant(id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	if err := h.channels.RemoveParticipant(id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	if err := h.recaps.RemoveParticipant(id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	if err := h.showtell.RemoveParticipant(id); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	if err := h.board.RemoveParticipant(id); err != nil {
+	if err := h.removeParticipantTraces(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// removeParticipantTraces deletes the Participant's data from every module
+// that holds some, after the relation itself is gone; it stops at the first
+// failure.
+func (h *Handler) removeParticipantTraces(id string) error {
+	for _, remove := range []func(string) error{
+		h.meetings.RemoveParticipant,
+		h.missions.RemoveParticipant,
+		h.channels.RemoveParticipant,
+		h.recaps.RemoveParticipant,
+		h.showtell.RemoveParticipant,
+		h.board.RemoveParticipant,
+	} {
+		if err := remove(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ── SSE ────────────────────────────────────────────────────────────────────
@@ -1810,17 +2010,27 @@ func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (do
 		if h.streams != nil {
 			h.streams.OnStream(r.URL.Path)
 		}
-		select {
-		case <-r.Context().Done():
+		if !awaitChange(w, r, changes, heartbeat) {
 			return
-		case <-changes:
-		case <-heartbeat.C:
-			// A failed write only means the client is gone; the loop then
-			// ends on the closed request context.
-			_, _ = fmt.Fprint(w, ": ping\n\n")
-			w.(http.Flusher).Flush()
 		}
 	}
+}
+
+// awaitChange blocks until the change feed, the heartbeat or the client
+// speaks. It reports whether the watch loop may continue: a gone client
+// ends it.
+func awaitChange(w http.ResponseWriter, r *http.Request, changes <-chan struct{}, heartbeat *time.Ticker) bool {
+	select {
+	case <-r.Context().Done():
+		return false
+	case <-changes:
+	case <-heartbeat.C:
+		// A failed write only means the client is gone; the loop then ends
+		// on the closed request context.
+		_, _ = fmt.Fprint(w, ": ping\n\n")
+		w.(http.Flusher).Flush()
+	}
+	return true
 }
 
 // GET /user/pipeline-stream/{id}
@@ -1838,24 +2048,36 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	lastStep := first.PipelineStep
-	synced := false
-	h.watch(w, r, func() bool {
-		p, err := h.store.Get(id)
-		if err != nil {
-			return true
-		}
-		if dest := h.destination(p); dest != "/user/onboard/"+id {
-			sseRedirect(w, dest)
-			return true
-		}
-		if !synced || p.PipelineStep != lastStep {
-			synced = true
-			lastStep = p.PipelineStep
-			sseEvent(w, "refresh")
-		}
-		return false
-	})
+	st := &pipelineStreamState{id: id, lastStep: first.PipelineStep}
+	h.watch(w, r, func() bool { return h.pipelineStreamCheck(w, st) })
+}
+
+// pipelineStreamState is the pipeline stream's own memory between checks:
+// the step last pushed, and whether the opening sync happened.
+type pipelineStreamState struct {
+	id       string
+	lastStep Step
+	synced   bool
+}
+
+// pipelineStreamCheck is the pipeline stream's one look at the current
+// state: a redirect once the Participant belongs elsewhere, and a refresh
+// when the stream opens or the step changes (the first question appears).
+func (h *Handler) pipelineStreamCheck(w http.ResponseWriter, st *pipelineStreamState) bool {
+	p, err := h.store.Get(st.id)
+	if err != nil {
+		return true
+	}
+	if dest := h.destination(p); dest != "/user/onboard/"+st.id {
+		sseRedirect(w, dest)
+		return true
+	}
+	if !st.synced || p.PipelineStep != st.lastStep {
+		st.synced = true
+		st.lastStep = p.PipelineStep
+		sseEvent(w, "refresh")
+	}
+	return false
 }
 
 // GET /user/wait-stream/{id}
@@ -1879,38 +2101,55 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	last := h.pageSignature(first, onWaitPage)
-	lastPhase := h.events.State()
-	synced := false
-	h.watch(w, r, func() bool {
-		p, err := h.store.Get(id)
-		if err != nil {
-			return true
-		}
-		if now := h.events.State(); now != lastPhase {
-			lastPhase = now
-			sseEvent(w, "phase")
-		}
-		if dest := h.destination(p); dest != "/user/wait/"+id {
-			sseRedirect(w, dest)
-			return true
-		}
-		// One sync refresh on connect, like the pipeline stream: a page that
-		// rendered before the stream opened may have missed the only change
-		// it will ever see (the persona landing between render and connect),
-		// and the opening snapshot already carries it — push would never
-		// fire on its own.
-		if !synced {
-			synced = true
-			sseEvent(w, "refresh")
-			return false
-		}
-		if now := h.pageSignature(p, onWaitPage); now != last {
-			last = now
-			sseEvent(w, "refresh")
-		}
+	st := &waitStreamState{id: id, last: h.pageSignature(first, onWaitPage), lastPhase: h.events.State()}
+	h.watch(w, r, func() bool { return h.waitStreamCheck(w, st) })
+}
+
+// waitStreamState is the wait stream's own memory between checks: the
+// signature and phase last pushed, and whether the opening sync happened.
+type waitStreamState struct {
+	id        string
+	last      string
+	lastPhase Phase
+	synced    bool
+}
+
+// waitStreamCheck is the wait stream's one look at the current state: a
+// 'phase' event on a phase change, a redirect once the Participant belongs
+// elsewhere, the opening sync's refresh, and a 'refresh' when the page's
+// composed signature changed.
+func (h *Handler) waitStreamCheck(w http.ResponseWriter, st *waitStreamState) bool {
+	p, err := h.store.Get(st.id)
+	if err != nil {
+		return true
+	}
+	h.emitPhaseEvent(w, &st.lastPhase)
+	if dest := h.destination(p); dest != "/user/wait/"+st.id {
+		sseRedirect(w, dest)
+		return true
+	}
+	if st.syncOnce(w) {
 		return false
-	})
+	}
+	if now := h.pageSignature(p, onWaitPage); now != st.last {
+		st.last = now
+		sseEvent(w, "refresh")
+	}
+	return false
+}
+
+// syncOnce emits the one sync refresh on connect, and reports whether this
+// check was the sync: a page that rendered before the stream opened may have
+// missed the only change it will ever see (the persona landing between
+// render and connect), and the opening snapshot already carries it — push
+// would never fire on its own.
+func (st *waitStreamState) syncOnce(w http.ResponseWriter) bool {
+	if st.synced {
+		return false
+	}
+	st.synced = true
+	sseEvent(w, "refresh")
+	return true
 }
 
 // GET /bigscreen/stream
