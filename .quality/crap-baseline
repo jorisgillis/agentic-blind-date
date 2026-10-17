@@ -1,5 +1,0 @@
-# CRAP ratchet (ADR-0021, ADR-0023): the number of functions failing
-# the CRAP < 6 gate the check profile tolerates. Gate: current <= this
-# number. Retrofit commits decrement it monotonically; at zero this
-# file is deleted and the bare strict gate (scripts/crap -gate) remains.
-76
