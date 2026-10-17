@@ -44,6 +44,11 @@ func TestGherkinFeatures(t *testing.T) {
 	}
 }
 
+// gherkinSteps lets journey bindings register steps from their own files
+// (per ADR-0025's domain split over the one shared world): each
+// gherkin_*_test.go appends its registrar in an init() function.
+var gherkinSteps []func(*godog.ScenarioContext, *gherkinWorld)
+
 func (w *gherkinWorld) initSteps(ctx *godog.ScenarioContext) {
 	w.people = map[string]string{}
 
@@ -60,6 +65,10 @@ func (w *gherkinWorld) initSteps(ctx *godog.ScenarioContext) {
 	ctx.When(`^(\w+) confirms a meeting with (\w+)'s meet code$`, w.confirmsMeeting)
 	ctx.Then(`^(\w+) and (\w+) have a completed meeting$`, w.haveCompletedMeeting)
 	ctx.Then(`^both (\w+) and (\w+) have one connection$`, w.bothHaveOneConnection)
+
+	for _, register := range gherkinSteps {
+		register(ctx, w)
+	}
 }
 
 // --- Given/When steps -------------------------------------------------
