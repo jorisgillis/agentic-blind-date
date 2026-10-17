@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# Pre-commit hook (ADR-0021): the hook profile of the one quality
+# command, ~2 s. Advisory by design — findings remind, they do not
+# block; CI (quality.sh check) is the enforcement point. The agent
+# self-check runs the check profile before finishing a session.
+set -u
+
+root="$(git rev-parse --show-toplevel)"
+
+if ! bash "$root/scripts/quality.sh" hook; then
+    echo >&2
+    echo "advisory: the hook profile reported findings; the commit proceeds." >&2
+    echo "Fix them before pushing — CI blocks on scripts/quality.sh check." >&2
+fi
+
+exit 0
