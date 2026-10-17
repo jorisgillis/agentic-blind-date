@@ -14,3 +14,5 @@
 # owner, and is reviewed like code.
 #
 # No entries yet.
+
+structured.go:37:37 CONDITIONALS_BOUNDARY — equivalent: end==start is unreachable (Index finds '{', LastIndex finds '}', never the same index), so <= and < always agree

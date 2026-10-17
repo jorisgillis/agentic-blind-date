@@ -249,6 +249,16 @@ func TestExtractJSON_extractsFromVariousFormats(t *testing.T) {
 			input:    `text {"outer": {"inner": "value"}} more text`,
 			expected: `{"outer": {"inner": "value"}}`,
 		},
+		{
+			name:     "one character of prose before the JSON",
+			input:    `x{"name": "test"}`,
+			expected: `{"name": "test"}`,
+		},
+		{
+			name:     "empty object followed by prose",
+			input:    `{} trailing text`,
+			expected: `{}`,
+		},
 	}
 
 	for _, tt := range tests {
