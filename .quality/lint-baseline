@@ -1,0 +1,5 @@
+# Lint ratchet (ADR-0021): the number of golangci-lint findings the
+# check profile tolerates. Gate: current <= this number. Retrofit
+# commits decrement it monotonically; at zero this file is deleted and
+# the bare strict gate (any finding fails) remains.
+77

@@ -1,0 +1,77 @@
+name: Quality
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+    # Nightly, 03:00 UTC: the gremlins mutation run + survivor queue.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  # The blocking PR gate and the agent's self-check are the same
+  # invocation (ADR-0021): gofmt, vet, lint ratchet, shuffled -race
+  # tests, the coverage gate, the CRAP ratchet, govulncheck.
+  check:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Run the check profile
+      run: bash scripts/quality.sh check
+
+  # The browser-level journey suite (issue #144), wrapped by the e2e
+  # profile of the one quality command: npm ci, Chromium, npx
+  # playwright test. Own Node dependencies in e2e/ so the app itself
+  # stays zero-dependency (ADR-0009).
+  e2e:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Set up Node
+      uses: actions/setup-node@v5
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: e2e/package-lock.json
+
+    - name: Run the e2e profile
+      run: bash scripts/quality.sh e2e
+
+  # Nightly only (ADR-0024): gremlins on the 22-file decision-logic
+  # union, the survivor issue queue, a CRAP trend report. Non-blocking
+  # by design — never a PR gate.
+  nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Run the nightly profile
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: bash scripts/quality.sh nightly

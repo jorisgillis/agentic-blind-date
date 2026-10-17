@@ -33,6 +33,7 @@ Single-context repository with `CONTEXT.md` and `docs/adr/` at the root. See `do
 ### Quality self-check
 
 Every session ends by running the checks its changes require. See `docs/agents/self-check.md`; the quality system as a whole is specified in `docs/quality-system-spec.md`.
+Run `bash scripts/install-hooks.sh` once per checkout to install the advisory pre-commit hook.
 
 ## Project Documentation
 
