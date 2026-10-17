@@ -105,5 +105,5 @@ func themeCSS(name string) template.HTML {
 	for _, key := range keys {
 		css += ";--color-" + key + ":" + t.Walk[key]
 	}
-	return template.HTML(css + "}</style>")
+	return template.HTML(css + "}</style>") //nolint:gosec // G203: every value comes from the theme registry's constant hex colors, never from input
 }

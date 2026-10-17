@@ -635,7 +635,7 @@ func TestPersonalPages_IncludeTheSettingsSection(t *testing.T) {
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
 	seed(t, deps.db, "solo", "The Loner", "ready")
 	pair(t, deps.db, "a", "b")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	for _, path := range []string{"/user/match/a", "/user/wait/solo"} {
 		body := readBody(t, get(t, srv, path))

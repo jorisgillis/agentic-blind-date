@@ -16,6 +16,9 @@ func testServer(t *testing.T) (*testSrv, *DB) {
 	return srv, deps.db
 }
 
+// get fetches path; the body is closed through the t.Cleanup below.
+//
+//bodyclose:handled
 func get(t *testing.T, srv *testSrv, path string) *http.Response {
 	t.Helper()
 	client := srv.Client()
@@ -26,10 +29,13 @@ func get(t *testing.T, srv *testSrv, path string) *http.Response {
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
 	}
-	t.Cleanup(func() { resp.Body.Close() })
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
 }
 
+// post submits the form; the body is closed through the t.Cleanup below.
+//
+//bodyclose:handled
 func post(t *testing.T, srv *testSrv, path string, form url.Values) *http.Response {
 	t.Helper()
 	client := srv.Client()
@@ -40,7 +46,7 @@ func post(t *testing.T, srv *testSrv, path string, form url.Values) *http.Respon
 	if err != nil {
 		t.Fatalf("POST %s: %v", path, err)
 	}
-	t.Cleanup(func() { resp.Body.Close() })
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
 }
 
@@ -287,15 +293,15 @@ func TestDataParticipants(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create some participants
-	db.CreateParticipant("id-1", "user1", "User 1", true)
-	db.CreateParticipant("id-2", "user2", "User 2", true)
+	must(t, db.CreateParticipant("id-1", "user1", "User 1", true))
+	must(t, db.CreateParticipant("id-2", "user2", "User 2", true))
 
 	// Call DataParticipants endpoint
 	resp, err := srv.Client().Get(srv.URL + "/data/participants")
 	if err != nil {
 		t.Fatalf("GET /data/participants: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -306,14 +312,14 @@ func TestDataParticipant(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant
-	db.CreateParticipant("id-1", "user1", "User 1", true)
+	must(t, db.CreateParticipant("id-1", "user1", "User 1", true))
 
 	// Call DataParticipant endpoint by ID
 	resp, err := srv.Client().Get(srv.URL + "/data/participant/id-1")
 	if err != nil {
 		t.Fatalf("GET /data/participant/id-1: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -324,7 +330,7 @@ func TestDataParticipant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /data/participant/user1: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -335,7 +341,7 @@ func TestDataParticipant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /data/participant/nonexistent: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 404 {
 		t.Errorf("expected status 404, got %d", resp.StatusCode)
@@ -354,7 +360,7 @@ func TestDataActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /data/activity: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -365,7 +371,7 @@ func TestSubmitAnswer(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant in interviewing state with questions
-	db.CreateParticipant("id-1", "user1", "User 1", true)
+	must(t, db.CreateParticipant("id-1", "user1", "User 1", true))
 	forceInterview(db, "id-1", FixedQuestions, map[string]string{}, StepInterviewing)
 
 	// Submit a valid answer
@@ -374,7 +380,7 @@ func TestSubmitAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /user/answer/id-1: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -398,7 +404,7 @@ func TestDataIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /data: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -413,7 +419,7 @@ func TestAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /admin: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -471,7 +477,7 @@ func TestSubmitAnswer_ParticipantNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /user/answer/nonexistent: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 404 {
 		t.Errorf("expected status 404, got %d", resp.StatusCode)
@@ -482,7 +488,7 @@ func TestSubmitAnswer_WrongPipelineStep(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant NOT in interviewing state
-	db.CreateParticipant("id-1", "user1", "User 1", true)
+	must(t, db.CreateParticipant("id-1", "user1", "User 1", true))
 	forceStep(db, "id-1", "ready")
 
 	// Submit answer
@@ -491,7 +497,7 @@ func TestSubmitAnswer_WrongPipelineStep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /user/answer/id-1: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -507,7 +513,7 @@ func TestSubmitAnswer_NoMoreQuestions(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with only 2 questions and both answered
-	db.CreateParticipant("id-1", "user1", "User 1", true)
+	must(t, db.CreateParticipant("id-1", "user1", "User 1", true))
 	forceInterview(db, "id-1", []Question{
 		{ID: "q0", Text: "Q1?"},
 		{ID: "q1", Text: "Q2?"},
@@ -522,7 +528,7 @@ func TestSubmitAnswer_NoMoreQuestions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /user/answer/id-1: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 400 {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
@@ -533,7 +539,7 @@ func TestSubmitAnswer_MultiSelectInvalidJSON(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with multi-select questions
-	db.CreateParticipant("id-1", "user1", "User 1", true)
+	must(t, db.CreateParticipant("id-1", "user1", "User 1", true))
 	forceInterview(db, "id-1", []Question{
 		{ID: "q1", Text: "Select languages", MaxSelections: 3, Mode: MultiSelect},
 	}, map[string]string{}, StepInterviewing)
@@ -544,7 +550,7 @@ func TestSubmitAnswer_MultiSelectInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /user/answer/id-1: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 400 {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
@@ -555,7 +561,7 @@ func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
 	srv, db := testServer(t)
 
 	// Create a participant with multi-select questions (max 2 selections)
-	db.CreateParticipant("id-1", "user1", "User 1", true)
+	must(t, db.CreateParticipant("id-1", "user1", "User 1", true))
 	forceInterview(db, "id-1", []Question{
 		{ID: "q1", Text: "Select languages", MaxSelections: 2, Mode: MultiSelect},
 	}, map[string]string{}, StepInterviewing)
@@ -566,7 +572,7 @@ func TestSubmitAnswer_MultiSelectTooManySelections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /user/answer/id-1: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 400 {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
@@ -579,7 +585,7 @@ func TestOnboardPage_MultiSelectQuestionRendersAllOptions(t *testing.T) {
 	// A Non-GitHub Participant's first question is the multi-select Extra
 	// Question; its options must all render (#141: the options loop shadowed
 	// .Question, so template execution died after the first option).
-	db.CreateParticipant("id-1", "no-github-id-1", "No GitHub", false)
+	must(t, db.CreateParticipant("id-1", "no-github-id-1", "No GitHub", false))
 	forceInterview(db, "id-1", []Question{
 		{ID: "extra_0", Text: "What are your top 3 programming languages?", Options: []string{"Go", "Python", "Rust", "TypeScript"}, MaxSelections: 3, Mode: MultiSelect},
 		{ID: "fixed_0", Text: "Tabs or spaces?", Options: []string{"Tabs", "Spaces"}, Mode: SingleSelect},
@@ -624,7 +630,7 @@ func TestRender_TemplateErrorReturnsClean500(t *testing.T) {
 	rec := httptest.NewRecorder()
 	deps.handler.render(rec, "fragment-question.html", "not a question")
 	resp := rec.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 500 {
 		t.Errorf("render error: want 500, got %d", resp.StatusCode)

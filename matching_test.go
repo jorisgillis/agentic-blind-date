@@ -267,12 +267,12 @@ func TestMatchNewcomer_BreakingAMatchReturnsTheDisplacedParticipantToThePool(t *
 	gh := newFakeGitHub()
 	matchmaking := NewMatchmaking(db, NewMatcher(db, gh, llm), NewRelationships(db), defaultMaxChain)
 	for _, id := range []string{"A", "B", "N"} {
-		db.CreateParticipant(id, id, id, true)
+		must(t, db.CreateParticipant(id, id, id, true))
 		setProfile(t, db, id, &GitHubProfile{Login: id})
 		setPersona(t, db, id, id, "")
 		forceStep(db, id, "ready")
 	}
-	NewRelationships(db).Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40, Reason: "meh"}})
+	mustPair(t, NewRelationships(db), Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40, Reason: "meh"}})
 
 	if err := matchmaking.MatchNewcomer(reload(t, db, "N")); err != nil {
 		t.Fatal(err)
@@ -295,8 +295,8 @@ func TestMatchNewcomer_ADisplacedPartnerIsRematchedRightAway(t *testing.T) {
 	for _, id := range []string{"A", "B", "C", "D", "N"} {
 		seed(t, db, id, id, "ready")
 	}
-	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
-	rel.Pair(Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
+	mustPair(t, rel, Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
+	mustPair(t, rel, Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
 
 	if err := matchmaking.MatchNewcomer(reload(t, db, "N")); err != nil {
 		t.Fatal(err)
@@ -321,8 +321,8 @@ func TestMatchNewcomer_ADisplacedPartnerMayTakeOverAMatchFormedEarlierInTheChain
 	for _, id := range []string{"A", "B", "C", "D", "N"} {
 		seed(t, db, id, id, "ready")
 	}
-	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
-	rel.Pair(Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
+	mustPair(t, rel, Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
+	mustPair(t, rel, Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
 
 	if err := matchmaking.MatchNewcomer(reload(t, db, "N")); err != nil {
 		t.Fatal(err)
@@ -359,9 +359,9 @@ func TestMatchNewcomer_APathologicalChainStopsAtTheBound(t *testing.T) {
 	for _, id := range []string{"A", "B", "C", "D", "E", "F", "N"} {
 		seed(t, db, id, id, "ready")
 	}
-	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
-	rel.Pair(Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
-	rel.Pair(Match{A: reload(t, db, "E"), B: reload(t, db, "F"), Result: &matchResult{Score: 20}})
+	mustPair(t, rel, Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: &matchResult{Score: 40}})
+	mustPair(t, rel, Match{A: reload(t, db, "C"), B: reload(t, db, "D"), Result: &matchResult{Score: 30}})
+	mustPair(t, rel, Match{A: reload(t, db, "E"), B: reload(t, db, "F"), Result: &matchResult{Score: 20}})
 
 	err := matchmaking.MatchNewcomer(reload(t, db, "N"))
 
@@ -394,7 +394,7 @@ func TestMatchNewcomer_TakeOverIsPhaseGated(t *testing.T) {
 			for _, id := range []string{"A", "B", "N"} {
 				seed(t, db, id, id, "ready")
 			}
-			rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
+			mustPair(t, rel, Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
 			if err := NewEventStore(db).Advance(tc.phase); err != nil {
 				t.Fatal(err)
 			}
@@ -427,7 +427,7 @@ func TestMatchNewcomer_FromTheSocialOnwardPairsOnlyWithUnmatchedReadyParticipant
 	for _, id := range []string{"A", "B", "C", "N"} {
 		seed(t, db, id, id, "ready")
 	}
-	rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
+	mustPair(t, rel, Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
 	if err := NewEventStore(db).Advance(PhaseSocial); err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +498,7 @@ func matchmakingWithPool(t *testing.T) (*Matchmaking, *DB, *fakeLLM) {
 func TestMatchmaking_ReportsFailures(t *testing.T) {
 	t.Run("rematch: breaking the Matches fails", func(t *testing.T) {
 		mm, db, _ := matchmakingWithPool(t)
-		NewRelationships(db).Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
+		mustPair(t, NewRelationships(db), Match{A: reload(t, db, "A"), B: reload(t, db, "B"), Result: assessment(40)})
 		failWrites(t, db, "unpair")
 		if err := mm.Rematch(); err == nil {
 			t.Error("want the failure reported")

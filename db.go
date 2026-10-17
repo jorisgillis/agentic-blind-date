@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -191,7 +192,9 @@ func NewDB(path string) (*DB, error) {
 		return nil, err
 	}
 
-	// Migrations for existing databases — ignore errors (columns may already exist)
+	// Migrations for existing databases — best-effort statements: each one
+	// fails benignly when it has already been applied (a duplicate column,
+	// a dropped legacy column), and the schema above is authoritative.
 	for _, m := range []string{
 		`ALTER TABLE participants ADD COLUMN name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE participants ADD COLUMN persona_symbol TEXT NOT NULL DEFAULT '🎭'`,
@@ -206,7 +209,7 @@ func NewDB(path string) (*DB, error) {
 		`ALTER TABLE participants ADD COLUMN meet_code TEXT`,                              // meet codes, backfilled below
 		`ALTER TABLE participants ADD COLUMN theme TEXT NOT NULL DEFAULT 'midnight'`,      // theme choices, default backfilled
 	} {
-		sqlDB.Exec(m)
+		_, _ = sqlDB.Exec(m)
 	}
 
 	// Meet codes are unique. The index is created after the migrations, so
@@ -218,7 +221,9 @@ func NewDB(path string) (*DB, error) {
 	// One-time backfill when has_github is introduced: until then, Non-GitHub
 	// Users could only be recognised by their generated handle.
 	if _, err := sqlDB.Exec(`ALTER TABLE participants ADD COLUMN has_github INTEGER NOT NULL DEFAULT 1`); err == nil {
-		sqlDB.Exec(`UPDATE participants SET has_github = 0 WHERE github_handle LIKE 'no-github-%'`)
+		// The backfill is best-effort too: a row it cannot reach keeps the
+		// column default, and the flag is rewritten at the next registration.
+		_, _ = sqlDB.Exec(`UPDATE participants SET has_github = 0 WHERE github_handle LIKE 'no-github-%'`)
 	}
 
 	db := &DB{db: sqlDB, changes: newChangeFeed()}
@@ -308,10 +313,10 @@ func (db *DB) CreateParticipant(id, handle, name string, hasGitHub bool) error {
 		for rows.Next() {
 			var c, s string
 			var n int
-			rows.Scan(&c, &s, &n) // rows.Err(), checked below, reports a row that fails to scan
+			_ = rows.Scan(&c, &s, &n) // TEXT and COUNT(*) columns into matching types: cannot fail
 			uses[c+"|"+s] = n
 		}
-		rows.Close()
+		closeRows(rows)
 		if err := rows.Err(); err != nil {
 			return err
 		}
@@ -336,7 +341,9 @@ func (db *DB) inTx(fn func(tx *sql.Tx) error) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	// Rollback runs only as a no-op cleanup: after a Commit it reports
+	// ErrTxDone, and on a failure the transaction aborts regardless.
+	defer func() { _ = tx.Rollback() }()
 	if err := fn(tx); err != nil {
 		return err
 	}
@@ -352,6 +359,13 @@ func (db *DB) inTx(fn func(tx *sql.Tx) error) error {
 func rowsAffected(res sql.Result) int64 {
 	n, _ := res.RowsAffected()
 	return n
+}
+
+// closeRows closes a rows cursor after its loop: the loop's own rows.Err() is
+// the error signal (a fetched row is delivered or the error is reported
+// there), so the close error cannot matter.
+func closeRows(rows *sql.Rows) {
+	_ = rows.Close()
 }
 
 func (db *DB) GetParticipant(id string) (*Participant, error) {
@@ -384,7 +398,7 @@ func (db *DB) queryParticipants(clause string, args ...any) ([]*Participant, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var out []*Participant
 	for rows.Next() {
@@ -410,12 +424,12 @@ func (db *DB) GetRecentActivity(limit int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var msgs []string
 	for rows.Next() {
 		var m string
-		rows.Scan(&m) // rows.Err(), returned below, reports a row that fails to scan
+		_ = rows.Scan(&m) // a TEXT column into a string: cannot fail
 		msgs = append(msgs, m)
 	}
 	return msgs, rows.Err()
@@ -423,20 +437,23 @@ func (db *DB) GetRecentActivity(limit int) ([]string, error) {
 
 func (db *DB) ParticipantCount() int {
 	var n int
-	db.db.QueryRow(`SELECT COUNT(*) FROM participants`).Scan(&n)
+	// COUNT(*) always yields one integer row: a failed read counts as zero.
+	_ = db.db.QueryRow(`SELECT COUNT(*) FROM participants`).Scan(&n)
 	return n
 }
 
 func (db *DB) ReadyCount() int {
 	var n int
-	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step = ?`, StepReady).Scan(&n)
+	// Like ParticipantCount: a failed read counts as zero.
+	_ = db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step = ?`, StepReady).Scan(&n)
 	return n
 }
 
 // MatchedCount counts the Participants with a partner.
 func (db *DB) MatchedCount() int {
 	var n int
-	db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE COALESCE(matched_with, '') <> ''`).Scan(&n)
+	// Like ParticipantCount: a failed read counts as zero.
+	_ = db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE COALESCE(matched_with, '') <> ''`).Scan(&n)
 	return n
 }
 
@@ -454,7 +471,7 @@ func (db *DB) GetLLMCache(pairKey string) (*matchResult, bool) {
 		pairKey,
 	).Scan(&score, &reason, &red, &green, &ice)
 	if err != nil {
-		if err != sql.ErrNoRows {
+		if !errors.Is(err, sql.ErrNoRows) {
 			logger("db").Warn("LLM cache read", "pair", pairKey, "err", err)
 		}
 		return nil, false

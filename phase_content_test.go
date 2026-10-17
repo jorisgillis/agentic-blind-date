@@ -176,8 +176,8 @@ func assertRegionKeepsOutTheEvergreenCards(t *testing.T, region string) {
 func TestPhaseContent_NoMatchStateRenders(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "me", "The Me", "ready")
-	deps.events.Reveal()
-	deps.db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'me'`)
+	must(t, deps.events.Reveal())
+	mustExec(t, deps.db, `UPDATE participants SET matched_with = 'gone' WHERE id = 'me'`)
 
 	for _, path := range []string{"/user/phase-content/me", "/user/match/me"} {
 		body := readBody(t, get(t, srv, path))
@@ -279,7 +279,7 @@ func TestMatchPage_PhaseEventSwapsTheRegion(t *testing.T) {
 	seed(t, deps.db, "me", "The Me", "ready")
 	seed(t, deps.db, "mate", "The Mate", "ready")
 	pair(t, deps.db, "me", "mate")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	body := readBody(t, get(t, srv, "/user/match/me"))
 

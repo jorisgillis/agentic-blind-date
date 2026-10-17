@@ -274,7 +274,7 @@ func (ms *Meetings) queryMeetings(clause string, args ...any) ([]Meeting, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var out []Meeting
 	for rows.Next() {
@@ -291,7 +291,8 @@ func (ms *Meetings) queryMeetings(clause string, args ...any) ([]Meeting, error)
 // Meetings: one connection per completed meeting (derived, never stored).
 func (ms *Meetings) Connections(id string) int {
 	var n int
-	ms.db.db.QueryRow(`SELECT COUNT(*) FROM meetings WHERE completed_at IS NOT NULL AND (participant_a = ? OR participant_b = ?)`, id, id).Scan(&n)
+	// COUNT(*) always yields one integer row: a failed read counts as zero.
+	_ = ms.db.db.QueryRow(`SELECT COUNT(*) FROM meetings WHERE completed_at IS NOT NULL AND (participant_a = ? OR participant_b = ?)`, id, id).Scan(&n)
 	return n
 }
 
@@ -321,7 +322,7 @@ func (ms *Meetings) Leaderboard() ([]ConnectionStanding, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var board []ConnectionStanding
 	for rows.Next() {

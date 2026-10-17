@@ -277,14 +277,14 @@ var censusPlans = map[string]censusPlan{
 	"POST /admin/slides": {want: 303, raw: func(t *testing.T, f *censusFixture) *http.Request {
 		var buf bytes.Buffer
 		mw := multipart.NewWriter(&buf)
-		mw.WriteField("title", "Census deck")
-		mw.WriteField("speaker", "The Speaker")
+		_ = mw.WriteField("title", "Census deck")   // into a bytes.Buffer: cannot fail
+		_ = mw.WriteField("speaker", "The Speaker") // into a bytes.Buffer: cannot fail
 		part, err := mw.CreateFormFile("file", "deck.pdf")
 		if err != nil {
 			t.Fatal(err)
 		}
-		part.Write(samplePDF)
-		mw.Close()
+		_, _ = part.Write(samplePDF) // into a bytes.Buffer: cannot fail
+		_ = mw.Close()               // into a bytes.Buffer: cannot fail
 		req, err := http.NewRequest("POST", f.srv.URL+"/admin/slides", &buf)
 		if err != nil {
 			t.Fatal(err)
@@ -344,11 +344,15 @@ func (f *censusFixture) request(t *testing.T, rt route, p censusPlan) *http.Requ
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	if p.cookie != "" {
-		req.AddCookie(&http.Cookie{Name: cookieName, Value: p.cookie})
+		req.AddCookie(&http.Cookie{Name: cookieName, Value: p.cookie}) //nolint:gosec // G124: an outgoing test request, no browser and no attributes to set
 	}
 	return req
 }
 
+// do runs one census plan's request; the body is closed through the
+// t.Cleanup below.
+//
+//bodyclose:handled
 func (f *censusFixture) do(t *testing.T, rt route, p censusPlan) *http.Response {
 	t.Helper()
 	client := f.srv.Client()
@@ -357,7 +361,7 @@ func (f *censusFixture) do(t *testing.T, rt route, p censusPlan) *http.Response 
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { resp.Body.Close() })
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
 }
 
@@ -626,7 +630,7 @@ func registeredPatterns(t *testing.T, mux *http.ServeMux) []string {
 	}
 	var walk func(reflect.Value)
 	walk = func(n reflect.Value) {
-		if n.Kind() == reflect.Ptr {
+		if n.Kind() == reflect.Pointer {
 			n = n.Elem()
 		}
 		if !n.IsValid() || n.IsZero() {

@@ -63,7 +63,7 @@ func TestReveal_OpensEveryMatchPage(t *testing.T) {
 func TestReveal_NewcomerAfterTheRevealIsNeverToldTheyMissedIt(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "late", "The Latecomer", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	body := readBody(t, get(t, srv, "/user/wait-status/late"))
 
@@ -111,10 +111,10 @@ func TestRematch_KeepsThePhase(t *testing.T) {
 // graph payload never carries GitHub handles or real names.
 func TestBigScreen_ShowsPersonasOnlyInEveryPhase(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.CreateParticipant("g1", "octocat", "Octo Cat", true)
+	must(t, deps.db.CreateParticipant("g1", "octocat", "Octo Cat", true))
 	setPersona(t, deps.db, "g1", "The Gopher", "")
 	forceStep(deps.db, "g1", StepReady)
-	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
+	must(t, deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false))
 	setPersona(t, deps.db, "ada", "The Analyst", "")
 	forceStep(deps.db, "ada", StepReady)
 

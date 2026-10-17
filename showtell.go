@@ -174,7 +174,7 @@ func (s *ShowTell) querySignups(clause string, args ...any) ([]ShowTellSignup, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var out []ShowTellSignup
 	for rows.Next() {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 // Participant deletion). The Big Screen, the recap and the export are covered
 // with their own surfaces.
 
+//bodyclose:handled
 func postTo(t *testing.T, srv *testSrv, id, text string) *http.Response {
 	t.Helper()
 	return post(t, srv, "/user/board/"+id, url.Values{"text": {text}})
@@ -50,6 +52,8 @@ func postID(t *testing.T, deps *testDeps, participantID string, n int) int64 {
 }
 
 // moderate is the Host's decision on a Post, through the console's route.
+//
+//bodyclose:handled
 func moderate(t *testing.T, srv *testSrv, id int64, action string) *http.Response {
 	t.Helper()
 	return post(t, srv, "/admin/board", url.Values{"id": {strconv.FormatInt(id, 10)}, "action": {action}})
@@ -435,7 +439,7 @@ func TestBoard_AResetDeletesThePosts(t *testing.T) {
 		t.Fatalf("reset: want a redirect, got %d", resp.StatusCode)
 	}
 	var left int
-	deps.db.db.QueryRow(`SELECT COUNT(*) FROM board_posts`).Scan(&left)
+	must(t, deps.db.db.QueryRow(`SELECT COUNT(*) FROM board_posts`).Scan(&left))
 	if left != 0 {
 		t.Errorf("a reset should delete every post, %d are left", left)
 	}
@@ -450,15 +454,19 @@ func TestBoard_ADeletedParticipantTakesTheirPostsAway(t *testing.T) {
 
 	req, _ := http.NewRequest("DELETE", srv.URL+"/data/participant/a", nil)
 	resp, err := srv.Client().Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		t.Fatalf("deleting the participant: %v %v", resp, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != 200 {
+		t.Fatalf("deleting the participant: want 200, got %d", resp.StatusCode)
 	}
 	body := boardOf(t, srv, "b")
 	if strings.Contains(body, "from a") || !strings.Contains(body, "from b") {
 		t.Error("only the deleted participant's posts should go")
 	}
 	var left int
-	deps.db.db.QueryRow(`SELECT COUNT(*) FROM board_posts WHERE participant_id = 'a'`).Scan(&left)
+	must(t, deps.db.db.QueryRow(`SELECT COUNT(*) FROM board_posts WHERE participant_id = 'a'`).Scan(&left))
 	if left != 0 {
 		t.Errorf("the rows should go, %d are left", left)
 	}
@@ -467,8 +475,13 @@ func TestBoard_ADeletedParticipantTakesTheirPostsAway(t *testing.T) {
 	approved(t, srv, deps, "c", "from c")
 	failWrites(t, deps.db, "board_delete")
 	req, _ = http.NewRequest("DELETE", srv.URL+"/data/participant/c", nil)
-	if resp, err := srv.Client().Do(req); err != nil || resp.StatusCode != 500 {
-		t.Errorf("a failed cleanup: want 500, got %v %v", resp, err)
+	resp, err = srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != 500 {
+		t.Errorf("a failed cleanup: want 500, got %d", resp.StatusCode)
 	}
 }
 
@@ -513,7 +526,7 @@ func TestBoard_DatabaseReadFailuresAreReported(t *testing.T) {
 			if _, err := board.Moderation(); err == nil {
 				t.Error("Moderation should report the failure")
 			}
-			if _, err := board.Moderate(id, PostRejected); err == nil || err == ErrPostNotFound {
+			if _, err := board.Moderate(id, PostRejected); err == nil || errors.Is(err, ErrPostNotFound) {
 				t.Errorf("Moderate should report the failure, got %v", err)
 			}
 			if sig := board.Signature("a"); sig != "" {

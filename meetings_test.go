@@ -542,18 +542,21 @@ func TestMeetings_ReadsReportABrokenDatabase(t *testing.T) {
 }
 
 // postWithCookie posts a form with the Participant cookie set.
+// postWithCookie posts the form with the cookie set; the body is closed through the t.Cleanup below.
+//
+//bodyclose:handled
 func postWithCookie(t *testing.T, srv *testSrv, path string, form url.Values, id string) *http.Response {
 	t.Helper()
 	req, _ := http.NewRequest("POST", srv.URL+path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: cookieName, Value: id})
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: id}) //nolint:gosec // G124: an outgoing test request, no browser and no attributes to set
 	client := srv.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { resp.Body.Close() })
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
 }
 
@@ -569,7 +572,7 @@ func TestMeetPage_ShowsTheTargetPersonaCard(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	resp := get(t, srv, "/user/m/b")
 	if resp.StatusCode != 200 {
@@ -601,7 +604,7 @@ func TestMeetPage_MeParameterResolvesTheConfirmer(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	code := reload(t, deps.db, "a").MeetCode
 
 	resp := get(t, srv, "/user/m/b?me="+strings.ToLower(code))
@@ -630,7 +633,7 @@ func TestMeetPage_WithCookieShowsTheConfirmButton(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	targetCode := reload(t, deps.db, "b").MeetCode
 
 	resp := withCookie(t, srv, "/user/m/b", "a")
@@ -653,7 +656,7 @@ func TestMeetPage_ConfirmDialogDemandsAttention(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	body := readBody(t, withCookie(t, srv, "/user/m/b", "a"))
 	for _, want := range []string{
@@ -674,7 +677,7 @@ func TestMeetPage_ConfirmDialogDemandsAttention(t *testing.T) {
 func TestMeetPage_SelfMeetIsFriendly(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	body := readBody(t, withCookie(t, srv, "/user/m/a", "a"))
 	if !strings.Contains(body, "That's you") {
@@ -689,7 +692,7 @@ func TestMeetPage_AlreadyConfirmedShowsTheNoOp(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	ms := NewMeetings(deps.db, deps.events)
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {
 		t.Fatal(err)
@@ -728,7 +731,7 @@ func TestConfirmMeeting_TwoPhonesCompleteTheHandshake(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	aCode := reload(t, deps.db, "a").MeetCode
 	bCode := reload(t, deps.db, "b").MeetCode
 
@@ -789,7 +792,7 @@ func TestConfirmMeeting_RejectsUnknownCodes(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	resp := postWithCookie(t, srv, "/user/met/a", url.Values{"code": {"ZZZZZZ"}}, "a")
 	if resp.StatusCode != 400 {
@@ -803,7 +806,7 @@ func TestConfirmMeeting_RejectsUnknownCodes(t *testing.T) {
 func TestConfirmMeeting_RejectsSelfEntries(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	code := reload(t, deps.db, "a").MeetCode
 
 	resp := postWithCookie(t, srv, "/user/met/a", url.Values{"code": {code}}, "a")
@@ -821,7 +824,7 @@ func TestConfirmMeeting_TheConfirmerIsIdentifiedByTheCookie(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	bCode := reload(t, deps.db, "b").MeetCode
 
 	// No cookie at all.
@@ -841,7 +844,7 @@ func TestConfirmMeeting_TheConfirmerIsIdentifiedByTheCookie(t *testing.T) {
 func TestConfirmMeeting_UnknownConfirmerIs404(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	bCode := reload(t, deps.db, "b").MeetCode
 
 	if resp := postWithCookie(t, srv, "/user/met/nobody", url.Values{"code": {bCode}}, "nobody"); resp.StatusCode != 404 {
@@ -885,7 +888,7 @@ func TestConfirmMeeting_SecondConfirmIsAFriendlyNoOp(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	bCode := reload(t, deps.db, "b").MeetCode
 
 	if resp := postWithCookie(t, srv, "/user/met/a", url.Values{"code": {bCode}}, "a"); resp.StatusCode != 200 {
@@ -904,7 +907,7 @@ func TestConfirmMeeting_ReportsAWriteFailure(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	failWrites(t, deps.db, "meet_insert")
 	bCode := reload(t, deps.db, "b").MeetCode
 
@@ -930,7 +933,7 @@ func TestMeetStatus_IsPhaseGatedAndShowsTheSection(t *testing.T) {
 		t.Error("during onboarding the meet section is hidden")
 	}
 
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	body = readBody(t, get(t, srv, "/user/meet-status/a"))
 	for _, want := range []string{code, `src="/qr?data=/user/m/a&size=150"`, `hx-post="/user/met/a"`, "I met someone", "0 connection"} {
 		if !strings.Contains(body, want) {
@@ -968,7 +971,7 @@ func TestMeetStatus_ListsMeetingsWithTheirStatus(t *testing.T) {
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
 	seed(t, deps.db, "c", "The Kernel Panicker", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	ms := NewMeetings(deps.db, deps.events)
 	// a confirmed meeting b (pending for a), c confirmed meeting a (awaiting for a).
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {
@@ -1013,7 +1016,7 @@ func TestMeetStatus_SkipsMeetingsWhoseCounterpartLeft(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	ms := NewMeetings(deps.db, deps.events)
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {
 		t.Fatal(err)
@@ -1041,7 +1044,7 @@ func TestMatchPage_IncludesTheMeetSection(t *testing.T) {
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
 	pair(t, deps.db, "a", "b")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	code := reload(t, deps.db, "a").MeetCode
 
 	body := readBody(t, get(t, srv, "/user/match/a"))
@@ -1058,7 +1061,7 @@ func TestMatchPage_IncludesTheMeetSection(t *testing.T) {
 func TestWaitPage_IncludesTheMeetSection(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	code := reload(t, deps.db, "a").MeetCode
 
 	body := readBody(t, get(t, srv, "/user/wait/a"))
@@ -1074,7 +1077,7 @@ func TestMatchStream_RefreshesWhenTheMeetingsChange(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	ms := NewMeetings(deps.db, deps.events)
 
 	s := open(t, srv, "/user/match-stream/a")
@@ -1176,7 +1179,7 @@ func TestReset_ClearsTheMeetings(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	ms := NewMeetings(deps.db, deps.events)
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {
 		t.Fatal(err)
@@ -1194,7 +1197,7 @@ func TestReset_ReportsAMeetingsFailure(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	ms := NewMeetings(deps.db, deps.events)
 	// The DELETE fault trigger fires per row: a meeting must exist.
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {
@@ -1213,7 +1216,7 @@ func TestDeleteParticipant_RemovesTheirMeetings(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	ms := NewMeetings(deps.db, deps.events)
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {
 		t.Fatal(err)
@@ -1231,7 +1234,7 @@ func TestDeleteParticipant_ReportsAMeetingsFailure(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The YAML Wrangler", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	ms := NewMeetings(deps.db, deps.events)
 	// The DELETE fault trigger fires per row: a meeting must exist.
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {

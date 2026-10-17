@@ -223,7 +223,7 @@ func TestPages_RenderCompleteDocuments(t *testing.T) {
 	seed(t, deps.db, "b", "The Crab", "ready")
 	pair(t, deps.db, "a", "b")
 	seed(t, deps.db, "m", "The Meetable", "ready") // the meet page's target
-	deps.events.Reveal()                           // the match page opens from the social on
+	must(t, deps.events.Reveal())                  // the match page opens from the social on
 
 	pages := []struct{ name, path string }{
 		{"onboard", "/user/onboard/i"},

@@ -119,7 +119,7 @@ func (b *Board) queryPosts(clause string, args ...any) ([]Post, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 	var out []Post
 	for rows.Next() {
 		post, err := scanPost(rows)

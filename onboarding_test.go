@@ -92,7 +92,7 @@ func TestOnboarding_RegisteringWithoutGitHubNeedsNoHandle(t *testing.T) {
 func TestOnboarding_SubmittingTheLastAnswerTwiceCreatesOnePersona(t *testing.T) {
 	llm := newFakeLLM().on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`)
 	o, db := onboardingFor(t, llm, newFakeGitHub())
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	setProfile(t, db, "p", &GitHubProfile{})
 	forceQuestions(db, "p", []Question{{ID: "q1", Text: "Last one?"}})
 	forceStep(db, "p", StepInterviewing)
@@ -102,7 +102,9 @@ func TestOnboarding_SubmittingTheLastAnswerTwiceCreatesOnePersona(t *testing.T) 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			o.Answer(reload(t, db, "p"), "yes")
+			// Two racing answers: whichever loses the race is fine; the
+			// eventual step below is the assertion.
+			_, _ = o.Answer(reload(t, db, "p"), "yes")
 		}()
 	}
 	wg.Wait()
@@ -120,7 +122,7 @@ func TestOnboarding_SubmittingTheLastAnswerTwiceCreatesOnePersona(t *testing.T) 
 func TestOnboarding_ASecondFinishStopsAtTheGuard(t *testing.T) {
 	llm := newFakeLLM()
 	o, db := onboardingFor(t, llm, newFakeGitHub())
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	forceStep(db, "p", StepCreatingPersona)
 
 	o.finish(reload(t, db, "p")) // stops at the guard: no Persona is created
@@ -138,7 +140,7 @@ func TestOnboarding_RegisteringAgainResumesAPreparationThatNeverFinished(t *test
 	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`)
 	o, db := onboardingFor(t, llm, gh)
 	// A previous preparation died (crash, restart) and left the Participant waiting.
-	db.CreateParticipant("stuck", "octo", "Octo", true)
+	must(t, db.CreateParticipant("stuck", "octo", "Octo", true))
 
 	id, err := o.Register("Octo", "octo", true)
 
@@ -151,7 +153,7 @@ func TestOnboarding_RegisteringAgainResumesAPreparationThatNeverFinished(t *test
 func TestOnboarding_ResumeFinishesAPersonaThatWasInterrupted(t *testing.T) {
 	llm := newFakeLLM().on("personality generator", `{"name": "The Gopher", "tagline": "Ships"}`)
 	o, db := onboardingFor(t, llm, newFakeGitHub())
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	forceStep(db, "p", StepCreatingPersona)
 
 	o.Resume()
@@ -175,7 +177,7 @@ func TestOnboarding_AFailedInterviewStartWritesNothing(t *testing.T) {
 	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "octo", Languages: []string{"Go"}})
 	llm := newFakeLLM().on("interviewer", `{"questions": ["Why?", "How?", "When?"]}`)
 	o, db := onboardingFor(t, llm, gh)
-	db.CreateParticipant("p", "octo", "Octo", true)
+	must(t, db.CreateParticipant("p", "octo", "Octo", true))
 	restore := failWrites(t, db, "start_interview")
 
 	o.Resume()
@@ -253,7 +255,7 @@ func TestOnboarding_AParticipantRemovedWhileTheirPersonaIsCreatedIsNotMatched(t 
 	var db *DB
 	llm := newFakeLLM().
 		onFunc("personality generator", func(string) (string, error) {
-			NewRelationships(db).Remove("p")
+			must(t, NewRelationships(db).Remove("p"))
 			return `{"name": "The Ghost", "tagline": "Gone"}`, nil
 		})
 	o, testDB := onboardingFor(t, llm, newFakeGitHub())
@@ -299,8 +301,8 @@ func TestOnboarding_ResumeWithABrokenDatabaseDoesNothing(t *testing.T) {
 func TestOnboarding_AGitHubProfileThatCannotBeFetchedFallsBackToTheHandle(t *testing.T) {
 	gh := newFakeGitHub().withProfile(&GitHubProfile{Login: "octo", Languages: []string{"Go"}})
 	o, db := onboardingFor(t, newFakeLLM(), gh)
-	db.CreateParticipant("octo", "octo", "Octo", true)
-	db.CreateParticipant("ghost", "ghost", "Ghost", true)
+	must(t, db.CreateParticipant("octo", "octo", "Octo", true))
+	must(t, db.CreateParticipant("ghost", "ghost", "Ghost", true))
 
 	fetched := o.githubProfile(reload(t, db, "octo"))
 	if len(fetched.Languages) != 1 || fetched.Languages[0] != "Go" {

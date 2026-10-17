@@ -61,7 +61,7 @@ func TestRelationshipsPair_TakingOverAMatchReturnsTheDisplacedPartnerToThePool(t
 	db := newTestDB(t)
 	ps := readyParticipants(t, db, "A", "B", "N")
 	rel := NewRelationships(db)
-	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
+	mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
 
 	displaced, err := rel.Pair(Match{A: ps["N"], B: reload(t, db, "A"), Result: assessment(70)})
 
@@ -84,8 +84,8 @@ func TestRelationshipsPair_PairingTwoMatchedParticipantsDisplacesBothPartners(t 
 	db := newTestDB(t)
 	ps := readyParticipants(t, db, "A", "B", "C", "D")
 	rel := NewRelationships(db)
-	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
-	rel.Pair(Match{A: ps["C"], B: ps["D"], Result: assessment(40)})
+	mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
+	mustPair(t, rel, Match{A: ps["C"], B: ps["D"], Result: assessment(40)})
 
 	displaced, _ := rel.Pair(Match{A: reload(t, db, "A"), B: reload(t, db, "C"), Result: assessment(90)})
 
@@ -100,7 +100,7 @@ func TestRelationshipsPair_AFailedPairLeavesNothingHalfWritten(t *testing.T) {
 	db := newTestDB(t)
 	ps := readyParticipants(t, db, "A", "B")
 	rel := NewRelationships(db)
-	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
+	mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
 
 	_, err := rel.Pair(Match{A: reload(t, db, "A"), B: &Participant{ID: "ghost"}, Result: assessment(99)})
 
@@ -117,7 +117,7 @@ func TestRelationshipsRemove_FreesThePartner(t *testing.T) {
 	db := newTestDB(t)
 	ps := readyParticipants(t, db, "A", "B")
 	rel := NewRelationships(db)
-	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+	mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
 
 	if err := rel.Remove("A"); err != nil {
 		t.Fatal(err)
@@ -136,8 +136,8 @@ func TestRelationshipsUnpairAll_ReturnsEveryoneToThePool(t *testing.T) {
 	db := newTestDB(t)
 	ps := readyParticipants(t, db, "A", "B", "C", "D", "E")
 	rel := NewRelationships(db)
-	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
-	rel.Pair(Match{A: ps["C"], B: ps["D"], Result: assessment(60)})
+	mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+	mustPair(t, rel, Match{A: ps["C"], B: ps["D"], Result: assessment(60)})
 
 	if err := rel.UnpairAll(); err != nil {
 		t.Fatal(err)
@@ -193,7 +193,7 @@ func TestRelationshipsPartnerOf_ReturnsThePartnerAndTheAssessment(t *testing.T) 
 	db := newTestDB(t)
 	ps := readyParticipants(t, db, "A", "B", "C")
 	rel := NewRelationships(db)
-	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+	mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
 
 	partner, result, err := rel.PartnerOf("A")
 
@@ -216,11 +216,11 @@ func TestRelationshipsPartnerOf_AnUndecodableAssessmentIsReportedNotEmptied(t *t
 	db := newTestDB(t)
 	ps := readyParticipants(t, db, "A", "B")
 	rel := NewRelationships(db)
-	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
+	mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(80)})
 	// Corruption setup: undecodable assessment columns, which the store can
 	// never write (it always marshals well-formed JSON), to cover the strict
 	// decode rule on the Participant-table path.
-	db.db.Exec(`UPDATE participants SET red_flags = 'not json', icebreakers = '' WHERE id = 'A'`)
+	mustExec(t, db, `UPDATE participants SET red_flags = 'not json', icebreakers = '' WHERE id = 'A'`)
 
 	_, result, err := rel.PartnerOf("A")
 
@@ -234,7 +234,7 @@ func TestRelationshipState_IsSeparateFromThePipelineStep(t *testing.T) {
 	ps := readyParticipants(t, db, "A", "B", "N")
 	rel := NewRelationships(db)
 
-	rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
+	mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
 	if a := reload(t, db, "A"); a.PipelineStep != "ready" || !a.IsMatched() {
 		t.Errorf("a matched Participant stays at Pipeline Step ready, got %s (matched %v)", a.PipelineStep, a.IsMatched())
 	}
@@ -249,21 +249,21 @@ func TestNewDB_MigratesTheOldMatchedPipelineStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old.CreateParticipant("A", "a", "A", true)
-	old.CreateParticipant("B", "b", "B", true)
+	must(t, old.CreateParticipant("A", "a", "A", true))
+	must(t, old.CreateParticipant("B", "b", "B", true))
 	// Migration-test setup: recreate a pre-migration row at the legacy
 	// 'matched' Pipeline Step, which the store's guarded transitions cannot
 	// write (Relationship State is not a Pipeline Step) — NewDB's migration
 	// must turn it into 'ready', keeping the partner.
-	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'B' WHERE id = 'A'`)
-	old.db.Exec(`UPDATE participants SET pipeline_step = 'matched', matched_with = 'A' WHERE id = 'B'`)
-	old.Close()
+	mustExec(t, old, `UPDATE participants SET pipeline_step = 'matched', matched_with = 'B' WHERE id = 'A'`)
+	mustExec(t, old, `UPDATE participants SET pipeline_step = 'matched', matched_with = 'A' WHERE id = 'B'`)
+	must(t, old.Close())
 
 	db, err := NewDB(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 
 	if a := reload(t, db, "A"); a.PipelineStep != "ready" || a.MatchedWith != "B" {
 		t.Errorf("want step ready and partner kept, got %s / %q", a.PipelineStep, a.MatchedWith)
@@ -322,7 +322,7 @@ func TestRelationships_FailedChangesLeaveEverythingAsItWas(t *testing.T) {
 			db := newTestDB(t)
 			ps := readyParticipants(t, db, "A", "B", "N")
 			rel := NewRelationships(db)
-			rel.Pair(Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
+			mustPair(t, rel, Match{A: ps["A"], B: ps["B"], Result: assessment(40)})
 			before := snapshot(t, db)
 			failWrites(t, db, tc.fault)
 
@@ -349,7 +349,7 @@ func TestRelationships_UnknownParticipantsAndABrokenDatabase(t *testing.T) {
 	// operation produces it — pairing only ever names an existing Participant
 	// and matched_with's single writer is the Relationships module — so the
 	// impossible state is written directly.
-	db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'A'`)
+	mustExec(t, db, `UPDATE participants SET matched_with = 'gone' WHERE id = 'A'`)
 	if _, _, err := rel.PartnerOf("A"); err == nil {
 		t.Error("a partner that no longer exists should be an error")
 	}

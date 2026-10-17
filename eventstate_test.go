@@ -27,7 +27,7 @@ func TestEventState_OnlyAdvanceAndResetChangeIt(t *testing.T) {
 	var graph struct {
 		Revealed bool `json:"revealed"`
 	}
-	json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &graph)
+	must(t, json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &graph))
 	if !graph.Revealed {
 		t.Error("the Big Screen should be told the Matches are revealed")
 	}
@@ -44,14 +44,14 @@ func TestEventState_ExistingDatabasesKeepTheirState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	NewEventStore(db).Reveal()
-	db.Close()
+	must(t, NewEventStore(db).Reveal())
+	must(t, db.Close())
 
 	reopened, err := NewDB(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	if got := NewEventStore(reopened).State(); got != PhaseSocial {
 		t.Errorf("want social after reopening, got %q", got)
 	}
@@ -71,13 +71,13 @@ func TestNewDB_MapsTheLegacyRevealedValueToSocial(t *testing.T) {
 	if _, err := db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', 'revealed')`); err != nil {
 		t.Fatal(err)
 	}
-	db.Close()
+	must(t, db.Close())
 
 	reopened, err := NewDB(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	if got := NewEventStore(reopened).State(); got != PhaseSocial {
 		t.Errorf("the legacy 'revealed' value should read as social, got %q", got)
 	}

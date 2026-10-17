@@ -56,7 +56,7 @@ func linkify(text string) template.HTML {
 		at = span[1]
 	}
 	b.WriteString(html.EscapeString(text[at:]))
-	return template.HTML(b.String())
+	return template.HTML(b.String()) //nolint:gosec // G203: every segment is html.EscapeString'd; only the constant anchor markup is raw
 }
 
 // trimLink cuts the punctuation and the closing brackets that are not part of

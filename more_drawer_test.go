@@ -107,10 +107,10 @@ func TestMatchPage_MoreDrawer(t *testing.T) {
 func TestMatchPage_MoreDrawerWithoutAMatch(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "me", "The Me", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	// Deliberately invalid state: a partner that does not exist — the same
 	// impossible state TestPhaseContent_NoMatchStateRenders stages.
-	deps.db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'me'`)
+	mustExec(t, deps.db, `UPDATE participants SET matched_with = 'gone' WHERE id = 'me'`)
 
 	body := readBody(t, get(t, srv, "/user/match/me"))
 	drawer := drawerOf(t, body)

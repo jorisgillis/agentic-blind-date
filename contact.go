@@ -49,7 +49,7 @@ func (c *ContactChannels) Channels(id string) ([]ContactChannel, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	stored := map[string]ContactChannel{}
 	for rows.Next() {
@@ -167,7 +167,7 @@ func (c *ContactChannels) Counts() ([]ChannelCount, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var out []ChannelCount
 	for rows.Next() {

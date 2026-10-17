@@ -8,7 +8,7 @@ import (
 func TestParticipantStore_GetReadsOneParticipant(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "octo", "Octo", true)
+	must(t, db.CreateParticipant("p", "octo", "Octo", true))
 
 	got, err := store.Get("p")
 
@@ -30,7 +30,7 @@ func TestParticipantStore_GetOfAnUnknownParticipantIsNotFound(t *testing.T) {
 func TestParticipantStore_GetOverABrokenDatabaseIsAFailureNotNotFound(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	breakDB(db)
 
 	_, err := store.Get("p")
@@ -43,8 +43,8 @@ func TestParticipantStore_GetOverABrokenDatabaseIsAFailureNotNotFound(t *testing
 func TestParticipantStore_AllReadsEveryParticipant(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("a", "a", "A", true)
-	db.CreateParticipant("b", "b", "B", true)
+	must(t, db.CreateParticipant("a", "a", "A", true))
+	must(t, db.CreateParticipant("b", "b", "B", true))
 
 	got, err := store.All()
 
@@ -90,7 +90,7 @@ func TestParticipantStore_CreateOverABrokenDatabaseIsAFailure(t *testing.T) {
 func TestParticipantStore_ChangeSetsTypedInterestsAndMatch(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	interests := &Interests{Languages: []string{"Go"}, Tools: []string{"cli"}, Domains: []string{"Backend"}}
 	match := &matchResult{Score: 77, Reason: "Both love Go", RedFlags: []string{"tabs"}, GreenFlags: []string{"Go"}, Icebreakers: []string{"Why Go?"}}
 
@@ -116,8 +116,8 @@ func TestParticipantStore_ChangeSetsTypedInterestsAndMatch(t *testing.T) {
 func TestParticipantStore_ChangeAppliesSeveralParticipantsInOneTransaction(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("a", "a", "A", true)
-	db.CreateParticipant("b", "b", "B", true)
+	must(t, db.CreateParticipant("a", "a", "A", true))
+	must(t, db.CreateParticipant("b", "b", "B", true))
 
 	err := store.Change(
 		ParticipantChange{ID: "a", Interests: &Interests{Languages: []string{"Go"}}},
@@ -137,7 +137,7 @@ func TestParticipantStore_ChangeAppliesSeveralParticipantsInOneTransaction(t *te
 func TestParticipantStore_ChangeOfAnUnknownParticipantIsNotFoundAndAppliesNothing(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("a", "a", "A", true)
+	must(t, db.CreateParticipant("a", "a", "A", true))
 
 	err := store.Change(
 		ParticipantChange{ID: "a", Interests: &Interests{Languages: []string{"Go"}}},
@@ -165,7 +165,7 @@ func TestParticipantStore_ChangeOfAnUnknownParticipantsMatchIsNotFound(t *testin
 func TestParticipantStore_ChangeOverABrokenDatabaseIsAFailure(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("a", "a", "A", true)
+	must(t, db.CreateParticipant("a", "a", "A", true))
 	breakDB(db)
 
 	err := store.Change(ParticipantChange{ID: "a", Interests: &Interests{Languages: []string{"Go"}}})
@@ -178,7 +178,7 @@ func TestParticipantStore_ChangeOverABrokenDatabaseIsAFailure(t *testing.T) {
 func TestParticipantStore_ChangeReportsAFailureDuringTheUpdateItself(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("a", "a", "A", true)
+	must(t, db.CreateParticipant("a", "a", "A", true))
 	failWrites(t, db, "interests")
 
 	err := store.Change(ParticipantChange{ID: "a", Interests: &Interests{Languages: []string{"Go"}}})
@@ -191,7 +191,7 @@ func TestParticipantStore_ChangeReportsAFailureDuringTheUpdateItself(t *testing.
 func TestParticipantStore_ChangeAnnouncesOnTheChangeFeed(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("a", "a", "A", true)
+	must(t, db.CreateParticipant("a", "a", "A", true))
 	ch, stop := db.Subscribe()
 	defer stop()
 
@@ -218,7 +218,7 @@ func TestParticipantStore_ChangeOfNothingIsANoOpThatStillCommits(t *testing.T) {
 func TestParticipantStore_ChangeAdvancesThePipelineStep(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 
 	for _, step := range []Step{StepInterviewing, StepCreatingPersona, StepReady} {
 		if err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(step)}); err != nil {
@@ -243,7 +243,7 @@ func TestParticipantStore_ChangeRejectsIllegalPipelineTransitions(t *testing.T) 
 		t.Run(name, func(t *testing.T) {
 			db := newTestDB(t)
 			store := NewParticipantStore(db)
-			db.CreateParticipant("p", "p", "P", true)
+			must(t, db.CreateParticipant("p", "p", "P", true))
 			forceStep(db, "p", tc.from)
 
 			err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(tc.to)})
@@ -261,7 +261,7 @@ func TestParticipantStore_ChangeRejectsIllegalPipelineTransitions(t *testing.T) 
 func TestParticipantStore_ChangeReportsAFailureAdvancingTheStep(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	failWrites(t, db, "pipeline_step")
 
 	err := store.Change(ParticipantChange{ID: "p", PipelineStep: stepPtr(StepInterviewing)})
@@ -274,7 +274,7 @@ func TestParticipantStore_ChangeReportsAFailureAdvancingTheStep(t *testing.T) {
 func TestParticipantStore_StartInterviewOpensTheInterview(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	questions := []Question{{ID: "q1", Text: "Tabs or spaces?"}}
 
 	if err := store.StartInterview("p", &GitHubProfile{Login: "p"}, questions); err != nil {
@@ -290,7 +290,7 @@ func TestParticipantStore_StartInterviewOpensTheInterview(t *testing.T) {
 func TestParticipantStore_StartInterviewOnlyWhileBeingPrepared(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	if err := store.StartInterview("p", &GitHubProfile{}, []Question{{ID: "q1"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestParticipantStore_StartInterviewOnlyWhileBeingPrepared(t *testing.T) {
 func TestParticipantStore_StartInterviewReportsAFailure(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	failWrites(t, db)
 
 	err := store.StartInterview("p", &GitHubProfile{}, []Question{{ID: "q1"}})
@@ -335,7 +335,7 @@ func TestParticipantStore_ChangeReportsAGenuineDatabaseFailure(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			db := newTestDB(t)
 			store := NewParticipantStore(db)
-			db.CreateParticipant("p", "p", "P", true)
+			must(t, db.CreateParticipant("p", "p", "P", true))
 			breakOnFault(t, db, c.tag)
 
 			change := c.change
@@ -350,7 +350,7 @@ func TestParticipantStore_ChangeReportsAGenuineDatabaseFailure(t *testing.T) {
 func TestParticipantStore_StartInterviewReportsAGenuineDatabaseFailure(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	breakOnFault(t, db, "start_interview")
 
 	if err := store.StartInterview("p", &GitHubProfile{}, nil); err == nil {
@@ -380,10 +380,10 @@ func TestEncodeMatchResult_NilListsEncodeAsEmptyArrays(t *testing.T) {
 func TestParticipantStore_AgentQueueAheadCountsThoseWaitingAhead(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("first", "first", "First", true)
-	db.CreateParticipant("second", "second", "Second", true)
-	db.CreateParticipant("interviewing", "interviewing", "Interviewing", true)
-	db.CreateParticipant("ready", "ready", "Ready", true)
+	must(t, db.CreateParticipant("first", "first", "First", true))
+	must(t, db.CreateParticipant("second", "second", "Second", true))
+	must(t, db.CreateParticipant("interviewing", "interviewing", "Interviewing", true))
+	must(t, db.CreateParticipant("ready", "ready", "Ready", true))
 	forceStep(db, "first", StepFetchingGitHub)
 	forceStep(db, "second", StepCreatingPersona)
 	forceStep(db, "interviewing", StepInterviewing)
@@ -406,9 +406,9 @@ func TestParticipantStore_AgentQueueAheadCountsThoseWaitingAhead(t *testing.T) {
 func TestParticipantStore_AgentQueueWaitingCountsTheAgentSteps(t *testing.T) {
 	db := newTestDB(t)
 	store := NewParticipantStore(db)
-	db.CreateParticipant("a", "a", "A", true)
-	db.CreateParticipant("b", "b", "B", true)
-	db.CreateParticipant("c", "c", "C", true)
+	must(t, db.CreateParticipant("a", "a", "A", true))
+	must(t, db.CreateParticipant("b", "b", "B", true))
+	must(t, db.CreateParticipant("c", "c", "C", true))
 	forceStep(db, "a", StepFetchingGitHub)
 	forceStep(db, "b", StepCreatingPersona)
 	forceStep(db, "c", StepReady)

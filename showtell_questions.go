@@ -163,7 +163,7 @@ func (s *ShowTell) queryQuestions(clause string, args ...any) ([]ShowTellQuestio
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var out []ShowTellQuestion
 	for rows.Next() {

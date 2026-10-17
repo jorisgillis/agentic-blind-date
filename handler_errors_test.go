@@ -63,13 +63,20 @@ func TestHandlers_ReportABrokenDatabaseAsErrors(t *testing.T) {
 			breakDB(deps.db)
 			req, _ := http.NewRequest(tc.method, srv.URL+tc.path, nil)
 			resp, err := srv.Client().Do(req)
-			if err != nil || resp.StatusCode != 500 {
-				t.Errorf("want 500, got %v (err %v)", resp.StatusCode, err)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = resp.Body.Close() })
+			if resp.StatusCode != 500 {
+				t.Errorf("want 500, got %v", resp.StatusCode)
 			}
 		})
 	}
 }
 
+// del issues the DELETE; the body is closed through the t.Cleanup below.
+//
+//bodyclose:handled
 func del(t *testing.T, srv *testSrv, path string) *http.Response {
 	t.Helper()
 	req, _ := http.NewRequest("DELETE", srv.URL+path, nil)
@@ -77,6 +84,7 @@ func del(t *testing.T, srv *testSrv, path string) *http.Response {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
 }
 
@@ -102,13 +110,13 @@ func TestRematch_AFailureIsShownInTheActivityFeed(t *testing.T) {
 
 func TestMatchPage_WithAPartnerWhoIsGoneStillRenders(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "a", "A", "ready")
 	// Deliberately invalid state: a partner that does not exist. No store
 	// operation produces it — pairing only ever names an existing Participant
 	// and matched_with's single writer is the Relationships module — so the
 	// impossible state is written directly.
-	deps.db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'a'`)
+	mustExec(t, deps.db, `UPDATE participants SET matched_with = 'gone' WHERE id = 'a'`)
 
 	if resp := get(t, srv, "/user/match/a"); resp.StatusCode != 200 {
 		t.Errorf("want the page without a partner, got %d", resp.StatusCode)
@@ -161,7 +169,7 @@ func TestStreams_NeedAWriterThatCanStream(t *testing.T) {
 
 func TestStreams_EndWhenTheParticipantIsRemoved(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.CreateParticipant("i", "i", "I", true)
+	must(t, deps.db.CreateParticipant("i", "i", "I", true))
 	seed(t, deps.db, "w", "W", "ready")
 	pipeline := open(t, srv, "/user/pipeline-stream/i")
 	wait := open(t, srv, "/user/wait-stream/w")
@@ -170,8 +178,8 @@ func TestStreams_EndWhenTheParticipantIsRemoved(t *testing.T) {
 	waitFor(t, wait, "event: refresh") // the connect-time sync
 	sentNothingNew(t, wait, 1, wait.String(), "before removal")
 
-	NewRelationships(deps.db).Remove("i")
-	NewRelationships(deps.db).Remove("w")
+	must(t, NewRelationships(deps.db).Remove("i"))
+	must(t, NewRelationships(deps.db).Remove("w"))
 
 	eventually(t, "the pipeline stream to end", pipeline.ended)
 	eventually(t, "the wait stream to end", wait.ended)

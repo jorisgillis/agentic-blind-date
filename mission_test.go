@@ -639,7 +639,7 @@ func TestMissions_Get(t *testing.T) {
 
 	// Corruption setup: the store only writes well-formed tiles JSON, so an
 	// undecodable row is written directly.
-	db.db.Exec(`UPDATE mission_cards SET tiles = '{broken'`)
+	mustExec(t, db, `UPDATE mission_cards SET tiles = '{broken'`)
 	if _, err := missions.Get("me"); err == nil {
 		t.Error("want a failure for an undecodable card")
 	}
@@ -1473,7 +1473,7 @@ func TestTileGrid_AnOutOfRangeTileStillRenders(t *testing.T) {
 	seed(t, deps.db, "me", "The Me", "ready")
 	// Deliberately invalid state (as in TestTileGrid): a position the store
 	// never writes, stored directly.
-	deps.db.db.Exec(`INSERT INTO mission_cards (participant_id, tiles) VALUES ('me', '[{"position": 99, "kind": "wildcard", "person_id": "x", "persona_name": "The X", "persona_symbol": "❓", "persona_color": "bg-gray-400", "reason": "r"}]')`)
+	mustExec(t, deps.db, `INSERT INTO mission_cards (participant_id, tiles) VALUES ('me', '[{"position": 99, "kind": "wildcard", "person_id": "x", "persona_name": "The X", "persona_symbol": "❓", "persona_color": "bg-gray-400", "reason": "r"}]')`)
 
 	body := readBody(t, get(t, srv, "/user/mission/me"))
 

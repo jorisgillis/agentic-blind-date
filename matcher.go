@@ -158,10 +158,6 @@ Respond with ONLY valid JSON — no markdown:
 }
 
 func describeDeveloper(n int, p *Participant) string {
-	profile := p.Profile
-	if profile == nil {
-		profile = &GitHubProfile{}
-	}
 	s := fmt.Sprintf("DEVELOPER %d (%s):\n%s\nInterview answers:\n%s", n, p.PersonaName, p.Summary(), interviewText(p))
 	if interests := fmtInterests(p.Interests); interests != "" {
 		s += "\nInterests: " + interests

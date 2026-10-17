@@ -77,7 +77,8 @@ const agentSteps = "('fetching_github', 'creating_persona')"
 // other counters, a failed read counts as zero.
 func (s *ParticipantStore) AgentQueueAhead(id string) int {
 	var n int
-	s.db.db.QueryRow(`SELECT COUNT(*) FROM participants
+	// COUNT(*) always yields one integer row: a failed read counts as zero.
+	_ = s.db.db.QueryRow(`SELECT COUNT(*) FROM participants
 		WHERE pipeline_step IN `+agentSteps+` AND id != ?
 		AND rowid < (SELECT rowid FROM participants WHERE id = ?)`, id, id).Scan(&n)
 	return n
@@ -87,7 +88,8 @@ func (s *ParticipantStore) AgentQueueAhead(id string) int {
 // the host console: how long the agent queue is tonight.
 func (s *ParticipantStore) AgentQueueWaiting() int {
 	var n int
-	s.db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step IN ` + agentSteps).Scan(&n)
+	// Like AgentQueueAhead: a failed read counts as zero.
+	_ = s.db.db.QueryRow(`SELECT COUNT(*) FROM participants WHERE pipeline_step IN ` + agentSteps).Scan(&n)
 	return n
 }
 

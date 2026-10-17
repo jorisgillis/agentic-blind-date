@@ -222,8 +222,37 @@ func newTestDB(t *testing.T) *DB {
 	}
 	// Pin to one connection so all goroutines share the same in-memory database.
 	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
+	// Teardown after the test's reads: the close error cannot matter.
+	t.Cleanup(func() { _ = db.Close() })
 	return db
+}
+
+// must fails the test on the first error: for setup whose silent failure
+// would let a test pass for the wrong reason (or crash confusingly later).
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// mustExec runs the test-only raw SQL (ADR-0008's ratified classes) and
+// fails the test when it does not take: the setup it stages is what the
+// test's own assertions stand on.
+func mustExec(t *testing.T, db *DB, query string, args ...any) {
+	t.Helper()
+	if _, err := db.db.Exec(query, args...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// mustPair pairs two Participants through the Relationships module, failing
+// the test when the pairing does not go through.
+func mustPair(t *testing.T, rel *Relationships, m Match) {
+	t.Helper()
+	if _, err := rel.Pair(m); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func newTestServer(t *testing.T, llm *fakeLLM, gh *fakeGitHub) (*testSrv, *testDeps) {
@@ -260,7 +289,9 @@ func newTestServerOnDB(t *testing.T, db *DB, llm *fakeLLM, gh *fakeGitHub) (*tes
 // one step forward, so forcing an arbitrary step is not expressible through
 // ParticipantStore.Change.
 func forceStep(db *DB, id string, step Step) {
-	db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
+	// Test-only staging: a write that fails shows up as the test failing on
+	// the very state this call stages.
+	_, _ = db.db.Exec(`UPDATE participants SET pipeline_step = ? WHERE id = ?`, step, id)
 	db.changed()
 }
 
@@ -269,7 +300,9 @@ func forceStep(db *DB, id string, step Step) {
 // Questions on its own outside StartInterview's guarded, combined write.
 func forceQuestions(db *DB, id string, questions []Question) {
 	encoded, _ := json.Marshal(questions)
-	db.db.Exec(`UPDATE participants SET questions = ? WHERE id = ?`, string(encoded), id)
+	// Test-only staging, like forceStep: a failed write fails the test's own
+	// assertions on the staged questions.
+	_, _ = db.db.Exec(`UPDATE participants SET questions = ? WHERE id = ?`, string(encoded), id)
 	db.changed()
 }
 
@@ -282,7 +315,9 @@ func forceQuestions(db *DB, id string, questions []Question) {
 func forceInterview(db *DB, id string, questions []Question, answers map[string]string, step Step) {
 	questionsJSON, _ := json.Marshal(questions)
 	answersJSON, _ := json.Marshal(answers)
-	db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
+	// Test-only staging, like forceStep: a failed write fails the test's own
+	// assertions on the staged interview state.
+	_, _ = db.db.Exec(`UPDATE participants SET questions = ?, answers_json = ?, pipeline_step = ? WHERE id = ?`,
 		string(questionsJSON), string(answersJSON), step, id)
 }
 
@@ -318,7 +353,9 @@ func updateAnswers(t *testing.T, db *DB, id string, answers map[string]string) {
 // Profile in a ParticipantChange means "leave the column alone", and a
 // non-nil profile marshals to an object, never 'null'.
 func withoutProfile(db *DB, id string) {
-	db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = ?`, id)
+	// Test-only staging, like forceStep: the tests that stage 'null' assert
+	// the corruption's effect on the very next read.
+	_, _ = db.db.Exec(`UPDATE participants SET profile_json = 'null' WHERE id = ?`, id)
 }
 
 // eventually polls cond until it holds or the deadline passes.

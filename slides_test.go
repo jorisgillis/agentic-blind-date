@@ -18,21 +18,23 @@ import (
 var samplePDF = []byte("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n")
 
 // uploadSlides posts the Host's upload form. An empty filename leaves the file
-// part out.
+// part out. The body is closed through the t.Cleanup below.
+//
+//bodyclose:handled
 func uploadSlides(t *testing.T, srv *testSrv, title, speaker, filename string, content []byte) *http.Response {
 	t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	mw.WriteField("title", title)
-	mw.WriteField("speaker", speaker)
+	_ = mw.WriteField("title", title)     // into a bytes.Buffer: cannot fail
+	_ = mw.WriteField("speaker", speaker) // into a bytes.Buffer: cannot fail
 	if filename != "" {
 		part, err := mw.CreateFormFile("file", filename)
 		if err != nil {
 			t.Fatal(err)
 		}
-		part.Write(content)
+		_, _ = part.Write(content) // into a bytes.Buffer: cannot fail
 	}
-	mw.Close()
+	_ = mw.Close() // into a bytes.Buffer: cannot fail
 
 	req, _ := http.NewRequest("POST", srv.URL+"/admin/slides", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -42,7 +44,7 @@ func uploadSlides(t *testing.T, srv *testSrv, title, speaker, filename string, c
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { resp.Body.Close() })
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp
 }
 
@@ -313,7 +315,7 @@ func TestSlideDecks_TheLinksServeThePDF(t *testing.T) {
 
 	// A deck whose file went missing is not found, not a server error.
 	for _, f := range filesOnTheVolume(t, deps) {
-		os.Remove(filepath.Join(deps.slides.dir, f))
+		must(t, os.Remove(filepath.Join(deps.slides.dir, f)))
 	}
 	if resp := get(t, srv, deckPath(deck, "")); resp.StatusCode != 404 {
 		t.Errorf("a missing file: want 404, got %d", resp.StatusCode)
@@ -391,7 +393,7 @@ func TestSlideDecks_SweepRemovesFilesNoDeckPointsAt(t *testing.T) {
 	if _, f, err := deps.slides.Open(deck.ID); err != nil {
 		t.Errorf("the deck's own file should stay: %v", err)
 	} else {
-		f.Close()
+		_ = f.Close() // nothing was read; the close cannot matter
 	}
 }
 
@@ -498,7 +500,7 @@ func TestSlideDecks_AVolumeThatCannotBeUsed(t *testing.T) {
 	if err := os.Chmod(good, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(good, 0o755)
+	defer func() { _ = os.Chmod(good, 0o755) }() // teardown: the error cannot matter
 	if _, err := deps.slides.Add("Talk", "Ada", "a.pdf", bytes.NewReader(samplePDF)); err == nil {
 		t.Error("Add should report a directory it cannot write to")
 	}

@@ -61,5 +61,6 @@ func (h *Handler) QR(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Write(png)
+	// Headers are sent; a failed write only means the client is gone.
+	_, _ = w.Write(png) //nolint:gosec // G705: the bytes are the rendered QR PNG, not raw input; the payload rides inside the encoded image
 }

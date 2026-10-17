@@ -146,16 +146,16 @@ const cookieMaxAge = 7 * 24 * 60 * 60 // 7 days
 func (h *Handler) Landing(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(cookieName); err == nil {
 		if p, err := h.store.Get(c.Value); err == nil {
-			http.Redirect(w, r, "/user/onboard/"+p.ID, http.StatusSeeOther)
+			http.Redirect(w, r, "/user/onboard/"+p.ID, http.StatusSeeOther) //nolint:gosec // G710: path-absolute, built from a fixed prefix and the server's own id
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: cookieName, Path: "/", MaxAge: -1})
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Path: "/", MaxAge: -1}) //nolint:gosec // G124: clearing a cookie; no Secure because the app is served over plain HTTP on the meet-up's LAN
 	}
 	h.render(w, "landing.html", map[string]any{"PublicTheme": h.events.PublicTheme()})
 }
 
 func setParticipantCookie(w http.ResponseWriter, id string) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: no Secure because the app is served over plain HTTP on the meet-up's LAN — a Secure cookie would never be sent back
 		Name:     cookieName,
 		Value:    id,
 		Path:     "/",
@@ -191,7 +191,7 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setParticipantCookie(w, id)
-	http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, "/user/onboard/"+id, http.StatusSeeOther) //nolint:gosec // G710: path-absolute, built from a fixed prefix and a server-generated id
 }
 
 // GET /user/onboard/{id}
@@ -202,7 +202,7 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if dest := h.destination(p); dest != r.URL.Path {
-		http.Redirect(w, r, dest, http.StatusSeeOther)
+		http.Redirect(w, r, dest, http.StatusSeeOther) //nolint:gosec // G710: dest is one of the fixed /user/... pages destination() builds; never a caller-supplied URL
 		return
 	}
 	h.render(w, "onboard.html", onboardPage{Participant: p, Question: h.openQuestion(p), Pipeline: h.pipelineStepDataFor(p)})
@@ -299,7 +299,7 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if dest := h.destination(p); dest != r.URL.Path {
-		http.Redirect(w, r, dest, http.StatusSeeOther)
+		http.Redirect(w, r, dest, http.StatusSeeOther) //nolint:gosec // G710: dest is one of the fixed /user/... pages destination() builds; never a caller-supplied URL
 		return
 	}
 
@@ -523,7 +523,7 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if dest := h.destination(p); dest != r.URL.Path {
-		http.Redirect(w, r, dest, http.StatusSeeOther)
+		http.Redirect(w, r, dest, http.StatusSeeOther) //nolint:gosec // G710: dest is one of the fixed /user/... pages destination() builds; never a caller-supplied URL
 		return
 	}
 
@@ -1170,14 +1170,16 @@ func (h *Handler) AdminExport(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("format") == "md" {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="agentic-blind-date-export.md"`)
-		fmt.Fprint(w, renderExportMarkdown(pack))
+		// Headers are sent: a failed write only means the download was cut short.
+		_, _ = fmt.Fprint(w, renderExportMarkdown(pack))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="agentic-blind-date-export.json"`)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	enc.Encode(pack)
+	// Headers are sent: a failed write only means the download was cut short.
+	_ = enc.Encode(pack)
 }
 
 // ── show & tell: sign-up, the host queue, presenter mode ───────────────────
@@ -1632,7 +1634,8 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	enc.Encode(v)
+	// Headers are sent: a failed write only means the client is gone.
+	_ = enc.Encode(v)
 }
 
 // ── /admin ─────────────────────────────────────────────────────────────────
@@ -1776,13 +1779,17 @@ func sseHeaders(w http.ResponseWriter) bool {
 }
 
 func sseRedirect(w http.ResponseWriter, url string) {
-	fmt.Fprintf(w, "event: redirect\ndata: %s\n\n", url)
+	// A failed write only means the client is gone; the loop then ends on
+	// the closed request context.
+	_, _ = fmt.Fprintf(w, "event: redirect\ndata: %s\n\n", url) //nolint:gosec // G705: url is one of the fixed /user/... pages destination() builds, never caller input
 	w.(http.Flusher).Flush()
 }
 
 // sseEvent sends a named event with no data.
 func sseEvent(w http.ResponseWriter, name string) {
-	fmt.Fprintf(w, "event: %s\ndata: \n\n", name)
+	// A failed write only means the client is gone; the loop then ends on
+	// the closed request context.
+	_, _ = fmt.Fprintf(w, "event: %s\ndata: \n\n", name)
 	w.(http.Flusher).Flush()
 }
 
@@ -1808,7 +1815,9 @@ func (h *Handler) watch(w http.ResponseWriter, r *http.Request, check func() (do
 			return
 		case <-changes:
 		case <-heartbeat.C:
-			fmt.Fprint(w, ": ping\n\n")
+			// A failed write only means the client is gone; the loop then
+			// ends on the closed request context.
+			_, _ = fmt.Fprint(w, ": ping\n\n")
 			w.(http.Flusher).Flush()
 		}
 	}
@@ -1912,7 +1921,9 @@ func (h *Handler) ScreenStream(w http.ResponseWriter, r *http.Request) {
 	}
 	h.watch(w, r, func() bool {
 		data, _ := json.Marshal(h.screen.Payload())
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		// A failed write only means the client is gone; the loop then ends
+		// on the closed request context.
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 		w.(http.Flusher).Flush()
 		return false
 	})

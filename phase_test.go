@@ -150,7 +150,7 @@ func TestEventStore_StateCountsAnythingUnreadableAsOnboarding(t *testing.T) {
 		// Deliberately invalid state: no store operation writes a value
 		// outside the four phases — the startup migration rewrites the
 		// legacy 'revealed' — so the impossible value is written directly.
-		db.db.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', 'banquet')`)
+		mustExec(t, db, `INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', 'banquet')`)
 
 		if got := events.State(); got != PhaseOnboarding {
 			t.Errorf("an unknown phase value counts as onboarding, got %q", got)
@@ -186,24 +186,25 @@ func TestEventStore_AdvanceReportsAWriteFailure(t *testing.T) {
 
 func TestPhase_PostAdvancesForwardWithJumpsAndRejectsBackward(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
+	// advance wraps post; its t.Cleanup closes the body.
 	advance := func(to string) *http.Response {
 		return post(t, srv, "/admin/phase", url.Values{"to": {to}})
 	}
 
-	if resp := advance("social"); resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/admin" {
+	if resp := advance("social"); resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/admin" { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("advance to social: want 303 to /admin, got %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	if got := deps.events.State(); got != PhaseSocial {
 		t.Errorf("after advancing to social: got %q", got)
 	}
 
-	advance("closed") // a forward jump, skipping show & tell
+	advance("closed") //nolint:bodyclose // wraps post, whose t.Cleanup closes the body — a forward jump, skipping show & tell
 	if got := deps.events.State(); got != PhaseClosed {
 		t.Errorf("a forward jump social → closed should work, got %q", got)
 	}
 
 	for _, to := range []string{"social", "showtell", "onboarding"} {
-		if resp := advance(to); resp.StatusCode != http.StatusBadRequest {
+		if resp := advance(to); resp.StatusCode != http.StatusBadRequest { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 			t.Errorf("backward transition to %s: want 400, got %d", to, resp.StatusCode)
 		}
 	}
@@ -211,7 +212,7 @@ func TestPhase_PostAdvancesForwardWithJumpsAndRejectsBackward(t *testing.T) {
 		t.Errorf("a rejected transition must not change the phase, got %q", got)
 	}
 
-	if resp := advance("banquet"); resp.StatusCode != http.StatusBadRequest {
+	if resp := advance("banquet"); resp.StatusCode != http.StatusBadRequest { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("an unknown phase: want 400, got %d", resp.StatusCode)
 	}
 	if got := deps.events.State(); got != PhaseClosed {

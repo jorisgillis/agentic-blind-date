@@ -74,7 +74,9 @@ func TestInterview_RejectsMalformedMultiSelectAnswer(t *testing.T) {
 	db := newTestDB(t)
 	iv := NewInterview(db, newFakeLLM())
 	p := participantInInterview(t, db, testQuestions)
-	iv.Submit(p, "Tabs")
+	if _, err := iv.Submit(p, "Tabs"); err != nil {
+		t.Fatal(err)
+	}
 	p = reload(t, db, p.ID)
 
 	_, err := iv.Submit(p, "Go, Rust")
@@ -92,7 +94,9 @@ func TestInterview_RejectsTooManySelections(t *testing.T) {
 	db := newTestDB(t)
 	iv := NewInterview(db, newFakeLLM())
 	p := participantInInterview(t, db, testQuestions)
-	iv.Submit(p, "Tabs")
+	if _, err := iv.Submit(p, "Tabs"); err != nil {
+		t.Fatal(err)
+	}
 	p = reload(t, db, p.ID)
 
 	_, err := iv.Submit(p, `["Go","Rust","Python","Java"]`)

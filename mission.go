@@ -216,7 +216,8 @@ func (m *Missions) Get(id string) (*MissionCard, error) {
 // it, so a freshly generated card appears on the personal page via push.
 func (m *Missions) Has(id string) bool {
 	var n int
-	m.db.db.QueryRow(`SELECT COUNT(*) FROM mission_cards WHERE participant_id = ?`, id).Scan(&n)
+	// COUNT(*) always yields one integer row: a failed read counts as zero.
+	_ = m.db.db.QueryRow(`SELECT COUNT(*) FROM mission_cards WHERE participant_id = ?`, id).Scan(&n)
 	return n > 0
 }
 

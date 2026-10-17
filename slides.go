@@ -82,7 +82,7 @@ func (s *SlideDecks) Add(title, speaker, filename string, content io.Reader) (*S
 	path := filepath.Join(s.dir, stored)
 	size, err := writeCapped(path, io.MultiReader(strings.NewReader(pdfMagic), content))
 	if err != nil {
-		os.Remove(path)
+		_ = os.Remove(path) // best effort: Sweep removes any orphan
 		return nil, err
 	}
 
@@ -97,7 +97,7 @@ func (s *SlideDecks) Add(title, speaker, filename string, content io.Reader) (*S
 		return err
 	})
 	if err != nil {
-		os.Remove(path)
+		_ = os.Remove(path) // best effort: Sweep removes any orphan
 		return nil, err
 	}
 	deck.CreatedAt = time.Now()
@@ -140,7 +140,7 @@ func (s *SlideDecks) List() ([]SlideDeck, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 	var decks []SlideDeck
 	for rows.Next() {
 		d, err := scanSlideDeck(rows)
@@ -168,7 +168,9 @@ func (s *SlideDecks) Open(id int64) (*SlideDeck, *os.File, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	f, err := os.Open(filepath.Join(s.dir, d.stored))
+	// The stored name is always the generated uuid name Add wrote (never
+	// the upload's filename), so nothing user-controlled reaches the join.
+	f, err := os.Open(filepath.Join(s.dir, d.stored)) //nolint:gosec // G703: stored is the generated uuid name, not user input
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil, ErrSlideDeckNotFound
 	}
@@ -192,7 +194,8 @@ func (s *SlideDecks) Remove(id int64) error {
 	}); err != nil {
 		return err
 	}
-	if err := os.Remove(filepath.Join(s.dir, d.stored)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	// Like Open: d.stored is the generated uuid name, not user input.
+	if err := os.Remove(filepath.Join(s.dir, d.stored)); err != nil && !errors.Is(err, os.ErrNotExist) { //nolint:gosec // G703: stored is the generated uuid name, not user input
 		return err
 	}
 	return nil
@@ -234,7 +237,8 @@ func (s *SlideDecks) Sweep() error {
 	for _, e := range entries {
 		if !e.IsDir() && !keep[e.Name()] {
 			// Best effort: a file that will not go is tried again at the next sweep.
-			os.Remove(filepath.Join(s.dir, e.Name()))
+			// ReadDir yields plain names of the app's own files: no traversal.
+			_ = os.Remove(filepath.Join(s.dir, e.Name())) //nolint:gosec // G703: e.Name() is a base name from ReadDir, never user input
 		}
 	}
 	return nil

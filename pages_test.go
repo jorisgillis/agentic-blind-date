@@ -28,7 +28,7 @@ func seed(t *testing.T, db *DB, id, persona string, step Step) *Participant {
 // awaitingPersona puts a Participant at the persona step, as if their Interview just completed.
 func awaitingPersona(t *testing.T, db *DB, id string) {
 	t.Helper()
-	db.CreateParticipant(id, id, id, true)
+	must(t, db.CreateParticipant(id, id, id, true))
 	setProfile(t, db, id, &GitHubProfile{Login: id, Languages: []string{"Go"}})
 	forceStep(db, id, StepCreatingPersona)
 }
@@ -41,10 +41,13 @@ func pair(t *testing.T, db *DB, a, b string) {
 	}
 }
 
+// withCookie fetches path with the cookie set; the body is closed through the t.Cleanup below.
+//
+//bodyclose:handled
 func withCookie(t *testing.T, srv *testSrv, path, id string) *http.Response {
 	t.Helper()
 	req, _ := http.NewRequest("GET", srv.URL+path, nil)
-	req.AddCookie(&http.Cookie{Name: cookieName, Value: id})
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: id}) //nolint:gosec // G124: an outgoing test request, no browser and no attributes to set
 	client := srv.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
@@ -163,7 +166,7 @@ func TestLanding_WalkthroughStyleReadsThemeVariables(t *testing.T) {
 
 func TestOnboard_SendsEachPipelineStepToItsPage(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal() // after the Reveal, matched Participants see their Match
+	must(t, deps.events.Reveal()) // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "i", "I", "interviewing")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
@@ -200,7 +203,7 @@ func TestOnboard_ShowsTheQuestionWhenTheInterviewAlreadyStarted(t *testing.T) {
 
 func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal() // after the Reveal, matched Participants see their Match
+	must(t, deps.events.Reveal()) // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "f", "F", "fetching_github")
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
@@ -228,7 +231,7 @@ func TestPipelineStatus_RedirectsOrRendersByStep(t *testing.T) {
 
 func TestWait_ShowsTheAnswersUntilMatched(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal() // after the Reveal, matched Participants see their Match
+	must(t, deps.events.Reveal()) // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "The Gopher", "ready")
 	setProfile(t, deps.db, "r", &GitHubProfile{Login: "r", Languages: []string{"Go"}, AccountAgeDays: 730})
 	seed(t, deps.db, "m", "M", "ready")
@@ -291,7 +294,7 @@ func TestWaitPage_RendersThePhaseHeader(t *testing.T) {
 
 func TestWaitStatus_returnsCorrectStatus(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal() // after the Reveal, matched Participants see their Match
+	must(t, deps.events.Reveal()) // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "r", "R", "ready")
 	seed(t, deps.db, "m", "M", "ready")
 	seed(t, deps.db, "m2", "M2", "ready")
@@ -348,7 +351,7 @@ func TestPersonaCard(t *testing.T) {
 	}
 
 	// A matched Participant belongs on the match page once the social begins.
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	if loc := get(t, srv, "/user/persona/m").Header.Get("HX-Redirect"); loc != "/user/match/m" {
 		t.Errorf("matched: want HX-Redirect to match, got %q", loc)
 	}
@@ -368,7 +371,7 @@ func TestMatchPage_SectionOrder(t *testing.T) {
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	pair(t, deps.db, "a", "b")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	body := readBody(t, get(t, srv, "/user/match/a"))
 
@@ -427,7 +430,7 @@ func TestMatchPage_RendersThePhaseHeader(t *testing.T) {
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	pair(t, deps.db, "a", "b")
-	deps.events.Reveal() // the social begins: matched Participants see their Match
+	must(t, deps.events.Reveal()) // the social begins: matched Participants see their Match
 
 	body := readBody(t, get(t, srv, "/user/match/a"))
 
@@ -472,7 +475,7 @@ func TestMatchPage_RendersThePhaseHeader(t *testing.T) {
 // out locked, and Explore's "Others at the event" section is gone.
 func TestMatchPage_ShowsThePartnerAndTheLockedDossier(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal() // after the Reveal, matched Participants see their Match
+	must(t, deps.events.Reveal()) // after the Reveal, matched Participants see their Match
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	seed(t, deps.db, "c", "The Snake", "ready")
@@ -630,8 +633,12 @@ func TestAdminRevealAndDelete(t *testing.T) {
 
 	req, _ := http.NewRequest("DELETE", srv.URL+"/data/participant/a", nil)
 	resp, err := srv.Client().Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		t.Fatalf("delete: %v %v", resp, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != 200 {
+		t.Fatalf("delete: want 200, got %d", resp.StatusCode)
 	}
 	if _, err := deps.db.GetParticipant("a"); err == nil {
 		t.Error("participant should be gone after delete")
@@ -640,14 +647,19 @@ func TestAdminRevealAndDelete(t *testing.T) {
 
 func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	pair(t, deps.db, "a", "b")
 
 	req, _ := http.NewRequest("DELETE", srv.URL+"/data/participant/a", nil)
-	if resp, err := srv.Client().Do(req); err != nil || resp.StatusCode != 200 {
-		t.Fatalf("delete: %v %v", resp, err)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != 200 {
+		t.Fatalf("delete: want 200, got %d", resp.StatusCode)
 	}
 
 	if loc := get(t, srv, "/user/match/b").Header.Get("Location"); loc != "/user/wait/b" {
@@ -656,7 +668,7 @@ func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t
 	var graph struct {
 		Edges []graphEdge `json:"edges"`
 	}
-	json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &graph)
+	must(t, json.Unmarshal([]byte(readBody(t, get(t, srv, "/bigscreen/graph-data"))), &graph))
 	for _, e := range graph.Edges {
 		if e.Source == "a" || e.Target == "a" {
 			t.Errorf("Big Screen still has an edge to the deleted Participant: %+v", e)
@@ -666,14 +678,14 @@ func TestDeletingAMatchedParticipant_LeavesNoTraceOnTheirPartnerOrTheBigScreen(t
 
 func TestNonGitHubUser_NoScreenShowsTheGeneratedHandle(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
-	deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false)
+	must(t, deps.events.Reveal())
+	must(t, deps.db.CreateParticipant("ada", "no-github-1234abcd", "Ada Lovelace", false))
 	setProfile(t, deps.db, "ada", &GitHubProfile{})
 	setPersona(t, deps.db, "ada", "The Analyst", "Computes")
 	forceStep(deps.db, "ada", "ready")
 	seed(t, deps.db, "octo", "The Gopher", "ready")
 	pair(t, deps.db, "ada", "octo")
-	deps.db.CreateParticipant("zed", "no-github-5678efgh", "Zed", false)
+	must(t, deps.db.CreateParticipant("zed", "no-github-5678efgh", "Zed", false))
 	forceQuestions(deps.db, "zed", ExtraQuestions)
 	forceStep(deps.db, "zed", "interviewing")
 
@@ -718,7 +730,7 @@ func TestLanding_ExplainsWhatTheAppIsAndWhyTheQuestions(t *testing.T) {
 // the interview runs it says why the questions are asked.
 func TestOnboardPage_ExplainsItselfWhileWaitingAndInterviewing(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.CreateParticipant("prep", "prep", "Prep", true)
+	must(t, deps.db.CreateParticipant("prep", "prep", "Prep", true))
 	forceStep(deps.db, "prep", StepFetchingGitHub)
 	seed(t, deps.db, "iv", "The Bard", "interviewing")
 
@@ -761,9 +773,9 @@ func TestOnboardPage_ExplainsItselfWhileWaitingAndInterviewing(t *testing.T) {
 // night reads as a queue, not a hang.
 func TestAgentQueue_ShowsThePositionWhileWaiting(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.CreateParticipant("first", "first", "First", true)
+	must(t, deps.db.CreateParticipant("first", "first", "First", true))
 	forceStep(deps.db, "first", StepFetchingGitHub)
-	deps.db.CreateParticipant("second", "second", "Second", true)
+	must(t, deps.db.CreateParticipant("second", "second", "Second", true))
 	forceStep(deps.db, "second", StepFetchingGitHub)
 
 	if body := readBody(t, get(t, srv, "/user/pipeline/second")); !strings.Contains(body, "1 person ahead of you in the agent queue") {
@@ -787,16 +799,16 @@ func TestAgentQueue_ShowsThePositionWhileWaiting(t *testing.T) {
 // the meet page shows the target's persona only, never their real name.
 func TestPersonalPages_SayThisIsYou(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.CreateParticipant("ada", "ada", "Ada Lovelace", true)
+	must(t, deps.db.CreateParticipant("ada", "ada", "Ada Lovelace", true))
 	setProfile(t, deps.db, "ada", &GitHubProfile{Login: "ada", Languages: []string{"Go"}})
 	setPersona(t, deps.db, "ada", "The Analyst", "Computes")
 	forceStep(deps.db, "ada", StepReady)
-	deps.db.CreateParticipant("octo", "octo", "Octavia", true)
+	must(t, deps.db.CreateParticipant("octo", "octo", "Octavia", true))
 	setProfile(t, deps.db, "octo", &GitHubProfile{Login: "octo", Languages: []string{"Go"}})
 	setPersona(t, deps.db, "octo", "The Gopher", "Ships things")
 	forceStep(deps.db, "octo", StepReady)
 	pair(t, deps.db, "ada", "octo")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	// The Match page names the owner — the persona on the big screen maps
 	// back to a person.
@@ -812,7 +824,7 @@ func TestPersonalPages_SayThisIsYou(t *testing.T) {
 
 	// The wait page's persona card names the owner too — an unmatched
 	// Participant belongs there once the social begins.
-	deps.db.CreateParticipant("zed", "zed", "Zed", true)
+	must(t, deps.db.CreateParticipant("zed", "zed", "Zed", true))
 	setProfile(t, deps.db, "zed", &GitHubProfile{Login: "zed", Languages: []string{"Go"}})
 	setPersona(t, deps.db, "zed", "The Lone Wolf", "Lurks")
 	forceStep(deps.db, "zed", StepReady)
@@ -827,7 +839,7 @@ func TestPersonalPages_SayThisIsYou(t *testing.T) {
 	}
 
 	// A Non-GitHub User sees their name only — the generated handle never shows.
-	deps.db.CreateParticipant("grace", "no-github-1234abcd", "Grace Hopper", false)
+	must(t, deps.db.CreateParticipant("grace", "no-github-1234abcd", "Grace Hopper", false))
 	setProfile(t, deps.db, "grace", &GitHubProfile{})
 	setPersona(t, deps.db, "grace", "The Compiler", "Compiles")
 	forceStep(deps.db, "grace", StepReady)
@@ -845,7 +857,7 @@ func TestPersonalPages_SayThisIsYou(t *testing.T) {
 // the host can explain a busy pipeline to the room.
 func TestAdmin_ShowsTheAgentQueueLength(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.CreateParticipant("a", "a", "A", true)
+	must(t, deps.db.CreateParticipant("a", "a", "A", true))
 	forceStep(deps.db, "a", StepFetchingGitHub)
 	seed(t, deps.db, "b", "The Gopher", "ready")
 

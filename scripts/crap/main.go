@@ -259,7 +259,7 @@ func readProfile(path string) ([]block, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }() // the scanner drained the file; the close cannot matter
 	var blocks []block
 	sc := bufio.NewScanner(fh)
 	sc.Buffer(make([]byte, 1024*1024), 1024*1024)

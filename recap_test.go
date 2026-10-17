@@ -77,14 +77,14 @@ func TestRecaps_TokenForCreatesOneTokenAndPersists(t *testing.T) {
 	if again != token {
 		t.Error("one token per Participant: the second call returns the same token")
 	}
-	db.Close()
+	must(t, db.Close())
 
 	// A restart: the same file, reopened — the token persists (SQLite).
 	reopened, err := NewDB(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	after, err := NewRecaps(reopened).TokenFor("a")
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestRecaps_ByToken(t *testing.T) {
 		}
 		// Deliberately invalid state: the Participant row is deleted without
 		// the cleanup the delete endpoint runs, orphaning the token.
-		db.db.Exec(`DELETE FROM participants WHERE id = 'a'`)
+		mustExec(t, db, `DELETE FROM participants WHERE id = 'a'`)
 		if p, err := recaps.ByToken(token); err != nil || p != nil {
 			t.Errorf("a token whose Participant left is dead, got %v (err %v)", p, err)
 		}
@@ -360,12 +360,12 @@ func TestRecapPage_PersistsAcrossARestart(t *testing.T) {
 	}
 
 	// The restart: the same file, reopened and served again.
-	db.Close()
+	must(t, db.Close())
 	reopened, err := NewDB(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	srv2, _ := newTestServerOnDB(t, reopened, nil, nil)
 
 	body2 := readBody(t, get(t, srv2, "/user/recap/"+token))
@@ -439,7 +439,7 @@ func TestRecapPage_SkipsConnectionsWhoseCounterpartLeft(t *testing.T) {
 	saveChannels(t, srv, "b", url.Values{"email": {"b@example.com"}, "email_on": {"on"}})
 	// Deliberately invalid state: the Participant row is deleted without the
 	// cleanup the delete endpoint runs, leaving the meeting row debug-only.
-	deps.db.db.Exec(`DELETE FROM participants WHERE id = 'b'`)
+	mustExec(t, deps.db, `DELETE FROM participants WHERE id = 'b'`)
 
 	token, err := NewRecaps(deps.db).TokenFor("a")
 	if err != nil {
@@ -612,7 +612,7 @@ func TestRecapLink_ShowsTheQrOnlyWhenClosed(t *testing.T) {
 	}
 
 	// The social: still nothing.
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	if body := readBody(t, get(t, srv, "/user/recap-link/a")); strings.Contains(body, "recap-qr") {
 		t.Error("during the social there is no recap link yet")
 	}
@@ -663,7 +663,7 @@ func TestPersonalPages_ShowTheRecapQrWhenClosed(t *testing.T) {
 	seed(t, deps.db, "bbb", "The YAML Wrangler", "ready")
 	seed(t, deps.db, "solo", "The Loner", "ready")
 	pair(t, deps.db, "aaa", "bbb")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	for _, path := range []string{"/user/match/aaa", "/user/wait/solo"} {
 		body := readBody(t, get(t, srv, path))
@@ -694,7 +694,7 @@ func TestMatchStream_PushesTheRecapLinkWhenTheEventCloses(t *testing.T) {
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The YAML Wrangler", "ready")
 	pair(t, deps.db, "aaa", "bbb")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	s := open(t, srv, "/user/match-stream/aaa")
 	waitFor(t, s, "event: refresh") // the sync on connect
@@ -717,7 +717,7 @@ func TestMatchStream_PushesTheRecapLinkWhenTheEventCloses(t *testing.T) {
 func TestWaitStream_PushesTheRecapLinkWhenTheEventCloses(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "solo", "The Loner", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	s := open(t, srv, "/user/wait-stream/solo")
 	waitFor(t, s, "event: refresh") // the sync on connect

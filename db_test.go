@@ -37,7 +37,7 @@ func TestCreateAndGetParticipant(t *testing.T) {
 
 func TestGetParticipantByHandle(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("id-2", "torvalds", "Linus", true)
+	must(t, db.CreateParticipant("id-2", "torvalds", "Linus", true))
 
 	p, err := db.GetParticipantByHandle("torvalds")
 	if err != nil {
@@ -50,7 +50,7 @@ func TestGetParticipantByHandle(t *testing.T) {
 
 func TestCreateParticipant_duplicate(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("id-1", "octocat", "", true)
+	must(t, db.CreateParticipant("id-1", "octocat", "", true))
 	err := db.CreateParticipant("id-2", "octocat", "", true)
 	if err == nil {
 		t.Error("expected error for duplicate github_handle, got nil")
@@ -59,7 +59,7 @@ func TestCreateParticipant_duplicate(t *testing.T) {
 
 func TestCreateParticipant_ReportsAFailureLookingUpPersonaUsage(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("other", "other", "Other", true)
+	must(t, db.CreateParticipant("other", "other", "Other", true))
 	failWrites(t, db, "persona_lookup")
 
 	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
@@ -72,7 +72,7 @@ func TestCreateParticipant_ReportsAFailureLookingUpPersonaUsage(t *testing.T) {
 // inside the database) is reported through rows.Err(), not silently skipped.
 func TestCreateParticipant_ReportsAGenuineIterationFailure(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("other", "other", "Other", true)
+	must(t, db.CreateParticipant("other", "other", "Other", true))
 	breakOnFault(t, db, "persona_lookup")
 
 	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
@@ -82,7 +82,7 @@ func TestCreateParticipant_ReportsAGenuineIterationFailure(t *testing.T) {
 
 func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("id-1", "octocat", "", true)
+	must(t, db.CreateParticipant("id-1", "octocat", "", true))
 	store := NewParticipantStore(db)
 
 	setProfile(t, db, "id-1", &GitHubProfile{Login: "octocat"})
@@ -106,7 +106,7 @@ func TestNarrowWrites_EachChangesOnlyItsOwnFields(t *testing.T) {
 
 func TestUpdateAnswers(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("id-1", "octocat", "", true)
+	must(t, db.CreateParticipant("id-1", "octocat", "", true))
 
 	updateAnswers(t, db, "id-1", map[string]string{"0": "Tabs", "1": "Go"})
 
@@ -121,8 +121,8 @@ func TestUpdateAnswers(t *testing.T) {
 
 func TestGetAllByStep(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("id-1", "alice", "", true)
-	db.CreateParticipant("id-2", "bob", "", true)
+	must(t, db.CreateParticipant("id-1", "alice", "", true))
+	must(t, db.CreateParticipant("id-2", "bob", "", true))
 	forceStep(db, "id-1", "ready")
 
 	ready, err := db.GetAllByStep("ready")
@@ -198,12 +198,14 @@ func TestCounts(t *testing.T) {
 		t.Errorf("initial count: want 0, got %d", n)
 	}
 
-	db.CreateParticipant("id-1", "alice", "", true)
-	db.CreateParticipant("id-2", "bob", "", true)
-	db.CreateParticipant("id-3", "carol", "", true)
+	must(t, db.CreateParticipant("id-1", "alice", "", true))
+	must(t, db.CreateParticipant("id-2", "bob", "", true))
+	must(t, db.CreateParticipant("id-3", "carol", "", true))
 	forceStep(db, "id-1", "ready")
 	forceStep(db, "id-2", "ready")
-	NewRelationships(db).Pair(Match{A: &Participant{ID: "id-1"}, B: &Participant{ID: "id-2"}, Result: &matchResult{}})
+	if _, err := NewRelationships(db).Pair(Match{A: &Participant{ID: "id-1"}, B: &Participant{ID: "id-2"}, Result: &matchResult{}}); err != nil {
+		t.Fatal(err)
+	}
 
 	if n := db.ParticipantCount(); n != 3 {
 		t.Errorf("ParticipantCount: want 3, got %d", n)
@@ -243,7 +245,7 @@ func TestLLMCache_OldCommaJoinedRowsAreAMiss(t *testing.T) {
 	// The LLM cache is DB-owned (no store expresses it), and this row is
 	// deliberately in the legacy comma-joined format that SetLLMCache's
 	// JSON encoding cannot produce.
-	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 85, 'x', 'red1,red2', 'g', 'i')`)
+	mustExec(t, db, `INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 85, 'x', 'red1,red2', 'g', 'i')`)
 
 	if _, exists := db.GetLLMCache("a:b"); exists {
 		t.Error("an undecodable legacy row should be re-scored, not served")
@@ -258,14 +260,14 @@ func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
 	}
 	// Migration-test setup: recreate the old schema, whose extra_answers
 	// column NewDB's migration must drop.
-	old.db.Exec(`ALTER TABLE participants ADD COLUMN extra_answers TEXT NOT NULL DEFAULT '{}'`)
-	old.Close()
+	mustExec(t, old, `ALTER TABLE participants ADD COLUMN extra_answers TEXT NOT NULL DEFAULT '{}'`)
+	must(t, old.Close())
 
 	db, err := NewDB(path)
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	if err := db.CreateParticipant("id-1", "octocat", "Octo", true); err != nil {
 		t.Fatalf("CreateParticipant after migration: %v", err)
 	}
@@ -275,7 +277,7 @@ func TestNewDB_OpensADatabaseWithTheOldExtraAnswersColumn(t *testing.T) {
 	// Migration-test check: the schema itself is inspected, which no store
 	// read does.
 	var n int
-	db.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name = 'extra_answers'`).Scan(&n)
+	must(t, db.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name = 'extra_answers'`).Scan(&n))
 	if n != 0 {
 		t.Error("the extra_answers column should be dropped")
 	}
@@ -287,17 +289,17 @@ func TestNewDB_GivesOldParticipantsTheDefaultTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old.CreateParticipant("id-1", "octocat", "Octo", true)
+	must(t, old.CreateParticipant("id-1", "octocat", "Octo", true))
 	// Migration-test setup: drop theme to recreate the schema from before
 	// the column existed, so the migration's NOT NULL DEFAULT backfill runs.
-	old.db.Exec(`ALTER TABLE participants DROP COLUMN theme`)
-	old.Close()
+	mustExec(t, old, `ALTER TABLE participants DROP COLUMN theme`)
+	must(t, old.Close())
 
 	db, err := NewDB(path)
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	if got := reload(t, db, "id-1").Theme; got != "midnight" {
 		t.Errorf("pre-existing Participant: want the default theme midnight, got %q", got)
 	}
@@ -309,14 +311,14 @@ func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old.CreateParticipant("gh", "octocat", "Octo", true)
-	old.CreateParticipant("ng", "no-github-1234abcd", "Ada", true)
+	must(t, old.CreateParticipant("gh", "octocat", "Octo", true))
+	must(t, old.CreateParticipant("ng", "no-github-1234abcd", "Ada", true))
 	// Migration-test setup: drop has_github to recreate the schema from
 	// before the column existed, so the one-time backfill runs.
 	if _, err := old.db.Exec(`ALTER TABLE participants DROP COLUMN has_github`); err != nil {
 		t.Fatal(err)
 	}
-	old.Close()
+	must(t, old.Close())
 
 	db, err := NewDB(path)
 	if err != nil {
@@ -329,11 +331,11 @@ func TestNewDB_BackfillsHasGitHubOnceForOldDatabases(t *testing.T) {
 	// and no ParticipantChange carries it. The raw write simulates a
 	// Participant whose flag was set after the backfill, which a second
 	// backfill must not clobber.
-	db.db.Exec(`UPDATE participants SET has_github = 1 WHERE id = 'ng'`)
-	db.Close()
+	mustExec(t, db, `UPDATE participants SET has_github = 1 WHERE id = 'ng'`)
+	must(t, db.Close())
 
 	reopened, _ := NewDB(path)
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	if !reload(t, reopened, "ng").HasGitHub {
 		t.Error("the backfill must only run once, when the column is introduced")
 	}
@@ -359,7 +361,7 @@ func TestNewDB_ReportsADatabaseThatCannotBeOpened(t *testing.T) {
 		t.Error("a database in a missing directory should not open")
 	}
 	garbage := t.TempDir() + "/garbage.db"
-	os.WriteFile(garbage, []byte("this is not a SQLite database, just a long enough line of text to fill a header"), 0644)
+	must(t, os.WriteFile(garbage, []byte("this is not a SQLite database, just a long enough line of text to fill a header"), 0644))
 	if _, err := NewDB(garbage); err == nil {
 		t.Error("a file that is not a database should not open")
 	}
@@ -371,10 +373,10 @@ func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
 	for _, column := range []string{"profile_json", "questions", "answers_json", "interests", "red_flags", "green_flags", "icebreakers"} {
 		t.Run(column, func(t *testing.T) {
 			db := newTestDB(t)
-			db.CreateParticipant("p", "p", "P", true)
+			must(t, db.CreateParticipant("p", "p", "P", true))
 			// Corruption setup: '{broken' is not JSON the store could ever
 			// write (it marshals), so the undecodable row is seeded directly.
-			db.db.Exec(`UPDATE participants SET ` + column + ` = '{broken' WHERE id = 'p'`)
+			mustExec(t, db, `UPDATE participants SET `+column+` = '{broken' WHERE id = 'p'`)
 
 			if _, err := db.GetParticipant("p"); err == nil {
 				t.Error("a corrupt row should be an error")
@@ -389,7 +391,7 @@ func TestParticipants_CorruptRowsAreErrorsNotPanics(t *testing.T) {
 func TestDB_ReadsAndWritesAgainstABrokenDatabase(t *testing.T) {
 	db := newTestDB(t)
 	db.SetLLMCache("a:b", &matchResult{Score: 1})
-	db.db.Close()
+	_ = db.db.Close() // breaking the database on purpose; the error is beside the point
 
 	if _, ok := db.GetLLMCache("a:b"); ok {
 		t.Error("nothing can be read from a broken database")
@@ -408,7 +410,7 @@ func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
 	db := newTestDB(t)
 	// The LLM cache is DB-owned (no store expresses it), and a 'null' list is
 	// a legacy value SetLLMCache's JSON encoding cannot produce (it writes '[]').
-	db.db.Exec(`INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 5, 'x', 'null', '[]', '[]')`)
+	mustExec(t, db, `INSERT INTO llm_cache (pair_key, score, reason, red_flags, green_flags, icebreakers) VALUES ('a:b', 5, 'x', 'null', '[]', '[]')`)
 
 	r, ok := db.GetLLMCache("a:b")
 
@@ -424,9 +426,9 @@ func TestLLMCache_NullListsComeBackEmpty(t *testing.T) {
 func TestReset_IsOneTransaction(t *testing.T) {
 	db := newTestDB(t)
 	events := NewEventStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	db.LogActivity("hello")
-	events.Reveal()
+	must(t, events.Reveal())
 	failWrites(t, db, "reset_activity")
 
 	if err := events.Reset(); err == nil {
@@ -447,7 +449,7 @@ func TestReset_IsOneTransaction(t *testing.T) {
 func TestReset_ReportsAGenuineParticipantsDeleteFailure(t *testing.T) {
 	db := newTestDB(t)
 	events := NewEventStore(db)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	breakOnFault(t, db, "reset_participants")
 
 	if err := events.Reset(); err == nil {
@@ -480,7 +482,7 @@ func TestCreateParticipant_ReportsADamagedSchema(t *testing.T) {
 	db := newTestDB(t)
 	// Deliberately damaged schema: no store operation drops a column; the
 	// test covers the error path when the persona-lookup read fails.
-	db.db.Exec(`ALTER TABLE participants DROP COLUMN persona_symbol`)
+	mustExec(t, db, `ALTER TABLE participants DROP COLUMN persona_symbol`)
 
 	if err := db.CreateParticipant("p", "p", "P", true); err == nil {
 		t.Error("want an error when Persona looks cannot be read")
@@ -489,7 +491,7 @@ func TestCreateParticipant_ReportsADamagedSchema(t *testing.T) {
 
 func TestNewDB_ReportsADatabaseThatIsReadOnly(t *testing.T) {
 	path := t.TempDir() + "/readonly.db"
-	os.WriteFile(path, nil, 0644)
+	must(t, os.WriteFile(path, nil, 0644))
 
 	// mode=ro opens the (empty) file read-only, so creating the schema fails.
 	if _, err := NewDB("file:" + path + "?mode=ro&"); err == nil {

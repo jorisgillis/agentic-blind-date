@@ -91,7 +91,7 @@ func TestCardRegistry_PlacementDrivesThePageData(t *testing.T) {
 	seed(t, deps.db, "me", "The Me", "ready")
 	seed(t, deps.db, "mate", "The Mate", "ready")
 	pair(t, deps.db, "me", "mate")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	me := reload(t, deps.db, "me")
 
 	// The wait page's data map: every wait page card's key, plus the base
@@ -173,7 +173,7 @@ func TestMatchStream_ANewRegistryEntryPushesItsCard(t *testing.T) {
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 	pair(t, deps.db, "a", "b")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	s := open(t, srv, "/user/match-stream/a")
 	waitFor(t, s, "event: refresh") // the sync on connect

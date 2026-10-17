@@ -69,7 +69,7 @@ func TestOpenAIClient_JSONModeOnAndOff(t *testing.T) {
 		}
 
 		var req chatReq
-		json.Unmarshal([]byte(u.bodies[0]), &req)
+		must(t, json.Unmarshal([]byte(u.bodies[0]), &req))
 		hasFormat := req.ResponseFormat != nil && req.ResponseFormat.Type == "json_object"
 		if hasFormat != jsonMode {
 			t.Errorf("jsonMode=%v: response_format present=%v", jsonMode, hasFormat)

@@ -151,7 +151,9 @@ func TestMatcherScorePair_FailuresAreNotCached(t *testing.T) {
 	if _, err := m.ScorePair(a, b); err == nil {
 		t.Fatal("want error")
 	}
-	m.ScorePair(a, b)
+	// The retried scoring fails the same way — it is the LLM call count
+	// below that says the failure was not cached, not this result.
+	_, _ = m.ScorePair(a, b)
 
 	if n := llm.callsMatching("matchmaker"); n != 2 {
 		t.Errorf("a failed scoring must be retried next time; LLM calls: %d", n)
@@ -164,7 +166,9 @@ func TestMatcherScorePair_PromptShowsAnswersWithTheirQuestions(t *testing.T) {
 	a := testParticipant("a", "The Gopher", []string{"Go"}, participantOpts{answers: map[string]string{"fixed_0": "Tabs"}})
 	a.Questions = []Question{{ID: "fixed_0", Text: "Tabs or spaces?"}}
 
-	m.ScorePair(a, testParticipant("b", "The Crab", []string{"Rust"}))
+	if _, err := m.ScorePair(a, testParticipant("b", "The Crab", []string{"Rust"})); err != nil {
+		t.Fatal(err)
+	}
 
 	call, _ := llm.lastCallMatching("matchmaker")
 	if !strings.Contains(call.User, "- Tabs or spaces? → Tabs") {
@@ -180,7 +184,9 @@ func TestMatcherScorePair_PromptDescribesEachDeveloperWithTheirOwnInterestsAndFo
 	gh := newFakeGitHub().withFollow("a", "b")
 	m := NewMatcher(newTestDB(t), gh, llm)
 
-	m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"}))
+	if _, err := m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"})); err != nil {
+		t.Fatal(err)
+	}
 
 	call, _ := llm.lastCallMatching("matchmaker")
 	dev1, dev2, found := strings.Cut(call.User, "DEVELOPER 2")
@@ -437,7 +443,9 @@ func TestMatcherScorePair_PromptMentionsMutualAndReverseFollows(t *testing.T) {
 			llm := newFakeLLM().on("matchmaker", matchReply)
 			m := NewMatcher(newTestDB(t), tc.gh, llm)
 
-			m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"}))
+			if _, err := m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), testParticipant("b", "The Crab", []string{"Rust"})); err != nil {
+				t.Fatal(err)
+			}
 
 			call, _ := llm.lastCallMatching("matchmaker")
 			if tc.want == "" && strings.Contains(call.User, "follow") {
@@ -483,7 +491,9 @@ func TestMatcherScorePair_NoFollowLookupsForNonGitHubUsers(t *testing.T) {
 	ada := testParticipant("no-github-1234", "The Ada", nil)
 	ada.HasGitHub = false
 
-	m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), ada)
+	if _, err := m.ScorePair(testParticipant("a", "The Gopher", []string{"Go"}), ada); err != nil {
+		t.Fatal(err)
+	}
 
 	if n := gh.followLookups(); n != 0 {
 		t.Errorf("follow lookups for a Non-GitHub User: want 0, got %d", n)

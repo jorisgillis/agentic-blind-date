@@ -58,7 +58,8 @@ func (h *Handler) serveSlideDeck(w http.ResponseWriter, r *http.Request, disposi
 		http.Error(w, "opening the slides failed", 500)
 		return
 	}
-	defer file.Close()
+	// Serving has read or errored by then; the close cannot matter.
+	defer func() { _ = file.Close() }()
 
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -93,7 +94,7 @@ func (h *Handler) AdminSlidesUpload(w http.ResponseWriter, r *http.Request) {
 
 	// The cap on the whole request leaves room for the form fields around the file.
 	r.Body = http.MaxBytesReader(w, r.Body, maxSlideDeckBytes+1<<20)
-	if err := r.ParseMultipartForm(8 << 20); err != nil {
+	if err := r.ParseMultipartForm(8 << 20); err != nil { //nolint:gosec // G120: bounded twice — the MaxBytesReader above caps the request, the 8 MB is the in-memory spool
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
 			reject(fmt.Sprintf("That file is too large (the limit is %d MB).", maxSlideDeckBytes>>20))
@@ -102,14 +103,16 @@ func (h *Handler) AdminSlidesUpload(w http.ResponseWriter, r *http.Request) {
 		reject("The upload could not be read.")
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
+	// Cleanup of the spooled temp files; the close error cannot matter.
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		reject("Choose a PDF to upload.")
 		return
 	}
-	defer file.Close()
+	// Add has consumed the file by then; the close cannot matter.
+	defer func() { _ = file.Close() }()
 
 	deck, err := h.slides.Add(r.FormValue("title"), r.FormValue("speaker"), header.Filename, file)
 	var invalid *InvalidSlideDeckError

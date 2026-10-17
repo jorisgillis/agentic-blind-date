@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -124,7 +125,7 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 	}
 	body, _ := json.Marshal(req)
 
-	httpReq, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body)) // built from a configured base URL
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body)) //nolint:gosec // G704: the base URL is operator configuration, not user input
 	if err != nil {
 		return "", &chatError{msg: fmt.Sprintf("LLM: invalid base URL %q: %v", c.baseURL, err)}
 	}
@@ -133,11 +134,12 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: carries the operator-configured base URL, not user input
 	if err != nil {
 		return "", &chatError{msg: err.Error(), retryable: true}
 	}
-	defer resp.Body.Close()
+	// The body is drained below before the return, so the close cannot matter.
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -237,7 +239,8 @@ func (c *OpenAIClient) Chat(system, user string) (string, error) {
 			return result, nil
 		}
 		lastErr = err
-		if ce, ok := err.(*chatError); ok && !ce.retryable {
+		var ce *chatError
+		if errors.As(err, &ce) && !ce.retryable {
 			break
 		}
 	}

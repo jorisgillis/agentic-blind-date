@@ -7,7 +7,7 @@ import (
 
 func TestLoadDotEnv(t *testing.T) {
 	path := t.TempDir() + "/dotenv"
-	os.WriteFile(path, []byte(`TEST_KEY=test_value
+	must(t, os.WriteFile(path, []byte(`TEST_KEY=test_value
 TEST_KEY2="quoted value"
 # This is a comment
 EMPTY_LINE=
@@ -16,10 +16,10 @@ INVALID_LINE
 ALREADY_SET=from_file
 
 ANOTHER_KEY=another_value
-`), 0644)
+`), 0644))
 	for _, key := range []string{"TEST_KEY", "TEST_KEY2", "EMPTY_LINE", "INVALID_LINE", "ANOTHER_KEY"} {
 		t.Setenv(key, "") // restored after the test
-		os.Unsetenv(key)
+		must(t, os.Unsetenv(key))
 	}
 	t.Setenv("ALREADY_SET", "from_environment")
 

@@ -54,7 +54,7 @@ func breakOnFault(t *testing.T, db *DB, tag string) {
 
 // breakDB makes every database call fail, reads included.
 func breakDB(db *DB) {
-	db.db.Close()
+	_ = db.db.Close() // deliberately breaking the database; the close error is beside the point
 }
 
 // installFault installs the SQL that fails the writes named by tags — every
@@ -87,7 +87,9 @@ func installFault(t *testing.T, db *DB, message string, tags []string) (restore 
 		}
 		restored = true
 		for _, fault := range faults {
-			db.db.Exec(fault[1])
+			// Best-effort undo at teardown: a test that broke the database
+			// on purpose has nothing to restore.
+			_, _ = db.db.Exec(fault[1])
 		}
 	}
 	t.Cleanup(restore)
@@ -307,7 +309,7 @@ func allWriteFaults(message string) [][2]string {
 
 func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	store := NewParticipantStore(db)
 
 	restore := failWrites(t, db)
@@ -330,7 +332,7 @@ func TestFailWrites_MakesParticipantWritesFailUntilRestored(t *testing.T) {
 
 func TestFailWrites_CanTargetATag(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 	store := NewParticipantStore(db)
 	failWrites(t, db, "persona")
 

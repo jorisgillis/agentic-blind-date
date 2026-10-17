@@ -86,7 +86,7 @@ func sentNothingNew(t *testing.T, s *liveStream, checks int, before, what string
 
 func TestPipelineStream_RefreshesWhenTheInterviewStartsAndRedirectsWhenDone(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.CreateParticipant("p", "p", "P", true)
+	must(t, deps.db.CreateParticipant("p", "p", "P", true))
 	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
 
 	s := open(t, srv, "/user/pipeline-stream/p")
@@ -119,7 +119,7 @@ func TestPipelineStream_RedirectsImmediatelyWhenAlreadyDone(t *testing.T) {
 
 func TestPipelineStream_SyncsOnConnectWhenTheStepAlreadySettled(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.db.CreateParticipant("p", "p", "P", true)
+	must(t, deps.db.CreateParticipant("p", "p", "P", true))
 	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
 	forceStep(deps.db, "p", StepInterviewing)
 

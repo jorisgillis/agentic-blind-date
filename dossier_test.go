@@ -54,7 +54,7 @@ func TestTeaser_WhenThePairThinksAlike(t *testing.T) {
 func TestWaitStatus_NoMatchStateOnceTheSocialHasBegun(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "solo", "The Loner", "ready")
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 
 	for _, path := range []string{"/user/wait/solo", "/user/wait-status/solo"} {
 		body := readBody(t, get(t, srv, path))
@@ -77,7 +77,7 @@ func TestWaitStatus_WithAPartnerWhoIsGoneStillRenders(t *testing.T) {
 	// operation produces it — pairing only ever names an existing Participant
 	// and matched_with's single writer is the Relationships module — so the
 	// impossible state is written directly.
-	deps.db.db.Exec(`UPDATE participants SET matched_with = 'gone' WHERE id = 'aaa'`)
+	mustExec(t, deps.db, `UPDATE participants SET matched_with = 'gone' WHERE id = 'aaa'`)
 
 	resp := get(t, srv, "/user/wait-status/aaa")
 	if resp.StatusCode != 200 {
@@ -93,7 +93,7 @@ func TestWaitStatus_WithAPartnerWhoIsGoneStillRenders(t *testing.T) {
 // confirmation — the payload is in no page and no fragment.
 func TestDossier_StaysLockedUntilTheMeetingCompletes(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The Crab", "ready")
 	pair(t, deps.db, "aaa", "bbb")
@@ -125,7 +125,7 @@ func TestDossier_StaysLockedUntilTheMeetingCompletes(t *testing.T) {
 // both sides confirm, the dossier shows the payload on both phones.
 func TestDossier_UnlocksWhenThePairCompletesTheirMeeting(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The Crab", "ready")
 	pair(t, deps.db, "aaa", "bbb")
@@ -155,7 +155,7 @@ func TestDossier_UnlocksWhenThePairCompletesTheirMeeting(t *testing.T) {
 // evening is over and the recap takes over.
 func TestDossier_UnlocksWhenTheEventCloses(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The Crab", "ready")
 	pair(t, deps.db, "aaa", "bbb")
@@ -173,7 +173,7 @@ func TestDossier_UnlocksWhenTheEventCloses(t *testing.T) {
 // edges: an unknown Participant and an unmatched Participant are 404.
 func TestDossier_WithoutAMatchThereIsNoDossier(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "solo", "The Loner", "ready")
 
 	if resp := get(t, srv, "/user/dossier/nobody"); resp.StatusCode != 404 {
@@ -189,7 +189,7 @@ func TestDossier_WithoutAMatchThereIsNoDossier(t *testing.T) {
 // dossier it then fetches is unlocked.
 func TestMatchStream_PushesTheDossierUnlock(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The Crab", "ready")
 	pair(t, deps.db, "aaa", "bbb")
@@ -221,7 +221,7 @@ func TestMatchStream_PushesTheDossierUnlock(t *testing.T) {
 // endpoint a participant view could fetch until the pair's Meeting completes.
 func TestDataEndpoints_ScrubTheAssessmentUntilTheMeetingCompletes(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The Crab", "ready")
 	seed(t, deps.db, "solo", "The Loner", "ready")
@@ -269,7 +269,7 @@ func TestDataEndpoints_ScrubTheAssessmentUntilTheMeetingCompletes(t *testing.T) 
 // completed Meeting.
 func TestDataEndpoints_ShowTheAssessmentAfterClosed(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The Crab", "ready")
 	pair(t, deps.db, "aaa", "bbb")
@@ -287,7 +287,7 @@ func TestDataEndpoints_ShowTheAssessmentAfterClosed(t *testing.T) {
 // template links to them.
 func TestExplore_IsGone(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
-	deps.events.Reveal()
+	must(t, deps.events.Reveal())
 	seed(t, deps.db, "aaa", "The Gopher", "ready")
 	seed(t, deps.db, "bbb", "The Crab", "ready")
 	pair(t, deps.db, "aaa", "bbb")

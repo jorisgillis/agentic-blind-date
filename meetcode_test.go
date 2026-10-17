@@ -66,7 +66,7 @@ func TestCreateParticipant_AssignsAMeetCodeAtRegistration(t *testing.T) {
 
 func TestEnsureMeetCode_IsIdempotent(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateParticipant("p", "p", "P", true)
+	must(t, db.CreateParticipant("p", "p", "P", true))
 
 	first := reload(t, db, "p").MeetCode
 	again, err := ensureMeetCode(db.db, "p")
@@ -114,7 +114,7 @@ func TestEnsureMeetCode_UnknownParticipant(t *testing.T) {
 
 func TestEnsureMeetCode_ReportsAWriteFailure(t *testing.T) {
 	db := newTestDB(t)
-	db.db.Exec(`INSERT INTO participants (id, github_handle, name) VALUES ('p', 'p', 'P')`)
+	mustExec(t, db, `INSERT INTO participants (id, github_handle, name) VALUES ('p', 'p', 'P')`)
 	failWrites(t, db, "meet_code")
 
 	if _, err := ensureMeetCode(db.db, "p"); err == nil || err.Error() != "injected write failure" {
@@ -147,13 +147,13 @@ func TestNewDB_BackfillsMeetCodes(t *testing.T) {
 	if _, err := db.db.Exec(`INSERT INTO participants (id, github_handle, name) VALUES ('old', 'old', 'Old')`); err != nil {
 		t.Fatal(err)
 	}
-	db.Close()
+	must(t, db.Close())
 
 	reopened, err := NewDB(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	p, err := reopened.GetParticipant("old")
 	if err != nil {
 		t.Fatal(err)
@@ -179,13 +179,13 @@ func TestNewDB_LogsABackfillFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	persistMeetCodeFault(t, db)
-	db.Close()
+	must(t, db.Close())
 
 	reopened, err := NewDB(path)
 	if err != nil {
 		t.Fatalf("NewDB should log a backfill failure, not fail: %v", err)
 	}
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	if p, _ := reopened.GetParticipant("old"); p.MeetCode != "" {
 		t.Errorf("the failed backfill should leave the code empty, got %q", p.MeetCode)
 	}
@@ -193,7 +193,7 @@ func TestNewDB_LogsABackfillFailure(t *testing.T) {
 
 func TestBackfillMeetCodes_ReportsAReadFailure(t *testing.T) {
 	db := newTestDB(t)
-	db.db.Exec(`INSERT INTO participants (id, github_handle, name) VALUES ('p', 'p', 'P')`)
+	mustExec(t, db, `INSERT INTO participants (id, github_handle, name) VALUES ('p', 'p', 'P')`)
 	breakOnFault(t, db, "meet_backfill_read")
 
 	if err := backfillMeetCodes(db); err == nil {
@@ -203,7 +203,7 @@ func TestBackfillMeetCodes_ReportsAReadFailure(t *testing.T) {
 
 func TestBackfillMeetCodes_ReportsAWriteFailure(t *testing.T) {
 	db := newTestDB(t)
-	db.db.Exec(`INSERT INTO participants (id, github_handle, name) VALUES ('p', 'p', 'P')`)
+	mustExec(t, db, `INSERT INTO participants (id, github_handle, name) VALUES ('p', 'p', 'P')`)
 	failWrites(t, db, "meet_code")
 
 	if err := backfillMeetCodes(db); err == nil {
@@ -240,13 +240,13 @@ func TestNewDB_UpgradesADatabaseFromBeforeMeetCodes(t *testing.T) {
 	if _, err := db.db.Exec(`ALTER TABLE participants DROP COLUMN meet_code`); err != nil {
 		t.Fatal(err)
 	}
-	db.Close()
+	must(t, db.Close())
 
 	reopened, err := NewDB(path)
 	if err != nil {
 		t.Fatalf("a database from before meet codes should upgrade, not fail: %v", err)
 	}
-	defer reopened.Close()
+	t.Cleanup(func() { _ = reopened.Close() })
 	p := reload(t, reopened, "old")
 	if want := deriveMeetCode("old", 0); p.MeetCode != want {
 		t.Errorf("the upgrade should backfill the meet code: want %q, got %q", want, p.MeetCode)
@@ -269,7 +269,7 @@ func TestNewDB_ReportsADuplicateMeetCode(t *testing.T) {
 	if _, err := db.db.Exec(`INSERT INTO participants (id, github_handle, name, meet_code) VALUES ('a', 'a', 'A', 'AAAAAA'), ('b', 'b', 'B', 'AAAAAA')`); err != nil {
 		t.Fatal(err)
 	}
-	db.Close()
+	must(t, db.Close())
 
 	if _, err := NewDB(path); err == nil {
 		t.Error("want a failure when existing meet codes collide")

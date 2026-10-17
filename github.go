@@ -263,18 +263,19 @@ type ghRepo struct {
 }
 
 func (g *GitHubClient) get(url string) ([]byte, error) {
-	req, _ := http.NewRequest("GET", url, nil) // built from a constant base and an escaped handle
+	req, _ := http.NewRequest("GET", url, nil) //nolint:gosec // G704: the URL is the operator-configured base plus a url.PathEscape'd handle, not user input
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.httpClient.Do(req) //nolint:gosec // G704: carries the operator-configured base URL, not user input
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// The body is drained below before the return, so the close cannot matter.
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 404 {
 		return nil, fmt.Errorf("GitHub user not found: %s", url)
@@ -317,17 +318,17 @@ func (g *GitHubClient) fetchRepos(handle string) ([]ghRepo, error) {
 func (g *GitHubClient) checkFollows(follower, followee string) bool {
 	endpoint := g.baseURL + "/users/" +
 		url.PathEscape(follower) + "/following/" + url.PathEscape(followee)
-	req, _ := http.NewRequest("GET", endpoint, nil) // built from a constant base and escaped handles
+	req, _ := http.NewRequest("GET", endpoint, nil) //nolint:gosec // G704: the operator-configured base plus url.PathEscape'd handles, not user input
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.httpClient.Do(req) //nolint:gosec // G704: carries the operator-configured base URL, not user input
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close() // only the status was read; the close cannot matter
 	return resp.StatusCode == 204
 }
 

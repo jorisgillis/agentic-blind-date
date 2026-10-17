@@ -223,7 +223,7 @@ func (w *gherkinWorld) do(method, path, cookie string, vals url.Values) *httptes
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	if cookie != "" {
-		req.AddCookie(&http.Cookie{Name: cookieName, Value: cookie})
+		req.AddCookie(&http.Cookie{Name: cookieName, Value: cookie}) //nolint:gosec // G124: an outgoing test request, no browser and no attributes to set
 	}
 	rec := httptest.NewRecorder()
 	w.srv.h.ServeHTTP(rec, req)

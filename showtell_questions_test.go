@@ -539,36 +539,37 @@ func TestShowTellQuestion_Route(t *testing.T) {
 	seed(t, deps.db, "a", "The Gopher", "ready")
 	seed(t, deps.db, "b", "The Crab", "ready")
 
+	// ask wraps post; its t.Cleanup closes the body.
 	ask := func(form url.Values) *http.Response {
 		return post(t, srv, "/user/showtell/question/b", form)
 	}
 	if resp := post(t, srv, "/user/showtell/question/nobody", url.Values{"question": {"Why?"}}); resp.StatusCode != 404 {
 		t.Errorf("unknown participant: want 404, got %d", resp.StatusCode)
 	}
-	if resp := ask(url.Values{"question": {"Why?"}}); resp.StatusCode != 400 {
+	if resp := ask(url.Values{"question": {"Why?"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("during onboarding: want 400, got %d", resp.StatusCode)
 	}
 	if err := deps.events.Advance(PhaseSocial); err != nil {
 		t.Fatal(err)
 	}
-	if resp := ask(url.Values{"question": {"Why?"}}); resp.StatusCode != 400 {
+	if resp := ask(url.Values{"question": {"Why?"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("during the social: want 400, got %d", resp.StatusCode)
 	}
 	if err := deps.events.Advance(PhaseShowTell); err != nil {
 		t.Fatal(err)
 	}
-	if resp := ask(url.Values{"question": {"Why?"}}); resp.StatusCode != 400 {
+	if resp := ask(url.Values{"question": {"Why?"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("with an empty stage: want 400, got %d", resp.StatusCode)
 	}
 	stagePresenter(t, deps, "a")
-	if resp := ask(url.Values{"question": {"  "}}); resp.StatusCode != 400 {
+	if resp := ask(url.Values{"question": {"  "}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("no question: want 400, got %d", resp.StatusCode)
 	}
-	if resp := ask(url.Values{"question": {strings.Repeat("x", maxQuestionLength+1)}}); resp.StatusCode != 400 {
+	if resp := ask(url.Values{"question": {strings.Repeat("x", maxQuestionLength+1)}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("an over-long question: want 400, got %d", resp.StatusCode)
 	}
 
-	body := readBody(t, ask(url.Values{"question": {"Why tabs?"}}))
+	body := readBody(t, ask(url.Values{"question": {"Why tabs?"}})) //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 	for _, want := range []string{"Why tabs?", "Queued — the host picks it up", `hx-post="/user/showtell/question/b"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the question fragment should contain %q, got:\n%s", want, body)
@@ -580,7 +581,7 @@ func TestShowTellQuestion_Route(t *testing.T) {
 	}
 
 	breakOnFault(t, deps.db, "showtell_question_insert")
-	if resp := ask(url.Values{"question": {"Why?"}}); resp.StatusCode != 500 {
+	if resp := ask(url.Values{"question": {"Why?"}}); resp.StatusCode != 500 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a write failure: want 500, got %d", resp.StatusCode)
 	}
 }
@@ -598,57 +599,58 @@ func TestShowTellQuestionAction_Route(t *testing.T) {
 	askQuestion(t, deps, "b", "Why tabs?")
 	id := questionID(t, deps, "b", 0)
 
+	// action wraps post; its t.Cleanup closes the body.
 	action := func(form url.Values) *http.Response {
 		return post(t, srv, "/admin/showtell/question", form)
 	}
-	if resp := action(url.Values{"id": {"not-a-number"}, "action": {"asked"}}); resp.StatusCode != 400 {
+	if resp := action(url.Values{"id": {"not-a-number"}, "action": {"asked"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a malformed id: want 400, got %d", resp.StatusCode)
 	}
-	if resp := action(url.Values{"id": {idValue(id)}, "action": {"explode"}}); resp.StatusCode != 400 {
+	if resp := action(url.Values{"id": {idValue(id)}, "action": {"explode"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("an unknown action: want 400, got %d", resp.StatusCode)
 	}
-	if resp := action(url.Values{"id": {"4242"}, "action": {"asked"}}); resp.StatusCode != 404 {
+	if resp := action(url.Values{"id": {"4242"}, "action": {"asked"}}); resp.StatusCode != 404 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("an unknown question: want 404, got %d", resp.StatusCode)
 	}
-	if resp := action(url.Values{"id": {idValue(id)}, "action": {"answered"}}); resp.StatusCode != 400 {
+	if resp := action(url.Values{"id": {idValue(id)}, "action": {"answered"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("answering a queued question: want 400, got %d", resp.StatusCode)
 	}
-	if resp := action(url.Values{"id": {idValue(id)}, "action": {"asked"}}); resp.StatusCode != 303 {
+	if resp := action(url.Values{"id": {idValue(id)}, "action": {"asked"}}); resp.StatusCode != 303 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("asking: want a redirect, got %d", resp.StatusCode)
 	}
 	if q, _ := deps.showtell.QuestionByID(id); q == nil || q.Status != QuestionAsked {
 		t.Errorf("the question should be asked, got %+v", q)
 	}
-	if resp := action(url.Values{"id": {idValue(id)}, "action": {"asked"}}); resp.StatusCode != 400 {
+	if resp := action(url.Values{"id": {idValue(id)}, "action": {"asked"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("asking while a question is on the big screen: want 400, got %d", resp.StatusCode)
 	}
-	if resp := action(url.Values{"id": {idValue(id)}, "action": {"answered"}}); resp.StatusCode != 303 {
+	if resp := action(url.Values{"id": {idValue(id)}, "action": {"answered"}}); resp.StatusCode != 303 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("answering: want a redirect, got %d", resp.StatusCode)
 	}
-	if resp := action(url.Values{"id": {idValue(id)}, "action": {"dismissed"}}); resp.StatusCode != 400 {
+	if resp := action(url.Values{"id": {idValue(id)}, "action": {"dismissed"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("dismissing an answered question: want 400, got %d", resp.StatusCode)
 	}
 
 	askQuestion(t, deps, "b", "One more")
 	second := questionID(t, deps, "b", 1)
-	if resp := action(url.Values{"id": {idValue(second)}, "action": {"dismissed"}}); resp.StatusCode != 303 {
+	if resp := action(url.Values{"id": {idValue(second)}, "action": {"dismissed"}}); resp.StatusCode != 303 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("dismissing: want a redirect, got %d", resp.StatusCode)
 	}
-	if resp := action(url.Values{"id": {idValue(second)}, "action": {"asked"}}); resp.StatusCode != 400 {
+	if resp := action(url.Values{"id": {idValue(second)}, "action": {"asked"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("asking a dismissed question: want 400, got %d", resp.StatusCode)
 	}
 
 	askQuestion(t, deps, "b", "A third")
 	third := questionID(t, deps, "b", 2)
 	breakOnFault(t, deps.db, "showtell_question_update")
-	if resp := action(url.Values{"id": {idValue(third)}, "action": {"asked"}}); resp.StatusCode != 500 {
+	if resp := action(url.Values{"id": {idValue(third)}, "action": {"asked"}}); resp.StatusCode != 500 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a write failure: want 500, got %d", resp.StatusCode)
 	}
 
 	if err := deps.events.Advance(PhaseClosed); err != nil {
 		t.Fatal(err)
 	}
-	if resp := action(url.Values{"id": {idValue(third)}, "action": {"asked"}}); resp.StatusCode != 400 {
+	if resp := action(url.Values{"id": {idValue(third)}, "action": {"asked"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("once closed: want 400, got %d", resp.StatusCode)
 	}
 }

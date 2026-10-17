@@ -117,7 +117,7 @@ func nextLook(uses map[string]int) (color, symbol string) {
 			}
 		}
 	}
-	pick := least[rand.Intn(len(least))]
+	pick := least[rand.Intn(len(least))] //nolint:gosec // G404: cosmetic — picks among the least-used persona looks; no security decision rides on it
 	return pick[0], pick[1]
 }
 

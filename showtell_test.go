@@ -844,17 +844,18 @@ func TestShowTellStage_Route(t *testing.T) {
 	seed(t, deps.db, "a", "A", "ready")
 	seed(t, deps.db, "b", "B", "ready")
 
+	// stage wraps post; its t.Cleanup closes the body.
 	stage := func(form url.Values) *http.Response {
 		return post(t, srv, "/admin/showtell/stage", form)
 	}
 
-	if resp := stage(url.Values{"id": {"not-a-number"}, "action": {"stage"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {"not-a-number"}, "action": {"stage"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a malformed id: want 400, got %d", resp.StatusCode)
 	}
-	if resp := stage(url.Values{"id": {"1"}, "action": {"explode"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {"1"}, "action": {"explode"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("an unknown action: want 400, got %d", resp.StatusCode)
 	}
-	if resp := stage(url.Values{"id": {"4242"}, "action": {"stage"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {"4242"}, "action": {"stage"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("during onboarding: want 400, got %d", resp.StatusCode)
 	}
 
@@ -863,20 +864,20 @@ func TestShowTellStage_Route(t *testing.T) {
 	}
 	signUp(t, deps, "a", "A")
 	signUp(t, deps, "b", "B")
-	if resp := stage(url.Values{"id": {"4242"}, "action": {"stage"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {"4242"}, "action": {"stage"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("an unknown sign-up during the social: want 400 (presenter mode is closed), got %d", resp.StatusCode)
 	}
-	if resp := stage(url.Values{"id": {idValue(signupID(t, deps, "a"))}, "action": {"reveal"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {idValue(signupID(t, deps, "a"))}, "action": {"reveal"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("revealing a queued sign-up: want 400, got %d", resp.StatusCode)
 	}
-	if resp := stage(url.Values{"id": {idValue(signupID(t, deps, "a"))}, "action": {"stage"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {idValue(signupID(t, deps, "a"))}, "action": {"stage"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("staging during the social: want 400, got %d", resp.StatusCode)
 	}
 
 	if err := deps.events.Advance(PhaseShowTell); err != nil {
 		t.Fatal(err)
 	}
-	if resp := stage(url.Values{"id": {"4242"}, "action": {"stage"}}); resp.StatusCode != 404 {
+	if resp := stage(url.Values{"id": {"4242"}, "action": {"stage"}}); resp.StatusCode != 404 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("an unknown sign-up: want 404, got %d", resp.StatusCode)
 	}
 	// An error response must not fall through to the redirect — a second
@@ -894,36 +895,36 @@ func TestShowTellStage_Route(t *testing.T) {
 		t.Errorf("an error response must not carry a redirect, got Location %q", loc)
 	}
 	id := signupID(t, deps, "a")
-	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"stage"}}); resp.Header.Get("Location") != "/admin" {
+	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"stage"}}); resp.Header.Get("Location") != "/admin" { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("staging: want a redirect to /admin, got %q", resp.Header.Get("Location"))
 	}
 	if onStage, _ := deps.showtell.OnStage(); onStage == nil || onStage.ID != id {
 		t.Fatalf("the sign-up should be on stage, got %+v", onStage)
 	}
-	if resp := stage(url.Values{"id": {idValue(signupID(t, deps, "b"))}, "action": {"stage"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {idValue(signupID(t, deps, "b"))}, "action": {"stage"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("staging while someone is on stage: want 400, got %d", resp.StatusCode)
 	}
-	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"reveal"}}); resp.StatusCode != 303 {
+	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"reveal"}}); resp.StatusCode != 303 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("the reveal: want a redirect, got %d", resp.StatusCode)
 	}
 	if signup, _ := deps.showtell.ByID(id); signup == nil || !signup.IdentityRevealed {
 		t.Errorf("the reveal should be stored, got %+v", signup)
 	}
-	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"done"}}); resp.StatusCode != 303 {
+	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"done"}}); resp.StatusCode != 303 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("done: want a redirect, got %d", resp.StatusCode)
 	}
 	if signup, _ := deps.showtell.ByID(id); signup == nil || signup.Status != SignupPresented {
 		t.Errorf("the talk should be presented, got %+v", signup)
 	}
-	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"done"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"done"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("done on a presented talk: want 400, got %d", resp.StatusCode)
 	}
-	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"stage"}}); resp.StatusCode != 400 {
+	if resp := stage(url.Values{"id": {idValue(id)}, "action": {"stage"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("staging a presented talk: want 400, got %d", resp.StatusCode)
 	}
 
 	breakOnFault(t, deps.db, "showtell_update")
-	if resp := stage(url.Values{"id": {idValue(signupID(t, deps, "b"))}, "action": {"stage"}}); resp.StatusCode != 500 {
+	if resp := stage(url.Values{"id": {idValue(signupID(t, deps, "b"))}, "action": {"stage"}}); resp.StatusCode != 500 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a write failure: want 500, got %d", resp.StatusCode)
 	}
 }
@@ -940,16 +941,17 @@ func TestShowTellMoveAndRemove_Routes(t *testing.T) {
 	signUp(t, deps, "a", "A")
 	signUp(t, deps, "b", "B")
 
+	// move wraps post; its t.Cleanup closes the body.
 	move := func(form url.Values) *http.Response {
 		return post(t, srv, "/admin/showtell/move", form)
 	}
-	if resp := move(url.Values{"id": {"nope"}, "dir": {"up"}}); resp.StatusCode != 400 {
+	if resp := move(url.Values{"id": {"nope"}, "dir": {"up"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a malformed id: want 400, got %d", resp.StatusCode)
 	}
-	if resp := move(url.Values{"id": {idValue(signupID(t, deps, "a"))}, "dir": {"sideways"}}); resp.StatusCode != 400 {
+	if resp := move(url.Values{"id": {idValue(signupID(t, deps, "a"))}, "dir": {"sideways"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("an unknown direction: want 400, got %d", resp.StatusCode)
 	}
-	if resp := move(url.Values{"id": {idValue(signupID(t, deps, "b"))}, "dir": {"up"}}); resp.StatusCode != 303 {
+	if resp := move(url.Values{"id": {idValue(signupID(t, deps, "b"))}, "dir": {"up"}}); resp.StatusCode != 303 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a reorder: want a redirect, got %d", resp.StatusCode)
 	}
 	queue, err := deps.showtell.Queue()
@@ -960,13 +962,14 @@ func TestShowTellMoveAndRemove_Routes(t *testing.T) {
 		t.Errorf("b should have moved up, got %v", queue)
 	}
 
+	// remove wraps post; its t.Cleanup closes the body.
 	remove := func(form url.Values) *http.Response {
 		return post(t, srv, "/admin/showtell/remove", form)
 	}
-	if resp := remove(url.Values{"id": {"nope"}}); resp.StatusCode != 400 {
+	if resp := remove(url.Values{"id": {"nope"}}); resp.StatusCode != 400 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a malformed id: want 400, got %d", resp.StatusCode)
 	}
-	if resp := remove(url.Values{"id": {idValue(signupID(t, deps, "a"))}}); resp.StatusCode != 303 {
+	if resp := remove(url.Values{"id": {idValue(signupID(t, deps, "a"))}}); resp.StatusCode != 303 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a remove: want a redirect, got %d", resp.StatusCode)
 	}
 	if signup, _ := deps.showtell.ForParticipant("a"); signup != nil {
@@ -975,11 +978,11 @@ func TestShowTellMoveAndRemove_Routes(t *testing.T) {
 
 	signUp(t, deps, "a", "A again")
 	breakOnFault(t, deps.db, "showtell_update")
-	if resp := move(url.Values{"id": {idValue(signupID(t, deps, "b"))}, "dir": {"down"}}); resp.StatusCode != 500 {
+	if resp := move(url.Values{"id": {idValue(signupID(t, deps, "b"))}, "dir": {"down"}}); resp.StatusCode != 500 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a write failure on move: want 500, got %d", resp.StatusCode)
 	}
 	breakOnFault(t, deps.db, "showtell_delete")
-	if resp := remove(url.Values{"id": {idValue(signupID(t, deps, "b"))}}); resp.StatusCode != 500 {
+	if resp := remove(url.Values{"id": {idValue(signupID(t, deps, "b"))}}); resp.StatusCode != 500 { //nolint:bodyclose // wraps post, whose t.Cleanup closes the body
 		t.Errorf("a write failure on remove: want 500, got %d", resp.StatusCode)
 	}
 }

@@ -51,7 +51,7 @@ func (u *upstream) RoundTrip(req *http.Request) (*http.Response, error) {
 	} else {
 		status, respBody := h(req)
 		rec.WriteHeader(status)
-		io.WriteString(rec, respBody)
+		_, _ = io.WriteString(rec, respBody) // into an httptest recorder: cannot fail
 	}
 	return rec.Result(), nil
 }

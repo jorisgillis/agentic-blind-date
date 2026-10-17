@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // loadDotEnv sets environment variables from a KEY=value file, without
@@ -30,7 +31,9 @@ func loadDotEnv(path string) {
 			val = val[1 : len(val)-1]
 		}
 		if os.Getenv(key) == "" {
-			os.Setenv(key, val)
+			// A key Setenv rejects (an embedded NUL, say) is simply left
+			// unset, exactly like a line that is not there.
+			_ = os.Setenv(key, val)
 		}
 	}
 }
@@ -61,7 +64,7 @@ func main() {
 		logger("main").Error("DB init", "err", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // process exit is next; the close error cannot matter
 
 	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"), GitHubBaseURL(os.Getenv))
 
@@ -88,6 +91,8 @@ func main() {
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: buildMux(h),
+		// A stalled client must not hold a connection open forever (G112).
+		ReadHeaderTimeout: 10 * time.Second,
 		// Handler panics and other server errors arrive as leveled slog lines.
 		ErrorLog: slog.NewLogLogger(logger("server").Handler(), slog.LevelError),
 	}

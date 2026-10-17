@@ -82,11 +82,11 @@ func backfillMeetCodes(db *DB) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 	var ids []string
 	for rows.Next() {
 		var id string
-		rows.Scan(&id) // rows.Err(), returned below, reports a row that fails to scan
+		_ = rows.Scan(&id) // a TEXT column into a string: cannot fail
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {

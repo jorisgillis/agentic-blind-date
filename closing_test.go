@@ -410,8 +410,8 @@ func TestClosing_BestMatches(t *testing.T) {
 		// Test setup that deliberately bypasses guarded transitions: a
 		// dangling matched_with names a partner that does not exist, which
 		// no pairing operation produces.
-		db.db.Exec(`UPDATE participants SET matched_with = 'ghost' WHERE id = 'aa'`)
-		db.db.Exec(`UPDATE participants SET matched_with = '' WHERE id = 'bb'`)
+		mustExec(t, db, `UPDATE participants SET matched_with = 'ghost' WHERE id = 'aa'`)
+		mustExec(t, db, `UPDATE participants SET matched_with = '' WHERE id = 'bb'`)
 		if matches := closing.BestMatches(); len(matches) != 0 {
 			t.Errorf("a pair whose partner left is skipped, got %+v", matches)
 		}
@@ -819,14 +819,14 @@ func TestClosing_MeetingConfirmationIsDisabledWhenClosed(t *testing.T) {
 	bbb := reload(t, deps.db, "bbb")
 	req, _ := http.NewRequest("POST", srv.URL+"/user/met/aaa", strings.NewReader(url.Values{"code": {bbb.MeetCode}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(&http.Cookie{Name: cookieName, Value: "aaa"})
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: "aaa"}) //nolint:gosec // G124: an outgoing test request, no browser and no attributes to set
 	client := srv.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { resp.Body.Close() })
+	t.Cleanup(func() { _ = resp.Body.Close() })
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("confirming a meeting when closed: want 400, got %d", resp.StatusCode)
 	}
