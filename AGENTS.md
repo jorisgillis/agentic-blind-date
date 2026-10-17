@@ -30,6 +30,10 @@ Uses default GitHub label vocabulary. See `docs/agents/triage-labels.md`.
 
 Single-context repository with `CONTEXT.md` and `docs/adr/` at the root. See `docs/agents/domain.md`.
 
+### Quality self-check
+
+Every session ends by running the checks its changes require. See `docs/agents/self-check.md`; the quality system as a whole is specified in `docs/quality-system-spec.md`.
+
 ## Project Documentation
 
 For a comprehensive overview of the project architecture, components, workflow, and technical details, see:

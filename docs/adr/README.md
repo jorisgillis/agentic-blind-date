@@ -40,6 +40,12 @@ Each ADR follows this structure:
 
 | [0019](0019-participant-page-layout.md) | Participant Page Layout — Phase-Progressive Disclosure with a Persistent Phase Header | Accepted | 2026-10-11 |
 | [0020](0020-shared-llm-concurrency-bound.md) | Shared LLM Concurrency Bound | Accepted | 2026-10-14 |
+| [0021](0021-single-quality-command.md) | One Quality Command — `scripts/quality.sh` | Accepted | 2026-10-17 |
+| [0022](0022-route-census-table.md) | The Route Census — a Declarative Route Table | Accepted | 2026-10-17 |
+| [0023](0023-crap-complexity-gate.md) | The CRAP Complexity Gate | Accepted | 2026-10-17 |
+| [0024](0024-mutation-testing-decision-logic.md) | Mutation Testing on the Decision Logic | Accepted | 2026-10-17 |
+| [0025](0025-gherkin-journey-suite.md) | The Gherkin Journey Suite under godog | Accepted | 2026-10-17 |
+| [0026](0026-retrofit-sequencing.md) | The Retrofit — Sequencing, Slices, and the Derived Queue | Accepted | 2026-10-17 |
 
 ## When to Create an ADR
 
