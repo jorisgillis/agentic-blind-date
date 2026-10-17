@@ -30,7 +30,9 @@ Three constraints shape the design:
 4. `go test -shuffle=on -race -coverprofile=coverage.out .` — **root package only** (a `./...` pattern trips `go: no such tool "covdata"` on Go 1.26.2 when a package has no test files); `-race` stays in `check` per ADR-0020, demoted to `nightly` only if it blows the CI budget once measured
 5. coverage gate (`scripts/check-coverage.sh`, ADR-0008) — **blocking, no ratchet**: retrofit step zero fixes the 4 red theme-WIP functions first
 6. CRAP gate — `scripts/crap` (ADR-0023) fed `coverage.out`, under the ratchet during retrofit
-7. `govulncheck ./...` — blocking, adopted together with the Go 1.26.3 toolchain bump (cures 25 reachable vulns) so it starts green
+7. `govulncheck ./...` — blocking, adopted together with a Go toolchain bump so it starts green
+
+> Amended 2026-10-17, at implementation: the bump shipped as **go1.26.9**, not 1.26.3 — on 1.26.3, govulncheck still reported 21 reachable stdlib vulnerabilities (net/http, html/template, crypto/tls, …; fixes spanning 1.26.4–1.26.9). The research-era "1.26.3 cures it" premise was stale; the ADR's remedy (bump to a patch level where govulncheck is green) was applied at today's level. Nothing suppressed.
 
 **`hook` (advisory, ~2 s, run pre-commit):** `gofmt -l`, `go vet ./...`, `golangci-lint run --new-from-rev HEAD`. Tests stay out of the hook: warm cache is 8.4 s but cold is 63 s (CGO/go-sqlite3), and mid-task commits legitimately have red tests.
 
