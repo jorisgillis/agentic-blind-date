@@ -130,19 +130,14 @@ func NewShowTell(db *DB, llm LLM) *ShowTell {
 // place in the queue and the status stay). Late sign-ups join the tail. The
 // sign-up is open during the social and show & tell only.
 func (s *ShowTell) Signup(p *Participant, title, description, repoURL string) error {
-	title = strings.TrimSpace(title)
-	description = strings.TrimSpace(description)
-	repoURL = strings.TrimSpace(repoURL)
-	if title == "" {
-		return fmt.Errorf("%w: a title is required", ErrInvalidSignup)
-	}
-	if repoURL != "" && !strings.HasPrefix(repoURL, "http://") && !strings.HasPrefix(repoURL, "https://") {
-		return fmt.Errorf("%w: the repo link must start with http:// or https://", ErrInvalidSignup)
+	title, description, repoURL, err := validateSignup(title, description, repoURL)
+	if err != nil {
+		return err
 	}
 	if phase := s.events.State(); !phase.AllowsShowTell() {
 		return fmt.Errorf("%w: the event is in the %s phase", ErrShowTellClosed, phase)
 	}
-	err := s.db.inTx(func(tx *sql.Tx) error {
+	err = s.db.inTx(func(tx *sql.Tx) error {
 		// One sign-up per Participant; a new one takes the next free place,
 		// so late sign-ups join the tail of the queue.
 		_, err := tx.Exec(`
@@ -160,6 +155,30 @@ func (s *ShowTell) Signup(p *Participant, title, description, repoURL string) er
 	}
 	s.db.LogActivity(fmt.Sprintf("🎤 %s signed up for show & tell: %q", p.PersonaName, title))
 	return nil
+}
+
+// validateSignup trims the sign-up's fields and validates them: a title is
+// required, and a repo link, when given, must be an http(s) URL.
+func validateSignup(title, description, repoURL string) (string, string, string, error) {
+	title = strings.TrimSpace(title)
+	description = strings.TrimSpace(description)
+	repoURL = strings.TrimSpace(repoURL)
+	if title == "" {
+		return "", "", "", fmt.Errorf("%w: a title is required", ErrInvalidSignup)
+	}
+	if !validRepoURL(repoURL) {
+		return "", "", "", fmt.Errorf("%w: the repo link must start with http:// or https://", ErrInvalidSignup)
+	}
+	return title, description, repoURL, nil
+}
+
+// validRepoURL reports whether a repo link is acceptable: empty (no link) or
+// an http(s) URL.
+func validRepoURL(repoURL string) bool {
+	if repoURL == "" {
+		return true
+	}
+	return strings.HasPrefix(repoURL, "http://") || strings.HasPrefix(repoURL, "https://")
 }
 
 // Queue returns every sign-up, in queue order — the host console's view: the
@@ -226,18 +245,35 @@ func (s *ShowTell) QueuePosition(participantID string) int {
 // when any of them changes.
 func (s *ShowTell) Signature(participantID string) string {
 	var b strings.Builder
+	s.writeSignupSignature(&b, participantID)
+	s.writeQuestionSignature(&b, participantID)
+	s.writeStageSignature(&b)
+	return b.String()
+}
+
+// writeSignupSignature appends the Participant's sign-up state — queued (and
+// where in the queue), on stage, presented, revealed — when they have one.
+func (s *ShowTell) writeSignupSignature(b *strings.Builder, participantID string) {
 	if signup, err := s.ForParticipant(participantID); err == nil && signup != nil {
-		fmt.Fprintf(&b, "%d:%s:%d:%t;", signup.ID, signup.Status, signup.Position, signup.IdentityRevealed)
+		fmt.Fprintf(b, "%d:%s:%d:%t;", signup.ID, signup.Status, signup.Position, signup.IdentityRevealed)
 	}
+}
+
+// writeQuestionSignature appends the Participant's questions' states.
+func (s *ShowTell) writeQuestionSignature(b *strings.Builder, participantID string) {
 	if questions, err := s.QuestionsForParticipant(participantID); err == nil {
 		for _, q := range questions {
-			fmt.Fprintf(&b, "%d:%s;", q.ID, q.Status)
+			fmt.Fprintf(b, "%d:%s;", q.ID, q.Status)
 		}
 	}
+}
+
+// writeStageSignature appends who is on stage, because the section's
+// question form depends on the presenter.
+func (s *ShowTell) writeStageSignature(b *strings.Builder) {
 	if onStage, err := s.OnStage(); err == nil && onStage != nil {
-		fmt.Fprintf(&b, "stage:%d;", onStage.ID)
+		fmt.Fprintf(b, "stage:%d;", onStage.ID)
 	}
-	return b.String()
 }
 
 // Stage puts a queued sign-up on stage: the Big Screen's presenter mode shows
@@ -254,20 +290,9 @@ func (s *ShowTell) Stage(id int64) (*ShowTellSignup, error) {
 	if err != nil {
 		return nil, err
 	}
-	var signup *ShowTellSignup
-	for i := range queue {
-		if queue[i].Status == SignupOnStage {
-			return nil, fmt.Errorf("%w: %s %s is on stage", ErrAlreadyOnStage, queue[i].PersonaSymbol, queue[i].PersonaName)
-		}
-		if queue[i].ID == id {
-			signup = &queue[i]
-		}
-	}
-	if signup == nil {
-		return nil, ErrSignupNotFound
-	}
-	if signup.Status != SignupQueued {
-		return nil, fmt.Errorf("%w: already %s", ErrSignupNotQueued, signup.Status)
+	signup, err := stageCandidate(queue, id)
+	if err != nil {
+		return nil, err
 	}
 	// The Hype Agent writes the intro line before the write, so staging never
 	// holds a transaction across an LLM call.
@@ -284,6 +309,45 @@ func (s *ShowTell) Stage(id int64) (*ShowTellSignup, error) {
 	return signup, nil
 }
 
+// stageCandidate finds the sign-up to stage in the queue, rejecting staging
+// while another sign-up is on stage, an unknown id, and a sign-up that is
+// not waiting in the queue (a talk that already happened).
+func stageCandidate(queue []ShowTellSignup, id int64) (*ShowTellSignup, error) {
+	if onStage := onStageSignup(queue); onStage != nil {
+		return nil, fmt.Errorf("%w: %s %s is on stage", ErrAlreadyOnStage, onStage.PersonaSymbol, onStage.PersonaName)
+	}
+	signup := queueByID(queue, id)
+	if signup == nil {
+		return nil, ErrSignupNotFound
+	}
+	if signup.Status != SignupQueued {
+		return nil, fmt.Errorf("%w: already %s", ErrSignupNotQueued, signup.Status)
+	}
+	return signup, nil
+}
+
+// onStageSignup returns the sign-up on stage in the queue, nil when the
+// stage is empty.
+func onStageSignup(queue []ShowTellSignup) *ShowTellSignup {
+	for i := range queue {
+		if queue[i].Status == SignupOnStage {
+			return &queue[i]
+		}
+	}
+	return nil
+}
+
+// queueByID returns the sign-up with the given id in the queue, nil when the
+// id is not in it.
+func queueByID(queue []ShowTellSignup, id int64) *ShowTellSignup {
+	for i := range queue {
+		if queue[i].ID == id {
+			return &queue[i]
+		}
+	}
+	return nil
+}
+
 // RevealIdentity flips the on-stage presenter's card to their GitHub
 // handle/name — the only place an identity leaves the server besides the
 // owner's own recap. Idempotent: a second reveal is a no-op.
@@ -291,15 +355,9 @@ func (s *ShowTell) RevealIdentity(id int64) (*ShowTellSignup, error) {
 	if phase := s.events.State(); !phase.IsShowTell() {
 		return nil, fmt.Errorf("%w: the event is in the %s phase", ErrShowTellClosed, phase)
 	}
-	signup, err := s.ByID(id)
+	signup, err := s.onStageByID(id)
 	if err != nil {
 		return nil, err
-	}
-	if signup == nil {
-		return nil, ErrSignupNotFound
-	}
-	if signup.Status != SignupOnStage {
-		return nil, fmt.Errorf("%w: it is %s", ErrNotOnStage, signup.Status)
 	}
 	if signup.IdentityRevealed {
 		return signup, nil
@@ -321,15 +379,9 @@ func (s *ShowTell) Done(id int64) (*ShowTellSignup, error) {
 	if phase := s.events.State(); !phase.IsShowTell() {
 		return nil, fmt.Errorf("%w: the event is in the %s phase", ErrShowTellClosed, phase)
 	}
-	signup, err := s.ByID(id)
+	signup, err := s.onStageByID(id)
 	if err != nil {
 		return nil, err
-	}
-	if signup == nil {
-		return nil, ErrSignupNotFound
-	}
-	if signup.Status != SignupOnStage {
-		return nil, fmt.Errorf("%w: it is %s", ErrNotOnStage, signup.Status)
 	}
 	err = s.db.inTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`UPDATE showtell_signups SET status = ? WHERE id = ?`, SignupPresented, id)
@@ -340,6 +392,22 @@ func (s *ShowTell) Done(id int64) (*ShowTellSignup, error) {
 	}
 	signup.Status = SignupPresented
 	s.db.LogActivity(fmt.Sprintf("✅ %s %s presented %q", signup.PersonaSymbol, signup.PersonaName, signup.Title))
+	return signup, nil
+}
+
+// onStageByID reads the sign-up and guards that it is on stage: the identity
+// reveal and Done act on the presenter only.
+func (s *ShowTell) onStageByID(id int64) (*ShowTellSignup, error) {
+	signup, err := s.ByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if signup == nil {
+		return nil, ErrSignupNotFound
+	}
+	if signup.Status != SignupOnStage {
+		return nil, fmt.Errorf("%w: it is %s", ErrNotOnStage, signup.Status)
+	}
 	return signup, nil
 }
 
@@ -354,8 +422,41 @@ func (s *ShowTell) Move(id int64, dir string) error {
 	if err != nil {
 		return err
 	}
-	// The queued sign-ups, in queue order; from is the sign-up's place among
-	// them, -1 when it is not queued (unknown, on stage or presented).
+	a, b, ok := swapPair(queue, id, dir)
+	if !ok {
+		return nil
+	}
+	return s.db.inTx(func(tx *sql.Tx) error {
+		// One statement swaps the two places, so the reorder is atomic.
+		_, err := tx.Exec(
+			`UPDATE showtell_signups SET position = CASE id WHEN ? THEN ? WHEN ? THEN ? END WHERE id IN (?, ?)`,
+			a.ID, b.Position, b.ID, a.Position, a.ID, b.ID)
+		return err
+	})
+}
+
+// swapPair finds the sign-up and the neighbour it swaps places with, ok=false
+// when there is no swap to make: the sign-up is not queued, or it already
+// sits at the head or the tail of the queue.
+func swapPair(queue []ShowTellSignup, id int64, dir string) (a, b ShowTellSignup, ok bool) {
+	from, queued := queuedIndex(queue, id)
+	if from < 0 {
+		return a, b, false
+	}
+	to := from - 1
+	if dir == "down" {
+		to = from + 1
+	}
+	if to < 0 || to >= len(queued) {
+		return a, b, false
+	}
+	return queued[from], queued[to], true
+}
+
+// queuedIndex returns the queued sign-ups in queue order and the sign-up's
+// place among them, -1 when it is not queued (unknown, on stage or
+// presented).
+func queuedIndex(queue []ShowTellSignup, id int64) (int, []ShowTellSignup) {
 	from := -1
 	var queued []ShowTellSignup
 	for _, signup := range queue {
@@ -367,24 +468,7 @@ func (s *ShowTell) Move(id int64, dir string) error {
 		}
 		queued = append(queued, signup)
 	}
-	if from < 0 {
-		return nil
-	}
-	to := from - 1
-	if dir == "down" {
-		to = from + 1
-	}
-	if to < 0 || to >= len(queued) {
-		return nil // already at the head or the tail of the queue
-	}
-	a, b := queued[from], queued[to]
-	return s.db.inTx(func(tx *sql.Tx) error {
-		// One statement swaps the two places, so the reorder is atomic.
-		_, err := tx.Exec(
-			`UPDATE showtell_signups SET position = CASE id WHEN ? THEN ? WHEN ? THEN ? END WHERE id IN (?, ?)`,
-			a.ID, b.Position, b.ID, a.Position, a.ID, b.ID)
-		return err
-	})
+	return from, queued
 }
 
 // Remove takes a sign-up out of the queue, whatever its status — and the

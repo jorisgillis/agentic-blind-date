@@ -110,6 +110,24 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 	if c.httpClient == nil {
 		return "", &chatError{msg: "httpClient not initialized"}
 	}
+	body, _ := json.Marshal(c.chatRequest(system, user)) // a chatReq always marshals
+	httpReq, err := c.newChatRequest(body)
+	if err != nil {
+		return "", err
+	}
+	status, respBody, err := c.postChat(httpReq)
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", c.statusError(status, respBody)
+	}
+	return parseChatReply(respBody)
+}
+
+// chatRequest assembles the chat completions request, JSON mode included
+// when the client is configured for it.
+func (c *OpenAIClient) chatRequest(system, user string) chatReq {
 	req := chatReq{
 		Model: c.model,
 		Messages: []chatMsg{
@@ -123,48 +141,61 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 	if c.jsonMode {
 		req.ResponseFormat = &responseFormat{Type: "json_object"}
 	}
-	body, _ := json.Marshal(req)
+	return req
+}
 
+// newChatRequest builds the HTTP request for the chat completions endpoint,
+// with the Authorization header the provider needs.
+func (c *OpenAIClient) newChatRequest(body []byte) (*http.Request, error) {
 	httpReq, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body)) //nolint:gosec // G704: the base URL is operator configuration, not user input
 	if err != nil {
-		return "", &chatError{msg: fmt.Sprintf("LLM: invalid base URL %q: %v", c.baseURL, err)}
+		return nil, &chatError{msg: fmt.Sprintf("LLM: invalid base URL %q: %v", c.baseURL, err)}
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
+	return httpReq, nil
+}
 
+// postChat sends the request and reads the whole response body. The body is
+// fully drained, so closing it afterwards cannot matter.
+func (c *OpenAIClient) postChat(httpReq *http.Request) (status int, body []byte, err error) {
 	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // G704: carries the operator-configured base URL, not user input
 	if err != nil {
-		return "", &chatError{msg: err.Error(), retryable: true}
+		return 0, nil, &chatError{msg: err.Error(), retryable: true}
 	}
-	// The body is drained below before the return, so the close cannot matter.
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	body, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return "", &chatError{msg: err.Error(), retryable: true}
+		return 0, nil, &chatError{msg: err.Error(), retryable: true}
 	}
+	return resp.StatusCode, body, nil
+}
 
-	if resp.StatusCode != http.StatusOK {
-		text := errorText(respBody)
-		if resp.StatusCode == http.StatusNotFound {
-			logger("llm").Warn("model not found — try pulling it first", "model", c.model, "detail", text)
-		}
-		msg := fmt.Sprintf("LLM HTTP %d: %s", resp.StatusCode, text)
-		if resp.StatusCode == http.StatusTooManyRequests {
-			// #35: a 429 often means a workspace or organisation spending cap, not a rate limit.
-			msg += " — this may be a workspace or organisation spending cap rather than an ordinary rate limit"
-		}
-		return "", &chatError{
-			msg:       msg,
-			retryable: retryableStatus(resp.StatusCode),
-		}
+// statusError turns a non-200 response into a chatError.
+func (c *OpenAIClient) statusError(status int, body []byte) *chatError {
+	text := errorText(body)
+	if status == http.StatusNotFound {
+		logger("llm").Warn("model not found — try pulling it first", "model", c.model, "detail", text)
 	}
+	msg := fmt.Sprintf("LLM HTTP %d: %s", status, text)
+	if status == http.StatusTooManyRequests {
+		// #35: a 429 often means a workspace or organisation spending cap, not a rate limit.
+		msg += " — this may be a workspace or organisation spending cap rather than an ordinary rate limit"
+	}
+	return &chatError{
+		msg:       msg,
+		retryable: retryableStatus(status),
+	}
+}
 
+// parseChatReply decodes a successful response body into the reply text.
+func parseChatReply(body []byte) (string, error) {
 	var result chatResp
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", &chatError{msg: fmt.Sprintf("LLM parse error: %v (body: %s)", err, respBody)}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", &chatError{msg: fmt.Sprintf("LLM parse error: %v (body: %s)", err, body)}
 	}
 	if len(result.Choices) == 0 {
 		return "", &chatError{msg: "LLM returned no choices"}
@@ -176,52 +207,93 @@ func (c *OpenAIClient) doChat(system, user string) (string, error) {
 // body: error.message (Mistral, Scaleway), a top-level message (Scaleway's
 // older shape), detail (Mistral validation errors), and finally the raw body.
 func errorText(body []byte) string {
-	var e struct {
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-		Message string          `json:"message"`
-		Detail  json.RawMessage `json:"detail"`
+	text, ok := jsonErrorText(body)
+	if !ok {
+		return string(body)
 	}
-	if json.Unmarshal(body, &e) == nil {
-		if e.Error != nil && e.Error.Message != "" {
-			return e.Error.Message
-		}
-		if e.Message != "" {
-			return e.Message
-		}
-		if len(e.Detail) > 0 {
-			if text := detailText(e.Detail); text != "" {
-				return text
-			}
-		}
+	return text
+}
+
+// jsonErrorText reads the provider's error explanation fields from the body,
+// ok=false when the body is not JSON or carries none.
+func jsonErrorText(body []byte) (string, bool) {
+	var e providerErrorBody
+	if json.Unmarshal(body, &e) != nil {
+		return "", false
 	}
-	return string(body)
+	return e.explanation()
+}
+
+// providerErrorBody is the shape of a provider's error JSON.
+type providerErrorBody struct {
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	Message string          `json:"message"`
+	Detail  json.RawMessage `json:"detail"`
+}
+
+// explanation picks the parsed body's error explanation, in order:
+// error.message, a top-level message, then the validation detail. ok=false
+// when the body carries none of them.
+func (e *providerErrorBody) explanation() (string, bool) {
+	if e.Error != nil && e.Error.Message != "" {
+		return e.Error.Message, true
+	}
+	if e.Message != "" {
+		return e.Message, true
+	}
+	return e.detail()
+}
+
+// detail reads the validation-error "detail", ok=false when the body carries
+// none or it holds nothing.
+func (e *providerErrorBody) detail() (string, bool) {
+	text := ""
+	if len(e.Detail) > 0 {
+		text = detailText(e.Detail)
+	}
+	return text, text != ""
 }
 
 // detailText reads a validation-error "detail", either a plain string or
 // FastAPI's shape (Mistral's own 422s): a list of {"msg": "..."} objects,
 // joined into one line. Anything else falls back to the raw JSON.
 func detailText(detail json.RawMessage) string {
-	var s string
-	if json.Unmarshal(detail, &s) == nil && s != "" {
+	if s := stringDetail(detail); s != "" {
 		return s
 	}
+	if msgs := msgList(detail); len(msgs) > 0 {
+		return strings.Join(msgs, "; ")
+	}
+	return string(detail)
+}
+
+// stringDetail reads a plain-string detail, "" when the detail is not one.
+func stringDetail(detail json.RawMessage) string {
+	var s string
+	if json.Unmarshal(detail, &s) == nil {
+		return s
+	}
+	return ""
+}
+
+// msgList reads a FastAPI-shaped detail's non-empty messages, nil when the
+// detail is not that shape.
+func msgList(detail json.RawMessage) []string {
 	var items []struct {
 		Msg string `json:"msg"`
 	}
-	if json.Unmarshal(detail, &items) == nil && len(items) > 0 {
-		msgs := make([]string, 0, len(items))
-		for _, item := range items {
-			if item.Msg != "" {
-				msgs = append(msgs, item.Msg)
-			}
-		}
-		if len(msgs) > 0 {
-			return strings.Join(msgs, "; ")
+	if json.Unmarshal(detail, &items) != nil || len(items) == 0 {
+		return nil
+	}
+	var msgs []string
+	for _, item := range items {
+		if item.Msg != "" {
+			msgs = append(msgs, item.Msg)
 		}
 	}
-	return string(detail)
+	return msgs
 }
 
 // Chat sends the system and user prompts and returns the reply, retrying a
@@ -239,12 +311,18 @@ func (c *OpenAIClient) Chat(system, user string) (string, error) {
 			return result, nil
 		}
 		lastErr = err
-		var ce *chatError
-		if errors.As(err, &ce) && !ce.retryable {
+		if permanentChatError(err) {
 			break
 		}
 	}
 	return "", lastErr
+}
+
+// permanentChatError reports whether err is a chat failure not worth
+// retrying: a permanent error returns immediately.
+func permanentChatError(err error) bool {
+	var ce *chatError
+	return errors.As(err, &ce) && !ce.retryable
 }
 
 // defaultLLMConcurrency is the shared bound on concurrent LLM calls across

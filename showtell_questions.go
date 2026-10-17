@@ -126,18 +126,15 @@ func questionRow(row *sql.Row) (*ShowTellQuestion, error) {
 // only while someone is on stage.
 func (s *ShowTell) Ask(p *Participant, text string) error {
 	text = strings.TrimSpace(text)
-	if text == "" || len(text) > maxQuestionLength {
+	if !validQuestionText(text) {
 		return fmt.Errorf("%w: the question needs 1–%d characters", ErrInvalidQuestion, maxQuestionLength)
 	}
 	if phase := s.events.State(); !phase.IsShowTell() {
 		return fmt.Errorf("%w: the event is in the %s phase", ErrShowTellClosed, phase)
 	}
-	presenter, err := s.OnStage()
+	presenter, err := s.questionPresenter()
 	if err != nil {
 		return err
-	}
-	if presenter == nil {
-		return ErrNoPresenter
 	}
 	err = s.db.inTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`INSERT INTO showtell_questions (participant_id, signup_id, text) VALUES (?, ?, ?)`,
@@ -149,6 +146,25 @@ func (s *ShowTell) Ask(p *Participant, text string) error {
 	}
 	s.db.LogActivity(fmt.Sprintf("❓ %s %s asks: %q", p.PersonaSymbol, p.PersonaName, text))
 	return nil
+}
+
+// validQuestionText reports whether a question's text fits the cap: one to
+// maxQuestionLength characters.
+func validQuestionText(text string) bool {
+	return text != "" && len(text) <= maxQuestionLength
+}
+
+// questionPresenter returns the on-stage sign-up a question binds to:
+// nobody is on stage is an error, not a silent drop.
+func (s *ShowTell) questionPresenter() (*ShowTellSignup, error) {
+	presenter, err := s.OnStage()
+	if err != nil {
+		return nil, err
+	}
+	if presenter == nil {
+		return nil, ErrNoPresenter
+	}
+	return presenter, nil
 }
 
 // Questions returns every question, in submission order — the host console's
@@ -203,15 +219,44 @@ func (s *ShowTell) TransitionQuestion(id int64, to QuestionStatus) (*ShowTellQue
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if to == QuestionAsked {
-		current, err := s.CurrentQuestion()
-		if err != nil {
-			return nil, err
-		}
-		if current != nil {
-			return nil, fmt.Errorf("%w: %s %s is being asked", ErrAlreadyAsked, current.PersonaSymbol, current.PersonaName)
-		}
+	if err := s.guardAskSlot(to); err != nil {
+		return nil, err
 	}
+	question, err := s.transitionableQuestion(id, to)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.inTx(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE showtell_questions SET status = ? WHERE id = ?`, to, id)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	question.Status = to
+	s.logTransition(question)
+	return question, nil
+}
+
+// guardAskSlot rejects putting a question on the Big Screen while another is
+// being asked: one current question at a time.
+func (s *ShowTell) guardAskSlot(to QuestionStatus) error {
+	if to != QuestionAsked {
+		return nil
+	}
+	current, err := s.CurrentQuestion()
+	if err != nil {
+		return err
+	}
+	if current != nil {
+		return fmt.Errorf("%w: %s %s is being asked", ErrAlreadyAsked, current.PersonaSymbol, current.PersonaName)
+	}
+	return nil
+}
+
+// transitionableQuestion reads the question and guards the transition:
+// an unknown id, or a status it cannot reach.
+func (s *ShowTell) transitionableQuestion(id int64, to QuestionStatus) (*ShowTellQuestion, error) {
 	question, err := s.QuestionByID(id)
 	if err != nil {
 		return nil, err
@@ -222,15 +267,12 @@ func (s *ShowTell) TransitionQuestion(id int64, to QuestionStatus) (*ShowTellQue
 	if !canTransition(question.Status, to) {
 		return nil, fmt.Errorf("%w: %s → %s", ErrInvalidQuestionTransition, question.Status, to)
 	}
-	err = s.db.inTx(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE showtell_questions SET status = ? WHERE id = ?`, to, id)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	question.Status = to
-	switch to {
+	return question, nil
+}
+
+// logTransition logs the question's transition to the activity feed.
+func (s *ShowTell) logTransition(question *ShowTellQuestion) {
+	switch question.Status {
 	case QuestionAsked:
 		s.db.LogActivity(fmt.Sprintf("❓ On the big screen: %s %s's question", question.PersonaSymbol, question.PersonaName))
 	case QuestionAnswered:
@@ -238,5 +280,4 @@ func (s *ShowTell) TransitionQuestion(id int64, to QuestionStatus) (*ShowTellQue
 	case QuestionDismissed:
 		s.db.LogActivity(fmt.Sprintf("🗑 Dismissed: %s %s's question", question.PersonaSymbol, question.PersonaName))
 	}
-	return question, nil
 }

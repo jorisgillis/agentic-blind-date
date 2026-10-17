@@ -143,66 +143,106 @@ type ParticipantChange struct {
 func (s *ParticipantStore) Change(changes ...ParticipantChange) error {
 	return s.db.inTx(func(tx *sql.Tx) error {
 		for _, c := range changes {
-			if c.Delete {
-				if err := execFound(tx, c.ID, `DELETE FROM participants WHERE id = ?`, c.ID); err != nil {
-					return err
-				}
-				continue
-			}
-			if c.Interests != nil {
-				encoded, _ := json.Marshal(c.Interests) // plain data: cannot fail
-				if err := execFound(tx, c.ID, `UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
-					return err
-				}
-			}
-			if c.Match != nil {
-				red, green, ice := encodeMatchResult(c.Match)
-				if err := execFound(tx, c.ID, `
-					UPDATE participants SET compat_score = ?, compat_reason = ?,
-					    red_flags = ?, green_flags = ?, icebreakers = ?
-					WHERE id = ?`, c.Match.Score, c.Match.Reason, red, green, ice, c.ID); err != nil {
-					return err
-				}
-			}
-			if c.MatchedWith != nil {
-				// Every writer of the pairing data goes through the
-				// Relationships module: its mutex-serialized read-then-write
-				// is what keeps the Key Invariant.
-				if err := execFound(tx, c.ID, `UPDATE participants SET matched_with = ? WHERE id = ?`, *c.MatchedWith, c.ID); err != nil {
-					return err
-				}
-			}
-			if c.Persona != nil {
-				if err := execFound(tx, c.ID, `UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`,
-					c.Persona.Name, c.Persona.Tagline, c.ID); err != nil {
-					return err
-				}
-			}
-			if c.Profile != nil {
-				encoded, _ := json.Marshal(c.Profile) // plain data: cannot fail
-				if err := execFound(tx, c.ID, `UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
-					return err
-				}
-			}
-			if c.Answers != nil {
-				encoded, _ := json.Marshal(c.Answers) // plain data: cannot fail
-				if err := execFound(tx, c.ID, `UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), c.ID); err != nil {
-					return err
-				}
-			}
-			if c.PipelineStep != nil {
-				if err := advanceStep(tx, c.ID, *c.PipelineStep); err != nil {
-					return err
-				}
-			}
-			if c.Theme != nil {
-				if err := execFound(tx, c.ID, `UPDATE participants SET theme = ? WHERE id = ?`, *c.Theme, c.ID); err != nil {
-					return err
-				}
+			if err := applyChange(tx, c); err != nil {
+				return err
 			}
 		}
 		return nil
 	})
+}
+
+// applyChange applies one change's fields, in ParticipantChange's declared
+// order. Delete removes the Participant outright; every other field is
+// ignored when it is set.
+func applyChange(tx *sql.Tx, c ParticipantChange) error {
+	if c.Delete {
+		return execFound(tx, c.ID, `DELETE FROM participants WHERE id = ?`, c.ID)
+	}
+	for _, apply := range []func(*sql.Tx, ParticipantChange) error{
+		changeInterests, changeMatch, changeMatchedWith, changePersona, changeProfile, changeAnswers, changeStep, changeTheme,
+	} {
+		if err := apply(tx, c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// changeInterests stores the change's Interests, JSON-encoded.
+func changeInterests(tx *sql.Tx, c ParticipantChange) error {
+	if c.Interests == nil {
+		return nil
+	}
+	encoded, _ := json.Marshal(c.Interests) // plain data: cannot fail
+	return execFound(tx, c.ID, `UPDATE participants SET interests = ? WHERE id = ?`, string(encoded), c.ID)
+}
+
+// changeMatch stores the change's Match assessment, its three lists JSON-encoded.
+func changeMatch(tx *sql.Tx, c ParticipantChange) error {
+	if c.Match == nil {
+		return nil
+	}
+	red, green, ice := encodeMatchResult(c.Match)
+	return execFound(tx, c.ID, `
+				UPDATE participants SET compat_score = ?, compat_reason = ?,
+				    red_flags = ?, green_flags = ?, icebreakers = ?
+				WHERE id = ?`, c.Match.Score, c.Match.Reason, red, green, ice, c.ID)
+}
+
+// changeMatchedWith stores who the Participant is matched with now; "" clears
+// it. Every writer of the pairing data goes through the Relationships
+// module: its mutex-serialized read-then-write is what keeps the Key
+// Invariant.
+func changeMatchedWith(tx *sql.Tx, c ParticipantChange) error {
+	if c.MatchedWith == nil {
+		return nil
+	}
+	return execFound(tx, c.ID, `UPDATE participants SET matched_with = ? WHERE id = ?`, *c.MatchedWith, c.ID)
+}
+
+// changePersona stores the change's Persona.
+func changePersona(tx *sql.Tx, c ParticipantChange) error {
+	if c.Persona == nil {
+		return nil
+	}
+	return execFound(tx, c.ID, `UPDATE participants SET persona_name = ?, persona_tagline = ? WHERE id = ?`,
+		c.Persona.Name, c.Persona.Tagline, c.ID)
+}
+
+// changeProfile stores the change's GitHub profile, JSON-encoded.
+func changeProfile(tx *sql.Tx, c ParticipantChange) error {
+	if c.Profile == nil {
+		return nil
+	}
+	encoded, _ := json.Marshal(c.Profile) // plain data: cannot fail
+	return execFound(tx, c.ID, `UPDATE participants SET profile_json = ? WHERE id = ?`, string(encoded), c.ID)
+}
+
+// changeAnswers stores the change's interview answers, JSON-encoded.
+func changeAnswers(tx *sql.Tx, c ParticipantChange) error {
+	if c.Answers == nil {
+		return nil
+	}
+	encoded, _ := json.Marshal(c.Answers) // plain data: cannot fail
+	return execFound(tx, c.ID, `UPDATE participants SET answers_json = ? WHERE id = ?`, string(encoded), c.ID)
+}
+
+// changeStep moves the Participant to the next Pipeline Step, guarded exactly
+// like advanceStep: only from the step right before it.
+func changeStep(tx *sql.Tx, c ParticipantChange) error {
+	if c.PipelineStep == nil {
+		return nil
+	}
+	return advanceStep(tx, c.ID, *c.PipelineStep)
+}
+
+// changeTheme stores the change's theme registry name (see theme.go) as-is —
+// themeByName absorbs unknown names at render.
+func changeTheme(tx *sql.Tx, c ParticipantChange) error {
+	if c.Theme == nil {
+		return nil
+	}
+	return execFound(tx, c.ID, `UPDATE participants SET theme = ? WHERE id = ?`, *c.Theme, c.ID)
 }
 
 // advanceStep moves a Participant to the next Pipeline Step, guarded:

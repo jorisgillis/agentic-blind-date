@@ -17,25 +17,38 @@ func loadDotEnv(path string) {
 		return
 	}
 	for line := range strings.SplitSeq(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+		key, val, ok := parseEnvLine(line)
+		if !ok || os.Getenv(key) != "" {
+			continue // not a KEY=value line, or the environment already wins
 		}
-		idx := strings.IndexByte(line, '=')
-		if idx < 1 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
-			val = val[1 : len(val)-1]
-		}
-		if os.Getenv(key) == "" {
-			// A key Setenv rejects (an embedded NUL, say) is simply left
-			// unset, exactly like a line that is not there.
-			_ = os.Setenv(key, val)
-		}
+		// A key Setenv rejects (an embedded NUL, say) is simply left
+		// unset, exactly like a line that is not there.
+		_ = os.Setenv(key, val)
 	}
+}
+
+// parseEnvLine parses one KEY=value line, ok=false for blank lines, comments
+// and lines without a key.
+func parseEnvLine(line string) (key, val string, ok bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+	idx := strings.IndexByte(line, '=')
+	if idx < 1 {
+		return "", "", false
+	}
+	key = strings.TrimSpace(line[:idx])
+	val = unquote(strings.TrimSpace(line[idx+1:]))
+	return key, val, true
+}
+
+// unquote strips one pair of surrounding double quotes.
+func unquote(val string) string {
+	if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+		return val[1 : len(val)-1]
+	}
+	return val
 }
 
 func main() {

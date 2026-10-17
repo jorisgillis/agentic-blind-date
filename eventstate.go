@@ -257,6 +257,22 @@ func (s *EventStore) SetPublicTheme(name string) error {
 	return err
 }
 
+// resetTables are the tables a Reset empties, in an order the foreign keys
+// allow: the questions before the sign-ups they bind to, the sign-ups before
+// the participants they belong to.
+var resetTables = []string{
+	"meetings",
+	"mission_cards",
+	"contact_channels",
+	"recaps",
+	"showtell_questions",
+	"showtell_signups",
+	"slide_decks",
+	"board_posts",
+	"participants",
+	"activity_log",
+}
+
 // Reset starts the event over: no Participants, no meetings, no mission
 // cards, no contact channels, no recap tokens, no show & tell sign-ups, no slide decks, no
 // audience questions, no activity, and back to onboarding — one transaction,
@@ -264,35 +280,10 @@ func (s *EventStore) SetPublicTheme(name string) error {
 // message, no nag.
 func (s *EventStore) Reset() error {
 	return s.db.inTx(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`DELETE FROM meetings`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM mission_cards`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM contact_channels`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM recaps`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM showtell_questions`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM showtell_signups`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM slide_decks`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM board_posts`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM participants`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM activity_log`); err != nil {
-			return err
+		for _, table := range resetTables {
+			if _, err := tx.Exec("DELETE FROM " + table); err != nil { //nolint:gosec // G201: the table names are the constants above, not user input
+				return err
+			}
 		}
 		_, err := tx.Exec(`INSERT OR REPLACE INTO event_state (key, value) VALUES ('phase', ?)`, PhaseOnboarding)
 		return err
