@@ -82,7 +82,6 @@ func registerJourneySteps9to13(ctx *godog.ScenarioContext, w *gherkinWorld) {
 	ctx.When(`^the host resets the event$`, w.hostResetsEvent)
 	ctx.Then(`^the connection leaderboard is empty$`, w.leaderboardIsEmpty)
 	ctx.Then(`^the big screen shows the onboarding phase again$`, w.screenBackOnboarding)
-	ctx.When(`^the host closes the event$`, w.hostClosesEvent)
 	ctx.When(`^the host downloads the export pack$`, w.hostDownloadsExport)
 	ctx.Then(`^the pack names the champion with one connection$`, w.exportNamesChampion)
 	ctx.Then(`^the pack carries the personas, never the identities$`, w.exportPersonasOnly)
@@ -492,10 +491,6 @@ func (w *gherkinWorld) screenBackOnboarding() {
 	if phase := w.screenPayload().Phase; phase != PhaseOnboarding {
 		w.t.Fatalf("the big screen shows the %s phase, want onboarding", phase)
 	}
-}
-
-func (w *gherkinWorld) hostClosesEvent() {
-	w.hostActionAndLands("/admin/phase", url.Values{"to": {string(PhaseClosed)}})
 }
 
 func (w *gherkinWorld) hostDownloadsExport() {
