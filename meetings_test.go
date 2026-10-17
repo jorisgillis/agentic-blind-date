@@ -399,6 +399,27 @@ func TestMeetings_RemoveParticipant(t *testing.T) {
 	}
 }
 
+// TestMeetings_RemoveParticipantAnnouncesOnTheChangeFeed covers the push: a
+// Participant leaving takes their meetings out of every live view, so the
+// removal announces on the change feed like any other write.
+func TestMeetings_RemoveParticipantAnnouncesOnTheChangeFeed(t *testing.T) {
+	_, _, ms, a, b := meetingSetup(t)
+	if _, _, err := ms.Confirm(a, b, OriginOther); err != nil {
+		t.Fatal(err)
+	}
+	changes, stop := ms.db.Subscribe()
+	defer stop()
+
+	if err := ms.RemoveParticipant(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changes:
+	case <-time.After(time.Second):
+		t.Error("removing a Participant should announce on the change feed")
+	}
+}
+
 // TestMeetings_ResetClearsMeetingsSilently covers the reset: one-sided
 // confirmations expire silently — no message, no nag.
 func TestMeetings_ResetClearsMeetingsSilently(t *testing.T) {

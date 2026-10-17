@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -285,6 +287,48 @@ func TestOnboarding_AFailedMatchLeavesTheParticipantReadyAndUnmatched(t *testing
 	if reload(t, db, "p").IsMatched() || reload(t, db, "q").IsMatched() {
 		t.Error("a failed match must leave both unmatched")
 	}
+}
+
+// capturedLogs is a synchronized buffer: onboarding writes its log lines from
+// the goroutine running becomeReady while the test reads them from here.
+type capturedLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *capturedLogs) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *capturedLogs) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+// TestOnboarding_AMatchmakingFailureIsLoggedNotSwallowed pins the failure
+// handling of Continuous Matching: a failed match is logged for the host at
+// error level — never silent — while the Participant still becomes ready.
+func TestOnboarding_AMatchmakingFailureIsLoggedNotSwallowed(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", `{"score": 80}`)
+	o, db := onboardingFor(t, llm, newFakeGitHub())
+	awaitingPersona(t, db, "p")
+	seed(t, db, "q", "Q", "ready")
+	failWrites(t, db, "pair")
+
+	logs := &capturedLogs{}
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	slog.SetDefault(slog.New(newLogHandler("text", slog.LevelError, logs)))
+
+	o.Resume()
+
+	eventually(t, "ready", func() bool { return reload(t, db, "p").PipelineStep == StepReady })
+	eventually(t, "the matchmaking failure to be logged", func() bool {
+		return strings.Contains(logs.String(), "continuous matching")
+	})
 }
 
 func TestOnboarding_ResumeWithABrokenDatabaseDoesNothing(t *testing.T) {
