@@ -126,7 +126,31 @@ func (s *Screen) Payload() ScreenPayload {
 	phase := s.events.State()
 	participants, _ := s.store.All()
 	activity, _ := s.db.GetRecentActivity(3)
+	leaderboard, champion := s.socialStanding(phase)
+	payload := ScreenPayload{
+		Phase:       phase,
+		PhaseLabel:  phase.Label(),
+		Revealed:    phase.AtLeast(PhaseSocial),
+		Nodes:       graphNodes(participants),
+		Edges:       s.graphEdges(participants),
+		Activity:    activity,
+		Leaderboard: leaderboard,
+		Champion:    champion,
+	}
+	payload.Stats, payload.RecapURL = s.closingExtras(phase)
+	payload.Presenter = s.presenterCard(phase)
+	// The Board: the newest approved Posts rotate on the screen in every phase,
+	// except while a presenter is on stage. Personas only.
+	if payload.Presenter == nil {
+		if cards := s.boardCards(); len(cards) > 0 {
+			payload.Board = cards
+		}
+	}
+	return payload
+}
 
+// graphNodes draws every Participant as the graph draws them.
+func graphNodes(participants []*Participant) []graphNode {
 	nodes := make([]graphNode, 0, len(participants))
 	for _, p := range participants {
 		// The Big Screen shows persona names only, in every phase — identities
@@ -141,10 +165,22 @@ func (s *Screen) Payload() ScreenPayload {
 			Matched:     p.IsMatched(),
 		})
 	}
+	return nodes
+}
 
+// graphEdges assembles the graph's edges: the matches, every completed
+// meeting, and the top-3 potential connections per participant. The seen map
+// deduplicates across all three: a pair appears on the graph once.
+func (s *Screen) graphEdges(participants []*Participant) []graphEdge {
+	edges, seen := s.matchEdges(participants)
+	edges = s.meetingEdges(edges, seen)
+	return s.appendPotentialEdges(edges, seen, participants)
+}
+
+// matchEdges lists the matched pairs, each pair once.
+func (s *Screen) matchEdges(participants []*Participant) ([]graphEdge, map[string]bool) {
 	edges := make([]graphEdge, 0)
 	seen := map[string]bool{}
-
 	for _, p := range participants {
 		if p.MatchedWith == "" {
 			continue
@@ -162,11 +198,14 @@ func (s *Screen) Payload() ScreenPayload {
 			Matched: true,
 		})
 	}
+	return edges, seen
+}
 
-	// Meeting edges: every completed meeting joins the graph alongside the
-	// match edges. A pair that are matched and met keeps one edge, flagged as
-	// both — the meeting is the stronger fact on the screen. The map holds
-	// edge indexes, not pointers: appending below may reallocate the slice.
+// meetingEdges adds every completed meeting to the graph. A pair that are
+// matched and met keeps one edge, flagged as both — the meeting is the
+// stronger fact on the screen. The map holds edge indexes, not pointers:
+// appending below may reallocate the slice.
+func (s *Screen) meetingEdges(edges []graphEdge, seen map[string]bool) []graphEdge {
 	byPair := map[string]int{}
 	for i := range edges {
 		byPair[edges[i].Source+":"+edges[i].Target] = i
@@ -185,104 +224,120 @@ func (s *Screen) Payload() ScreenPayload {
 		seen[key] = true
 		edges = append(edges, graphEdge{Source: m.A, Target: m.B, Meeting: true})
 	}
+	return edges
+}
 
-	type scored struct {
-		id    string
-		score int
-	}
-	topEdges := map[string][]scored{}
-	for i, a := range participants {
-		for j, b := range participants {
-			if i >= j {
-				continue
-			}
-			key := a.ID + ":" + b.ID
-			rev := b.ID + ":" + a.ID
-			if seen[key] || seen[rev] {
-				continue
-			}
-			score := s.matcher.PairScore(a, b)
-			topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, score})
-			topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, score})
-		}
-	}
+// scoredEdge is one participant's potential-connection candidate: who and how
+// well the heuristic scores the pair.
+type scoredEdge struct {
+	id    string
+	score int
+}
+
+// appendPotentialEdges adds the top-3 heuristic connections per participant:
+// the strongest pairs that are not yet on the graph.
+func (s *Screen) appendPotentialEdges(edges []graphEdge, seen map[string]bool, participants []*Participant) []graphEdge {
+	topEdges := s.topEdgeScores(participants, seen)
 	for _, p := range participants {
 		candidates := topEdges[p.ID]
 		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
 		if len(candidates) > 3 {
 			candidates = candidates[:3]
 		}
-		for _, c := range candidates {
-			key := p.ID + ":" + c.id
-			rev := c.id + ":" + p.ID
+		edges = appendTopEdges(edges, seen, p.ID, candidates)
+	}
+	return edges
+}
+
+// topEdgeScores scores every pair not yet on the graph, from each
+// participant's side.
+func (s *Screen) topEdgeScores(participants []*Participant, seen map[string]bool) map[string][]scoredEdge {
+	topEdges := map[string][]scoredEdge{}
+	for i, a := range participants {
+		for _, b := range participants[i+1:] {
+			key := a.ID + ":" + b.ID
+			rev := b.ID + ":" + a.ID
 			if seen[key] || seen[rev] {
 				continue
 			}
-			seen[key] = true
-			edges = append(edges, graphEdge{
-				Source:  p.ID,
-				Target:  c.id,
-				Score:   c.score,
-				Matched: false,
-			})
+			score := s.matcher.PairScore(a, b)
+			topEdges[a.ID] = append(topEdges[a.ID], scoredEdge{b.ID, score})
+			topEdges[b.ID] = append(topEdges[b.ID], scoredEdge{a.ID, score})
 		}
 	}
+	return topEdges
+}
 
-	payload := ScreenPayload{
-		Phase:      phase,
-		PhaseLabel: phase.Label(),
-		Revealed:   phase.AtLeast(PhaseSocial),
-		Nodes:      nodes,
-		Edges:      edges,
-		Activity:   activity,
-	}
-
-	// The social scoreboard: the top 5 by connections, from the social on.
-	// During onboarding the Big Screen is the graph and the ticker only.
-	if phase.AtLeast(PhaseSocial) {
-		board, err := s.meetings.Leaderboard()
-		if err != nil {
-			logger("screen").Warn("connection leaderboard", "err", err)
-		} else {
-			top := board
-			if len(top) > 5 {
-				top = top[:5]
-			}
-			payload.Leaderboard = &top
-			// The champion is named at the close: the Merge Trophy winner,
-			// the top of the final leaderboard.
-			if phase == PhaseClosed && len(top) > 0 {
-				payload.Champion = &top[0]
-			}
+// appendTopEdges adds a participant's strongest unseen candidates to the graph.
+func appendTopEdges(edges []graphEdge, seen map[string]bool, id string, candidates []scoredEdge) []graphEdge {
+	for _, c := range candidates {
+		key := id + ":" + c.id
+		rev := c.id + ":" + id
+		if seen[key] || seen[rev] {
+			continue
 		}
+		seen[key] = true
+		edges = append(edges, graphEdge{
+			Source:  id,
+			Target:  c.id,
+			Score:   c.score,
+			Matched: false,
+		})
 	}
+	return edges
+}
 
-	// The closing view: from closed on, the Big Screen also carries the
-	// evening's stats and the recap QR — alongside the final leaderboard,
-	// the champion and the graph with all meeting edges.
-	if phase == PhaseClosed {
-		stats := s.closing.Stats()
-		payload.Stats = &stats
-		payload.RecapURL = "/recap"
+// socialStanding is the social scoreboard: the top 5 by connections, from the
+// social on, and — once the event closes — the champion, the top of the final
+// leaderboard. During onboarding the Big Screen is the graph and the ticker
+// only: nil, and the scoreboard is simply absent. A failed read degrades
+// the same way.
+func (s *Screen) socialStanding(phase Phase) (leaderboard *[]ConnectionStanding, champion *ConnectionStanding) {
+	if !phase.AtLeast(PhaseSocial) {
+		return nil, nil
 	}
+	board, err := s.meetings.Leaderboard()
+	if err != nil {
+		logger("screen").Warn("connection leaderboard", "err", err)
+		return nil, nil
+	}
+	top := topStandings(board)
+	// The champion is named at the close: the Merge Trophy winner,
+	// the top of the final leaderboard.
+	if phase == PhaseClosed && len(top) > 0 {
+		champion = &top[0]
+	}
+	return &top, champion
+}
 
-	// Presenter mode: from show & tell on, the Big Screen shows the on-stage
-	// presenter's card with the hype intro — personas only, until the host's
-	// explicit identity reveal flips the card to the GitHub handle/name.
-	if phase == PhaseShowTell {
-		if presenter := s.presenter(); presenter != nil {
-			payload.Presenter = presenter
-		}
+// topStandings trims the leaderboard to the scoreboard's top 5.
+func topStandings(board []ConnectionStanding) []ConnectionStanding {
+	if len(board) > 5 {
+		return board[:5]
 	}
+	return board
+}
 
-	// The Board: the newest approved Posts rotate on the screen in every phase,
-	// except while a presenter is on stage. Personas only.
-	if payload.Presenter == nil {
-		if cards := s.boardCards(); len(cards) > 0 {
-			payload.Board = cards
-		}
+// closingExtras is the closing view: from closed on, the Big Screen also
+// carries the evening's stats and the recap QR — alongside the final
+// leaderboard, the champion and the graph with all meeting edges.
+func (s *Screen) closingExtras(phase Phase) (*EventStats, string) {
+	if phase != PhaseClosed {
+		return nil, ""
 	}
-	return payload
+	stats := s.closing.Stats()
+	return &stats, "/recap"
+}
+
+// presenterCard is presenter mode: from show & tell on, the Big Screen shows
+// the on-stage presenter's card with the hype intro — personas only, until
+// the host's explicit identity reveal flips the card to the GitHub
+// handle/name.
+func (s *Screen) presenterCard(phase Phase) *PresenterCard {
+	if phase != PhaseShowTell {
+		return nil
+	}
+	return s.presenter()
 }
 
 // boardCardsLimit is how many of the newest approved Posts the Big Screen
@@ -339,29 +394,45 @@ func (s *Screen) presenter() *PresenterCard {
 		IdentityRevealed: signup.IdentityRevealed,
 	}
 	if signup.IdentityRevealed {
-		p, err := s.store.Get(signup.ParticipantID)
-		if err != nil {
-			logger("screen").Warn("revealed presenter", "participant", signup.ParticipantID, "err", err)
-			// The reveal is the screen's one sanctioned identity leak, and it
-			// failed: the presenter keeps the stage without the identity —
-			// and without the question, exactly as before.
+		if err := s.attachRevealedIdentity(card, signup); err != nil {
 			return card
 		}
-		handle, name := p.DisplayHandle(), p.Name
-		card.Handle, card.Name = &handle, &name
 	}
-	// The current audience question rides with the presenter card — an
-	// extension of presenter mode. The asker's persona and the text only:
-	// personas, never identities.
-	if question, err := s.showtell.CurrentQuestion(); err != nil {
-		logger("screen").Warn("current show & tell question", "err", err)
-	} else if question != nil {
-		card.Question = &PresenterQuestion{
-			Text:          question.Text,
-			PersonaName:   question.PersonaName,
-			PersonaSymbol: question.PersonaSymbol,
-			PersonaColor:  question.PersonaColor,
-		}
-	}
+	card.Question = s.currentQuestionCard()
 	return card
+}
+
+// attachRevealedIdentity fills the card's handle and name from the presenter's
+// Participant. It is the screen's one sanctioned identity leak: when the read
+// fails, the presenter keeps the stage without the identity — and without the
+// question, exactly as before.
+func (s *Screen) attachRevealedIdentity(card *PresenterCard, signup *ShowTellSignup) error {
+	p, err := s.store.Get(signup.ParticipantID)
+	if err != nil {
+		logger("screen").Warn("revealed presenter", "participant", signup.ParticipantID, "err", err)
+		return err
+	}
+	handle, name := p.DisplayHandle(), p.Name
+	card.Handle, card.Name = &handle, &name
+	return nil
+}
+
+// currentQuestionCard is the current audience question riding with the
+// presenter card — an extension of presenter mode. The asker's persona and
+// the text only: personas, never identities.
+func (s *Screen) currentQuestionCard() *PresenterQuestion {
+	question, err := s.showtell.CurrentQuestion()
+	if err != nil {
+		logger("screen").Warn("current show & tell question", "err", err)
+		return nil
+	}
+	if question == nil {
+		return nil
+	}
+	return &PresenterQuestion{
+		Text:          question.Text,
+		PersonaName:   question.PersonaName,
+		PersonaSymbol: question.PersonaSymbol,
+		PersonaColor:  question.PersonaColor,
+	}
 }

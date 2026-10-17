@@ -93,9 +93,15 @@ func (g *GitHubClient) FetchProfile(handle string) (*GitHubProfile, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	repos, _ := g.fetchRepos(handle) // best-effort
+	profile := profileFromUser(user)
+	profile.aggregateRepos(repos, handle)
+	return profile, nil
+}
 
+// profileFromUser copies the user record into a GitHubProfile, computing the
+// account age from the account's creation date.
+func profileFromUser(user *ghUser) *GitHubProfile {
 	profile := &GitHubProfile{
 		Login:       user.Login,
 		Name:        user.Name,
@@ -105,36 +111,64 @@ func (g *GitHubClient) FetchProfile(handle string) (*GitHubProfile, error) {
 		PublicRepos: user.PublicRepos,
 		Followers:   user.Followers,
 	}
-
 	if t, err := time.Parse(time.RFC3339, user.CreatedAt); err == nil {
 		profile.AccountAgeDays = int(time.Since(t).Hours() / 24)
 	}
+	return profile
+}
 
+// aggregateRepos folds the user's own repositories into the profile: the
+// total star count, the profile README, the languages, the topics and the
+// top repos.
+func (p *GitHubProfile) aggregateRepos(repos []ghRepo, handle string) {
 	topicCount := map[string]int{}
 	langSeen := map[string]bool{}
-
 	for _, r := range repos {
-		profile.TotalStars += r.StargazersCount
-		if strings.EqualFold(r.Name, handle) {
-			profile.HasProfileReadme = true
-		}
-		if r.Language != "" && !langSeen[r.Language] {
-			profile.Languages = append(profile.Languages, r.Language)
-			langSeen[r.Language] = true
-		}
-		for _, t := range r.Topics {
-			topicCount[t]++
-		}
-		if len(profile.TopRepos) < 5 && (r.StargazersCount > 0 || r.Description != "") {
-			profile.TopRepos = append(profile.TopRepos, RepoInfo{
-				Name:        r.Name,
-				Description: r.Description,
-				Stars:       r.StargazersCount,
-				Language:    r.Language,
-			})
-		}
+		p.foldRepo(r, handle, topicCount, langSeen)
 	}
+	p.TopTopics = topTopics(topicCount)
+}
 
+// foldRepo folds one repository into the profile: its stars, the profile
+// README it may be, its language, its topics and, when notable, its place in
+// the top repos.
+func (p *GitHubProfile) foldRepo(r ghRepo, handle string, topicCount map[string]int, langSeen map[string]bool) {
+	p.TotalStars += r.StargazersCount
+	if strings.EqualFold(r.Name, handle) {
+		p.HasProfileReadme = true
+	}
+	p.noteLanguage(r.Language, langSeen)
+	for _, t := range r.Topics {
+		topicCount[t]++
+	}
+	p.maybeTopRepo(r)
+}
+
+// noteLanguage records the repository's language when it has one the profile
+// has not seen yet.
+func (p *GitHubProfile) noteLanguage(language string, langSeen map[string]bool) {
+	if language != "" && !langSeen[language] {
+		p.Languages = append(p.Languages, language)
+		langSeen[language] = true
+	}
+}
+
+// maybeTopRepo adds the repository to the top repos when there is room and it
+// is notable: it has stars or a description.
+func (p *GitHubProfile) maybeTopRepo(r ghRepo) {
+	if len(p.TopRepos) >= 5 || (r.StargazersCount == 0 && r.Description == "") {
+		return
+	}
+	p.TopRepos = append(p.TopRepos, RepoInfo{
+		Name:        r.Name,
+		Description: r.Description,
+		Stars:       r.StargazersCount,
+		Language:    r.Language,
+	})
+}
+
+// topTopics lists the up-to-five most frequent topics, most frequent first.
+func topTopics(topicCount map[string]int) []string {
 	type kv struct {
 		k string
 		v int
@@ -144,14 +178,14 @@ func (g *GitHubClient) FetchProfile(handle string) (*GitHubProfile, error) {
 		topicList = append(topicList, kv{k, v})
 	}
 	sort.Slice(topicList, func(i, j int) bool { return topicList[i].v > topicList[j].v })
+	var out []string
 	for i, item := range topicList {
 		if i >= 5 {
 			break
 		}
-		profile.TopTopics = append(profile.TopTopics, item.k)
+		out = append(out, item.k)
 	}
-
-	return profile, nil
+	return out
 }
 
 // Summary describes a Participant for the LLM: their GitHub data if they have
@@ -173,72 +207,64 @@ func (p *GitHubProfile) Summary() string {
 	return strings.Join(append(p.githubLines(), p.extraLines()...), "\n")
 }
 
+// appendIf appends line to parts when cond holds.
+func appendIf(parts []string, cond bool, line string) []string {
+	if !cond {
+		return parts
+	}
+	return append(parts, line)
+}
+
 func (p *GitHubProfile) githubLines() []string {
 	var parts []string
-	if p.Login != "" {
-		parts = append(parts, fmt.Sprintf("GitHub: @%s", p.Login))
-	}
-	if p.Name != "" {
-		parts = append(parts, "Name: "+p.Name)
-	}
-	if p.Bio != "" {
-		parts = append(parts, "Bio: "+p.Bio)
-	}
-	if p.Company != "" {
-		parts = append(parts, "Company: "+p.Company)
-	}
-	if p.Location != "" {
-		parts = append(parts, "Location: "+p.Location)
-	}
-	if p.AccountAgeDays > 0 {
-		parts = append(parts, fmt.Sprintf("Account age: %d days (~%d years)", p.AccountAgeDays, p.AccountAgeDays/365))
-	}
+	parts = appendIf(parts, p.Login != "", fmt.Sprintf("GitHub: @%s", p.Login))
+	parts = appendIf(parts, p.Name != "", "Name: "+p.Name)
+	parts = appendIf(parts, p.Bio != "", "Bio: "+p.Bio)
+	parts = appendIf(parts, p.Company != "", "Company: "+p.Company)
+	parts = appendIf(parts, p.Location != "", "Location: "+p.Location)
+	parts = appendIf(parts, p.AccountAgeDays > 0, fmt.Sprintf("Account age: %d days (~%d years)", p.AccountAgeDays, p.AccountAgeDays/365))
 	parts = append(parts, fmt.Sprintf("Public repos: %d, Followers: %d, Total stars: %d", p.PublicRepos, p.Followers, p.TotalStars))
-	if p.HasProfileReadme {
-		parts = append(parts, "Has profile README: yes")
-	}
-	if len(p.Languages) > 0 {
-		parts = append(parts, "Languages used: "+strings.Join(p.Languages, ", "))
-	}
-	if len(p.TopTopics) > 0 {
-		parts = append(parts, "Top topics: "+strings.Join(p.TopTopics, ", "))
-	}
-	for _, r := range p.TopRepos {
-		line := "Repo: " + r.Name
-		if r.Description != "" {
-			line += " — " + r.Description
-		}
-		if r.Language != "" {
-			line += " (" + r.Language + ")"
-		}
-		if r.Stars > 0 {
-			line += fmt.Sprintf(" ⭐%d", r.Stars)
-		}
-		parts = append(parts, line)
+	parts = appendIf(parts, p.HasProfileReadme, "Has profile README: yes")
+	parts = appendIf(parts, len(p.Languages) > 0, "Languages used: "+strings.Join(p.Languages, ", "))
+	parts = appendIf(parts, len(p.TopTopics) > 0, "Top topics: "+strings.Join(p.TopTopics, ", "))
+	return append(parts, repoLines(p.TopRepos)...)
+}
+
+// repoLines describes each repo for the LLM.
+func repoLines(repos []RepoInfo) []string {
+	var parts []string
+	for _, r := range repos {
+		parts = append(parts, repoLine(r))
 	}
 	return parts
 }
 
+// repoLine describes one repo: its name, description, language and stars.
+func repoLine(r RepoInfo) string {
+	line := "Repo: " + r.Name
+	if r.Description != "" {
+		line += " — " + r.Description
+	}
+	if r.Language != "" {
+		line += " (" + r.Language + ")"
+	}
+	if r.Stars > 0 {
+		line += fmt.Sprintf(" ⭐%d", r.Stars)
+	}
+	return line
+}
+
 func (p *GitHubProfile) extraLines() []string {
 	var parts []string
-	if p.ExtraAnswers != nil {
-		ea := p.ExtraAnswers
-		if len(ea.Languages) > 0 {
-			parts = append(parts, "Languages: "+strings.Join(ea.Languages, ", "))
-		}
-		if ea.ProjectType != "" {
-			parts = append(parts, "Project type: "+ea.ProjectType)
-		}
-		if len(ea.DevEnvironment) > 0 {
-			parts = append(parts, "Dev environment: "+strings.Join(ea.DevEnvironment, ", "))
-		}
-		if ea.WeirdestBug != "" {
-			parts = append(parts, "Weirdest bug: "+ea.WeirdestBug)
-		}
-		if ea.Keyboard != "" {
-			parts = append(parts, "Keyboard: "+ea.Keyboard)
-		}
+	if p.ExtraAnswers == nil {
+		return parts
 	}
+	ea := p.ExtraAnswers
+	parts = appendIf(parts, len(ea.Languages) > 0, "Languages: "+strings.Join(ea.Languages, ", "))
+	parts = appendIf(parts, ea.ProjectType != "", "Project type: "+ea.ProjectType)
+	parts = appendIf(parts, len(ea.DevEnvironment) > 0, "Dev environment: "+strings.Join(ea.DevEnvironment, ", "))
+	parts = appendIf(parts, ea.WeirdestBug != "", "Weirdest bug: "+ea.WeirdestBug)
+	parts = appendIf(parts, ea.Keyboard != "", "Keyboard: "+ea.Keyboard)
 	return parts
 }
 

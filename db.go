@@ -191,10 +191,28 @@ func NewDB(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	migrateDB(sqlDB)
 
-	// Migrations for existing databases — best-effort statements: each one
-	// fails benignly when it has already been applied (a duplicate column,
-	// a dropped legacy column), and the schema above is authoritative.
+	// Meet codes are unique. The index is created after the migrations, so
+	// databases that gained the column through them are covered too.
+	if _, err := sqlDB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_meet_code ON participants (meet_code)`); err != nil {
+		return nil, err
+	}
+	backfillHasGitHub(sqlDB)
+
+	db := &DB{db: sqlDB, changes: newChangeFeed()}
+	// Participants who registered before meet codes existed get them backfilled.
+	if err := backfillMeetCodes(db); err != nil {
+		logger("db").Error("backfilling meet codes", "err", err)
+	}
+	return db, nil
+}
+
+// migrateDB applies the migrations for existing databases — best-effort
+// statements: each one fails benignly when it has already been applied (a
+// duplicate column, a dropped legacy column), and the schema NewDB creates
+// is authoritative.
+func migrateDB(sqlDB *sql.DB) {
 	for _, m := range []string{
 		`ALTER TABLE participants ADD COLUMN name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE participants ADD COLUMN persona_symbol TEXT NOT NULL DEFAULT '🎭'`,
@@ -211,27 +229,17 @@ func NewDB(path string) (*DB, error) {
 	} {
 		_, _ = sqlDB.Exec(m)
 	}
+}
 
-	// Meet codes are unique. The index is created after the migrations, so
-	// databases that gained the column through them are covered too.
-	if _, err := sqlDB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_meet_code ON participants (meet_code)`); err != nil {
-		return nil, err
-	}
-
-	// One-time backfill when has_github is introduced: until then, Non-GitHub
-	// Users could only be recognised by their generated handle.
+// backfillHasGitHub adds the has_github column when it is missing — a
+// one-time backfill when has_github is introduced: until then, Non-GitHub
+// Users could only be recognised by their generated handle.
+func backfillHasGitHub(sqlDB *sql.DB) {
 	if _, err := sqlDB.Exec(`ALTER TABLE participants ADD COLUMN has_github INTEGER NOT NULL DEFAULT 1`); err == nil {
 		// The backfill is best-effort too: a row it cannot reach keeps the
 		// column default, and the flag is rewritten at the next registration.
 		_, _ = sqlDB.Exec(`UPDATE participants SET has_github = 0 WHERE github_handle LIKE 'no-github-%'`)
 	}
-
-	db := &DB{db: sqlDB, changes: newChangeFeed()}
-	// Participants who registered before meet codes existed get them backfilled.
-	if err := backfillMeetCodes(db); err != nil {
-		logger("db").Error("backfilling meet codes", "err", err)
-	}
-	return db, nil
 }
 
 func (db *DB) Close() error {
@@ -258,26 +266,8 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 	if err != nil {
 		return nil, err
 	}
-
-	if profileJSON != "" {
-		if err := json.Unmarshal([]byte(profileJSON), &p.Profile); err != nil {
-			return nil, err
-		}
-	}
-	if questionsJSON != "" {
-		if err := json.Unmarshal([]byte(questionsJSON), &p.Questions); err != nil {
-			return nil, err
-		}
-	}
-	if answersJSON != "" {
-		if err := json.Unmarshal([]byte(answersJSON), &p.Answers); err != nil {
-			return nil, err
-		}
-	}
-	if interestsJSON != "" {
-		if err := json.Unmarshal([]byte(interestsJSON), &p.Interests); err != nil {
-			return nil, err
-		}
+	if err := decodeJSONColumns(p, profileJSON, questionsJSON, answersJSON, interestsJSON); err != nil {
+		return nil, err
 	}
 
 	// The Match assessment is decoded by the same codec — and under the same
@@ -292,6 +282,29 @@ func scanParticipant(row interface{ Scan(...any) error }) (*Participant, error) 
 	}
 
 	return p, nil
+}
+
+// decodeJSONColumns decodes the Participant's JSON columns into p: the
+// profile, the interview questions, the answers and the interests. An empty
+// column (its default) decodes to the zero value; undecodable data is an
+// error: the row is reported rather than half-served.
+func decodeJSONColumns(p *Participant, profileJSON, questionsJSON, answersJSON, interestsJSON string) error {
+	for _, col := range []struct {
+		raw string
+		dst any
+	}{
+		{profileJSON, &p.Profile},
+		{questionsJSON, &p.Questions},
+		{answersJSON, &p.Answers},
+		{interestsJSON, &p.Interests},
+	} {
+		if col.raw != "" {
+			if err := json.Unmarshal([]byte(col.raw), col.dst); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 const selectParticipant = `

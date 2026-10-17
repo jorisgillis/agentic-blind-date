@@ -44,14 +44,10 @@ func (h *Handler) QR(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing data", http.StatusBadRequest)
 		return
 	}
-	size := 150
-	if s := r.URL.Query().Get("size"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 32 || n > 1024 {
-			http.Error(w, "size must be a number between 32 and 1024", http.StatusBadRequest)
-			return
-		}
-		size = n
+	size, ok := qrSize(r.URL.Query().Get("size"))
+	if !ok {
+		http.Error(w, "size must be a number between 32 and 1024", http.StatusBadRequest)
+		return
 	}
 	png, err := renderQRCode(qrPayload(r, raw), size)
 	if err != nil {
@@ -63,4 +59,17 @@ func (h *Handler) QR(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	// Headers are sent; a failed write only means the client is gone.
 	_, _ = w.Write(png) //nolint:gosec // G705: the bytes are the rendered QR PNG, not raw input; the payload rides inside the encoded image
+}
+
+// qrSize parses the size parameter: the default 150, ok=false for a size
+// outside 32..1024 or not a number.
+func qrSize(s string) (int, bool) {
+	if s == "" {
+		return 150, true
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 32 || n > 1024 {
+		return 0, false
+	}
+	return n, true
 }
