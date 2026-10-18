@@ -1,3 +1,16 @@
+{{/* The owner's own identity line — the personal pages are the one place a
+     Participant finds their real name again: everywhere else, in every phase,
+     they are their persona. GitHub users see their handle next to their name;
+     Non-GitHub Users see the name only (their handle is a generated key, never
+     shown). */}}
+{{define "fragment-this-is-you.html"}}
+{{if .HasGitHub}}
+<p class="text-gray-600 text-xs mt-1">This is you: <span class="font-semibold text-gray-800">{{.Name}}</span> · {{.DisplayHandle}}</p>
+{{else}}
+<p class="text-gray-600 text-xs mt-1">This is you: <span class="font-semibold text-gray-800">{{.Name}}</span></p>
+{{end}}
+{{end}}
+
 {{define "fragment-persona-card.html"}}
 {{/* The wait page's persona card. The persona is crafted in the background
      after the last interview answer, so the page may have rendered before
@@ -18,7 +31,7 @@
   {{if .PersonaTagline}}
   <p class="text-gray-700 text-sm mt-1 italic" data-md>"{{.PersonaTagline}}"</p>
   {{end}}
-  <p class="text-gray-600 text-xs mt-1">{{.DisplayHandle}}</p>
+  {{template "fragment-this-is-you.html" .}}
   <div class="mt-4">
     <p class="text-gray-600 text-xs mb-2">📲 Let others find your profile</p>
     <img src="/qr?data=/user/wait/{{.ID}}&size=120" alt="QR code" class="mx-auto rounded-lg shadow-md" width="120" height="120" />
@@ -28,7 +41,7 @@
     🎭
   </div>
   <h2 class="text-2xl font-black text-gray-900">Crafting your persona…</h2>
-  <p class="text-gray-600 text-xs mt-1">{{.DisplayHandle}}</p>
+  {{template "fragment-this-is-you.html" .}}
   {{end}}
 </div>
 {{end}}

@@ -95,7 +95,7 @@ func TestPhaseHeader_RendersTheStripSummaryAndStatusPerPhase(t *testing.T) {
 
 		body := readBody(t, get(t, srv, "/user/phase-header/me"))
 		assertPhaseHeader(t, body, PhaseSocial,
-			"Tonight: the matches are revealed — meet the personas on your mission card",
+			"Tonight: the matches are revealed — meet your match, hunt your mission card, sign up for show & tell",
 			"Mission: 0 of 9 tiles stamped")
 
 		// A completed meeting stamps the tile: the header's mission progress
@@ -116,7 +116,7 @@ func TestPhaseHeader_RendersTheStripSummaryAndStatusPerPhase(t *testing.T) {
 
 		body = readBody(t, get(t, srv, "/user/phase-header/me"))
 		assertPhaseHeader(t, body, PhaseSocial,
-			"Tonight: the matches are revealed — meet the personas on your mission card",
+			"Tonight: the matches are revealed — meet your match, hunt your mission card, sign up for show & tell",
 			"Mission: 1 of 9 tiles stamped")
 	})
 

@@ -23,10 +23,11 @@ import (
 // "recap_read", "recap_token_read", "showtell_insert", "showtell_update",
 // "showtell_delete", "showtell_read", "showtell_question_insert",
 // "showtell_question_update", "showtell_question_delete",
-// "showtell_question_read", "participant_read", "presenter_identity_read",
+// "showtell_question_read", "slide_insert", "slide_delete", "slide_read", "slide_query_read", "board_insert", "board_update",
+// "board_delete", "board_read", "board_query_read", "participant_read", "presenter_identity_read",
 // "reset_participants", "reset_activity", "reset_event_state",
 // "reset_meetings", "reset_mission_cards", "reset_contact_channels",
-// "reset_recaps", "reset_showtell_signups" and "reset_showtell_questions".
+// "reset_recaps", "reset_showtell_signups", "reset_showtell_questions", "reset_slide_decks" and "reset_board_posts".
 // Each tag maps to exactly the write it names, so a test can fail one write
 // and leave the others alone.
 
@@ -134,6 +135,8 @@ func writeFaults(message string) map[string][2]string {
 		"showtell_question_insert": trigger("showtell_question_insert", "INSERT", "showtell_questions", ""),
 		"showtell_question_update": trigger("showtell_question_update", "UPDATE", "showtell_questions", ""),
 		"showtell_question_delete": trigger("showtell_question_delete", "DELETE", "showtell_questions", ""),
+		"slide_insert":             trigger("slide_insert", "INSERT", "slide_decks", ""),
+		"slide_delete":             trigger("slide_delete", "DELETE", "slide_decks", ""),
 		"reset_participants":       trigger("reset_participants", "DELETE", "participants", ""),
 		"reset_activity":           trigger("reset_activity", "DELETE", "activity_log", ""),
 		"reset_event_state":        trigger("reset_event_state", "INSERT", "event_state", ""),
@@ -143,6 +146,11 @@ func writeFaults(message string) map[string][2]string {
 		"reset_recaps":             trigger("reset_recaps", "DELETE", "recaps", ""),
 		"reset_showtell_signups":   trigger("reset_showtell_signups", "DELETE", "showtell_signups", ""),
 		"reset_showtell_questions": trigger("reset_showtell_questions", "DELETE", "showtell_questions", ""),
+		"reset_slide_decks":        trigger("reset_slide_decks", "DELETE", "slide_decks", ""),
+		"board_insert":             trigger("board_insert", "INSERT", "board_posts", ""),
+		"board_update":             trigger("board_update", "UPDATE", "board_posts", ""),
+		"board_delete":             trigger("board_delete", "DELETE", "board_posts", ""),
+		"reset_board_posts":        trigger("reset_board_posts", "DELETE", "board_posts", ""),
 		"persona_lookup": {
 			`CREATE TEMP VIEW participants AS SELECT json(persona_color) AS persona_color, persona_symbol FROM main.participants`,
 			`DROP VIEW IF EXISTS temp.participants`,
@@ -198,6 +206,28 @@ func writeFaults(message string) map[string][2]string {
 		},
 		// The sign-up's select still matches (the join keeps working), but
 		// NULLs title, so scanning a row fails.
+		// The Slide Decks query still prepares, but NULLs title, so scanning a row
+		// fails.
+		"slide_read": {
+			`CREATE TEMP VIEW slide_decks AS SELECT id, NULL AS title, speaker, filename, stored_name, size, created_at FROM main.slide_decks`,
+			`DROP VIEW IF EXISTS temp.slide_decks`,
+		},
+		// The Slide Decks query itself fails to prepare: the view lacks columns.
+		"slide_query_read": {
+			`CREATE TEMP VIEW slide_decks AS SELECT id FROM main.slide_decks`,
+			`DROP VIEW IF EXISTS temp.slide_decks`,
+		},
+		// The Board's reads still prepare, but NULL created_at, so scanning a
+		// row fails.
+		"board_read": {
+			`CREATE TEMP VIEW board_posts AS SELECT id, participant_id, text, status, NULL AS created_at FROM main.board_posts`,
+			`DROP VIEW IF EXISTS temp.board_posts`,
+		},
+		// The Board's queries fail to prepare: the view lacks columns.
+		"board_query_read": {
+			`CREATE TEMP VIEW board_posts AS SELECT id FROM main.board_posts`,
+			`DROP VIEW IF EXISTS temp.board_posts`,
+		},
 		"showtell_read": {
 			`CREATE TEMP VIEW showtell_signups AS SELECT id, participant_id, NULL AS title, description, repo_url, status, identity_revealed, hype, position, created_at FROM main.showtell_signups`,
 			`DROP VIEW IF EXISTS temp.showtell_signups`,

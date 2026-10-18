@@ -68,6 +68,15 @@
       <p>📇 <span id="stat-exchanges"></span> contact details exchanged</p>
       <p>❓ <span id="stat-questions"></span> questions (<span id="stat-answered"></span> answered)</p>
     </div>
+    <div id="board" class="absolute bottom-4 left-1/2 hidden items-center gap-4 bg-gray-900/90 border border-gray-700 rounded-xl p-4" style="transform: translateX(-50%); width: 640px; max-width: 90%; z-index: 5;">
+      <div id="board-symbol" class="w-14 h-14 rounded-xl flex items-center justify-center text-3xl flex-shrink-0"></div>
+      <div class="min-w-0 flex-1 space-y-1">
+        <p class="text-xs uppercase tracking-widest text-gray-400">📣 The board</p>
+        <p id="board-name" class="text-sm font-bold"></p>
+        <p id="board-text" class="text-lg whitespace-pre-line break-words"></p>
+      </div>
+      <img id="board-qr" alt="Scan the link" class="rounded-lg flex-shrink-0 hidden" width="110" height="110" />
+    </div>
     <div id="presenter" class="absolute inset-0 hidden items-center justify-center bg-gray-950/80" style="z-index: 10;">
       <div class="bg-gray-900 border border-purple-500 rounded-3xl p-10 max-w-xl w-full mx-4 text-center space-y-4 shadow-2xl">
         <p id="presenter-hype" class="text-lg text-purple-300 italic"></p>
@@ -417,7 +426,68 @@ function updateGraph(data) {
     presenterPanel.classList.add('hidden');
     presenterPanel.classList.remove('flex');
   }
+
+  updateBoard(data.board);
 }
+
+// The Board: the newest approved Posts rotate in one card, one every 8
+// seconds, with the poster's persona and a QR of the Post's first link. The
+// server leaves the Board out while a presenter is on stage. A push changes
+// nothing here unless the set of Posts changed: the rotation keeps its place.
+const boardRotationMs = 8000;
+let boardPosts = [];
+let boardIndex = 0;
+let boardKey = '';
+let boardQrLink = '';
+
+function showBoardPost() {
+  const post = boardPosts[boardIndex];
+  const symbol = document.getElementById('board-symbol');
+  symbol.textContent = post.persona_symbol || '💬';
+  symbol.style.backgroundColor = colorMap[post.persona_color] || '#6b7280';
+  const name = document.getElementById('board-name');
+  name.textContent = post.persona_name || '';
+  name.style.color = colorMap[post.persona_color] || '#ffffff';
+  document.getElementById('board-text').textContent = post.text || '';
+  const qr = document.getElementById('board-qr');
+  if (post.link) {
+    if (boardQrLink !== post.link) {
+      boardQrLink = post.link;
+      qr.src = '/qr?data=' + encodeURIComponent(post.link) + '&size=110';
+    }
+    qr.classList.remove('hidden');
+  } else {
+    boardQrLink = '';
+    qr.classList.add('hidden');
+  }
+}
+
+function updateBoard(posts) {
+  const panel = document.getElementById('board');
+  if (!posts || posts.length === 0) {
+    boardPosts = [];
+    boardKey = '';
+    panel.classList.add('hidden');
+    panel.classList.remove('flex');
+    return;
+  }
+  const key = posts.map(p => p.id).join(',');
+  boardPosts = posts;
+  if (key !== boardKey) {
+    boardKey = key;
+    boardIndex = 0;
+    showBoardPost();
+  }
+  panel.classList.remove('hidden');
+  panel.classList.add('flex');
+}
+
+setInterval(() => {
+  if (boardPosts.length > 1) {
+    boardIndex = (boardIndex + 1) % boardPosts.length;
+    showBoardPost();
+  }
+}, boardRotationMs);
 
 const es = new EventSource('/bigscreen/stream');
 es.addEventListener('message', e => {

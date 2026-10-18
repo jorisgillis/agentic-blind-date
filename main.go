@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -47,6 +48,9 @@ func main() {
 		logger("main").Error("selecting the LLM provider", "err", err)
 		os.Exit(1)
 	}
+	// One shared bound on concurrent LLM calls across the whole app, so a
+	// rush of registrations queues instead of storming the provider.
+	llm = NewGatedLLM(llm, LLMConcurrency(os.Getenv))
 
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
@@ -59,11 +63,15 @@ func main() {
 	}
 	defer db.Close()
 
-	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"))
+	github := NewGitHubClient(os.Getenv("GITHUB_TOKEN"), GitHubBaseURL(os.Getenv))
 
 	matcher := NewMatcher(db, github, llm)
 	missions := NewMissions(db, matcher, llm)
 	showtell := NewShowTell(db, llm)
+	slides := NewSlideDecks(db, filepath.Join(filepath.Dir(dbPath), "slides"))
+	if err := slides.Sweep(); err != nil {
+		logger("main").Warn("sweeping orphan slide files", "err", err)
+	}
 	interview := NewInterview(db, llm)
 	relations := NewRelationships(db)
 	matchmaking := NewMatchmaking(db, matcher, relations, defaultMaxChain)
@@ -71,9 +79,12 @@ func main() {
 
 	onboarding.Resume() // pick up onboarding interrupted by a restart
 
-	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, nil)
+	h := NewHandler(db, onboarding, interview, matcher, relations, matchmaking, missions, showtell, slides, nil)
 
 	addr := "0.0.0.0:8080"
+	if port := os.Getenv("PORT"); port != "" {
+		addr = "0.0.0.0:" + port
+	}
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: buildMux(h),
@@ -122,7 +133,14 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/recap/{token}", h.Recap)
 	mux.HandleFunc("POST /user/showtell/signup/{id}", h.ShowTellSignup)
 	mux.HandleFunc("GET /user/showtell/{id}", h.ShowTellStatus)
+	mux.HandleFunc("GET /user/slides/{id}", h.Slides)
 	mux.HandleFunc("POST /user/showtell/question/{id}", h.ShowTellQuestion)
+	mux.HandleFunc("GET /user/board/{id}", h.BoardSection)
+	mux.HandleFunc("POST /user/board/{id}", h.BoardPost)
+	mux.HandleFunc("POST /user/board/{id}/delete", h.BoardDelete)
+
+	mux.HandleFunc("GET /slides/{id}", h.SlideDeckOpen)
+	mux.HandleFunc("GET /slides/{id}/download", h.SlideDeckDownload)
 
 	mux.HandleFunc("GET /recap", h.EventRecap)
 	mux.HandleFunc("GET /qr", h.QR)
@@ -158,6 +176,10 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /admin/showtell-questions", h.ShowTellQuestions)
 	mux.HandleFunc("GET /admin/showtell-stream", h.ShowTellStream)
 	mux.HandleFunc("GET /admin/export", h.AdminExport)
+	mux.HandleFunc("GET /admin/slides", h.AdminSlides)
+	mux.HandleFunc("POST /admin/slides", h.AdminSlidesUpload)
+	mux.HandleFunc("POST /admin/slides/remove", h.AdminSlidesRemove)
+	mux.HandleFunc("POST /admin/board", h.AdminBoard)
 
 	return mux
 }

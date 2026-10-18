@@ -1,5 +1,9 @@
 # Agentic Blind Date
 
+<p align="center">
+  <img src="agentic-blind-date-logo.jpg" alt="Agentic Blind Date logo" width="320">
+</p>
+
 A web app for tech meetups, built as a live demo of agentic AI. Participants
 register with their GitHub handle, get interviewed by an AI pipeline, and are
 matched with their most compatible tech soulmate — then revealed all at once on
@@ -49,6 +53,8 @@ Late joiners who arrive after the reveal see a "You just missed it!" message rat
 | `/user` | Participants | Register, complete Q&A, wait for reveal, see match |
 | `/bigscreen` | Projector | Live force graph + simultaneous reveal |
 | `/admin` | Host | Trigger reveal, reset event (auto-refreshes every 5 seconds) |
+| `/admin/slides` | Host | Upload the speakers' slides (PDF); Participants see them on their personal page |
+| `/admin` (Board section) | Host | Approve, reject or take down the Posts Participants share on the Board |
 | `/data` | Debug | Inspect all participants, activity log, event state |
 
 ## Running
@@ -106,7 +112,7 @@ The organiser picks the provider for the whole deployment with `LLM_PROVIDER`. E
 
 | Provider | Base URL default | Key | Default model | Default timeout |
 |---|---|---|---|---|
-| `mistral` (default) | `https://api.mistral.ai/v1` | required (`LLM_API_KEY` or legacy `MISTRAL_API_KEY`) | `mistral-medium-latest` | 30s |
+| `mistral` (default) | `https://api.mistral.ai/v1` | required (`LLM_API_KEY` or legacy `MISTRAL_API_KEY`) | `mistral-large-4` | 30s |
 | `scaleway` | `https://api.scaleway.ai/v1` | required — the secret key of a Scaleway IAM API key | `mistral-small-3.2-24b-instruct-2506` | 30s |
 | `ollama` | `http://localhost:11434/v1` | not needed | none — set `LLM_MODEL` yourself | 180s |
 
@@ -124,6 +130,55 @@ LLM_PROVIDER=ollama LLM_MODEL=llama3.1:8b ./agentic-blind-date
 ```
 
 The 180s default timeout covers the first request, which can be slow while the model loads. A model that hasn't been pulled fails with a clear "try pulling it first" log message instead of being retried.
+
+### Protecting the host console
+
+The app has no authentication of its own: `/admin*` (the host console, Reset, uploads) and `/data*` (JSON debug endpoints) are open to anyone who can reach them. In production, Caddy puts HTTP basic auth in front of them. The Big Screen, `/recap`, `/qr` and the Participants' personal pages stay public.
+
+1. **Create the password hash** on the machine that runs Caddy (it prompts for the password twice and prints a bcrypt hash):
+
+   ```bash
+   caddy hash-password
+   ```
+
+2. **Give Caddy the hash through its environment**, not the Caddyfile, so the hash stays out of git. For a systemd service, add it to the unit's environment file (for example `/etc/caddy/caddy.env`, referenced by `EnvironmentFile=`), then restart Caddy. Do not wrap the value in quotes and do not let a shell expand it, because a bcrypt hash contains `$` characters:
+
+   ```
+   HOST_PASSWORD_HASH=$2a$14$...
+   ```
+
+3. **Protect the host paths in the `Caddyfile`:**
+
+   ```
+   meetup.jorisgillis.name {
+       @host path /admin* /data*
+       basic_auth @host {
+           host {$HOST_PASSWORD_HASH}
+       }
+       reverse_proxy localhost:8080
+   }
+   ```
+
+   The username is `host`; the password is the one you hashed. Caddy 2.8+ spells the directive `basic_auth` (older versions: `basicauth`). Check the config and reload without downtime:
+
+   ```bash
+   caddy validate --config /etc/caddy/Caddyfile
+   systemctl reload caddy
+   ```
+
+4. **Make the app reachable only through Caddy.** Caddy proxies to `localhost:8080`, so publish the container's port on the loopback interface only (`127.0.0.1:8080:8080` in `docker-compose.yml`). With a plain `8080:8080` mapping, anyone can bypass Caddy, and its auth, by calling port 8080 directly.
+
+5. **Check it:**
+
+   ```bash
+   curl -i https://meetup.jorisgillis.name/admin                  # 401
+   curl -i -u host:<password> https://meetup.jorisgillis.name/admin   # 200
+   curl -i https://meetup.jorisgillis.name/recap                  # not behind auth
+   ```
+
+   The browser asks for the credentials once and then reuses them, including for the host console's live (SSE) streams. The `curl` commands under "Testing with curl" below target `localhost:8080` directly and need no credentials; against the deployed site add `-u host:<password>` to every `/admin` and `/data` call.
+
+To change the password, repeat steps 1–2 and reload Caddy. To rotate it after an event, do the same.
 
 ## Developing
 
@@ -222,7 +277,7 @@ Matching is a three-phase process (`matcher.go`):
 
 For each participant, every other participant is scored with a heuristic:
 - +3 points per shared programming language
-- +1 point per identical answer to the same question
+- +1 point per identical answer to the same question (free-text and Custom Question answers are skipped)
 
 Each participant keeps their top-5 candidates. All unique pairs across every
 top-5 list are collected — at most N×5 pairs, typically fewer after
@@ -269,7 +324,7 @@ sqlite3 blind_date.db "SELECT github_handle, persona_name, pipeline_step, compat
 
 ### Mistral model
 
-The model is set in `main.go`, currently `mistral-medium-latest`. Swap to `mistral-large-latest` for more creative personas and match reasoning, at higher cost and latency.
+The default is set in `llmprovider.go`, currently `mistral-large-4`. Override it with `LLM_MODEL`; a smaller model such as `mistral-medium-latest` is cheaper and faster, at the cost of less creative personas and match reasoning.
 
 ## License
 

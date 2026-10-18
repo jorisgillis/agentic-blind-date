@@ -9,23 +9,59 @@ import (
 	"time"
 )
 
-func TestDefaultMatchResult(t *testing.T) {
-	result := defaultMatchResult()
+// TestHeuristicScore_MapsThePairScoreOntoTheCompatibilityScale covers the
+// fallback score's contract: the PairScore heuristic mapped onto 0-100, with
+// a floor for nothing shared and a cap for everything shared, monotonic in
+// between — the fallback discriminates between pairs instead of presenting
+// one constant (the field report's "everybody had a 42% match").
+func TestHeuristicScore_MapsThePairScoreOntoTheCompatibilityScale(t *testing.T) {
+	if got := heuristicScore(0); got != 30 {
+		t.Errorf("nothing shared: want the scale floor 30, got %d", got)
+	}
+	if got := heuristicScore(35); got != 100 {
+		t.Errorf("35 heuristic points: want the scale cap 100, got %d", got)
+	}
+	if got := heuristicScore(1000); got != 100 {
+		t.Errorf("the scale caps at 100, got %d", got)
+	}
+	prev := heuristicScore(0)
+	for raw := 1; raw <= 40; raw++ {
+		if got := heuristicScore(raw); got < prev {
+			t.Fatalf("heuristicScore(%d) = %d, below heuristicScore(%d) = %d", raw, got, raw-1, prev)
+		} else {
+			prev = got
+		}
+	}
+}
 
-	if result.Score != 42 {
-		t.Errorf("expected score 42, got %d", result.Score)
+// TestMatcherHeuristicFallback_DiscriminatesAndSaysSo covers the fallback
+// assessment used when the LLM scoring fails: the score comes from the
+// heuristic (pairs sharing more score higher), and the reason says honestly
+// that it is an estimate — while the flags and icebreakers keep the dossier
+// payload complete.
+func TestMatcherHeuristicFallback_DiscriminatesAndSaysSo(t *testing.T) {
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), newFakeLLM())
+
+	strangers := m.heuristicMatchResult(testParticipant("a", "A", []string{"Go"}), testParticipant("b", "B", []string{"Rust"}))
+	acquaintances := m.heuristicMatchResult(
+		testParticipant("c", "C", []string{"Go"}, participantOpts{answers: map[string]string{"fixed_0": "Tabs"}}),
+		testParticipant("d", "D", []string{"Go", "Rust"}, participantOpts{answers: map[string]string{"fixed_0": "Tabs"}}),
+	)
+
+	if strangers.Score != heuristicScore(0) {
+		t.Errorf("nothing shared: want the floor %d, got %d", heuristicScore(0), strangers.Score)
 	}
-	if result.Reason == "" {
-		t.Error("expected non-empty reason")
+	if acquaintances.Score != heuristicScore(4) {
+		t.Errorf("one shared language and one shared answer: want %d, got %d", heuristicScore(4), acquaintances.Score)
 	}
-	if len(result.RedFlags) != 0 {
-		t.Errorf("expected 0 red flags, got %d", len(result.RedFlags))
+	if acquaintances.Score <= strangers.Score {
+		t.Errorf("sharing more must score higher: got %d vs %d", acquaintances.Score, strangers.Score)
 	}
-	if len(result.GreenFlags) != 1 {
-		t.Errorf("expected 1 green flag, got %d", len(result.GreenFlags))
+	if !strings.Contains(strangers.Reason, "Estimated") {
+		t.Errorf("the reason should say the score is an estimate, got %q", strangers.Reason)
 	}
-	if len(result.Icebreakers) != 3 {
-		t.Errorf("expected 3 icebreakers, got %d", len(result.Icebreakers))
+	if len(strangers.RedFlags) != 0 || len(strangers.GreenFlags) != 1 || len(strangers.Icebreakers) != 3 {
+		t.Errorf("the fallback keeps the payload complete, got %+v", strangers)
 	}
 }
 
@@ -122,6 +158,23 @@ func TestMatcherScorePair_FailuresAreNotCached(t *testing.T) {
 	}
 }
 
+func TestMatcherScorePair_PromptShowsAnswersWithTheirQuestions(t *testing.T) {
+	llm := newFakeLLM().on("matchmaker", matchReply)
+	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
+	a := testParticipant("a", "The Gopher", []string{"Go"}, participantOpts{answers: map[string]string{"fixed_0": "Tabs"}})
+	a.Questions = []Question{{ID: "fixed_0", Text: "Tabs or spaces?"}}
+
+	m.ScorePair(a, testParticipant("b", "The Crab", []string{"Rust"}))
+
+	call, _ := llm.lastCallMatching("matchmaker")
+	if !strings.Contains(call.User, "- Tabs or spaces? → Tabs") {
+		t.Errorf("prompt should pair the answer with its question:\n%s", call.User)
+	}
+	if !strings.Contains(call.User, "Interview answers:\n(none)") {
+		t.Errorf("a Developer without answers should say so:\n%s", call.User)
+	}
+}
+
 func TestMatcherScorePair_PromptDescribesEachDeveloperWithTheirOwnInterestsAndFollows(t *testing.T) {
 	llm := newFakeLLM().on("matchmaker", matchReply)
 	gh := newFakeGitHub().withFollow("a", "b")
@@ -149,7 +202,7 @@ func TestMatcherScorePair_PromptDescribesEachDeveloperWithTheirOwnInterestsAndFo
 // #46: a follow check that never gets a response must not stall a Match
 // assessment, and a timed-out check is treated as no follow relationship.
 func TestMatcherScorePair_AHungFollowCheckStillCompletesTheAssessment(t *testing.T) {
-	gh := NewGitHubClient("secret")
+	gh := NewGitHubClient("secret", "")
 	gh.httpClient = &http.Client{Transport: hangingTransport{}, Timeout: 20 * time.Millisecond}
 	llm := newFakeLLM().on("matchmaker", matchReply)
 	m := NewMatcher(newTestDB(t), gh, llm)
@@ -269,14 +322,17 @@ func TestMatcherMatchPool_EachParticipantIsInAtMostOneMatch(t *testing.T) {
 	}
 }
 
-func TestMatcherMatchPool_UsesTheDefaultAssessmentWhenScoringFails(t *testing.T) {
+func TestMatcherMatchPool_UsesTheHeuristicFallbackWhenScoringFails(t *testing.T) {
 	llm := newFakeLLM().onErr("matchmaker", fakeError("mistral HTTP 500"))
 	m := NewMatcher(newTestDB(t), newFakeGitHub(), llm)
 
 	matches := m.MatchPool([]*Participant{readyDev("A"), readyDev("B")})
 
-	if len(matches) != 1 || matches[0].Result.Score != defaultMatchResult().Score {
-		t.Errorf("want one Match with the default assessment, got %v", pairsOf(matches))
+	// Both share Go (+3 heuristic points): the fallback scores the pair from
+	// the heuristic, not a constant.
+	want := heuristicScore(3)
+	if len(matches) != 1 || matches[0].Result.Score != want {
+		t.Errorf("want one Match with the heuristic fallback score %d, got %v", want, pairsOf(matches))
 	}
 }
 

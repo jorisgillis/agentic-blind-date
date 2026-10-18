@@ -12,17 +12,23 @@
 <body class="bg-gray-950 text-white min-h-screen flex items-center justify-center px-4">
   <div class="w-full max-w-md">
 
+    {{/* The header tracks the pipeline area: while the agents prepare the
+         interview it counts the wait, once the interview runs it says why the
+         questions are asked. The server renders the matching variant; the
+         script below keeps it in sync across fragment swaps. */}}
     <div class="text-center mb-8">
-      <div class="text-5xl mb-3">🤖</div>
-      <h1 class="text-2xl font-black">The agents are on it</h1>
+      <div class="text-5xl mb-3" id="onboard-emoji">{{if .Question}}🎤{{else}}🤖{{end}}</div>
+      <h1 class="text-2xl font-black" id="onboard-title">{{if .Question}}Quick interview{{else}}The agents are on it{{end}}</h1>
       <p class="text-gray-400 text-sm mt-1">{{.DisplayHandle}}</p>
+      <p class="text-gray-500 text-xs mt-2" id="onboard-sub">{{if .Question}}A few quick questions — your answers decide who you meet tonight{{else}}Fetching your profile and preparing your questions…{{end}}</p>
+      <p class="text-gray-600 text-xs mt-1 {{if .Question}}hidden{{end}}" id="onboard-elapsed">⏳ <span id="wait-elapsed">0:00</span></p>
     </div>
 
     {{/* The fragment self-contains the polling div (hx-swap="outerHTML") */}}
     {{if .Question}}
       {{template "fragment-question.html" .Question}}
     {{else}}
-      {{template "fragment-pipeline-step.html" .}}
+      {{template "fragment-pipeline-step.html" .Pipeline}}
     {{end}}
 
   </div>
@@ -34,6 +40,28 @@
     }
     document.addEventListener('DOMContentLoaded', renderMd);
     document.addEventListener('htmx:afterSwap', renderMd);
+
+    function syncHeader() {
+      const interview = document.querySelector('#pipeline-area [data-question]') !== null;
+      document.getElementById('onboard-emoji').textContent = interview ? '🎤' : '🤖';
+      document.getElementById('onboard-title').textContent = interview ? 'Quick interview' : 'The agents are on it';
+      document.getElementById('onboard-sub').textContent = interview
+        ? 'A few quick questions — your answers decide who you meet tonight'
+        : 'Fetching your profile and preparing your questions…';
+      document.getElementById('onboard-elapsed').classList.toggle('hidden', interview);
+    }
+    document.addEventListener('htmx:afterSwap', (e) => {
+      if (e.detail.target && e.detail.target.id === 'pipeline-area') syncHeader();
+    });
+
+    const _waitStart = Date.now();
+    setInterval(() => {
+      const el = document.getElementById('wait-elapsed');
+      if (!el) return;
+      const s = Math.floor((Date.now() - _waitStart) / 1000);
+      el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }, 1000);
+
     const _es = new EventSource('/user/pipeline-stream/{{.ID}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
     _es.addEventListener('refresh', () => htmx.trigger('#pipeline-area', 'refresh'));

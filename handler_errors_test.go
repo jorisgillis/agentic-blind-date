@@ -160,7 +160,8 @@ func TestStreams_EndWhenTheParticipantIsRemoved(t *testing.T) {
 	wait := open(t, srv, "/user/wait-stream/w")
 	waitFor(t, pipeline, "event: refresh") // the connect-time sync
 	sentNothingNew(t, pipeline, 1, pipeline.String(), "before removal")
-	sentNothingNew(t, wait, 1, "", "before removal")
+	waitFor(t, wait, "event: refresh") // the connect-time sync
+	sentNothingNew(t, wait, 1, wait.String(), "before removal")
 
 	NewRelationships(deps.db).Remove("i")
 	NewRelationships(deps.db).Remove("w")
@@ -181,7 +182,7 @@ func TestStreams_SendAHeartbeatWhenIdle(t *testing.T) {
 
 func TestRender_AMissingTemplateIsAnError(t *testing.T) {
 	_, deps := newTestServer(t, nil, nil)
-	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, deps.missions, deps.showtell, nil)
+	h := NewHandler(deps.db, deps.onboarding, nil, nil, nil, deps.matchmaking, deps.missions, deps.showtell, NewSlideDecks(deps.db, t.TempDir()), nil)
 	rec := httptest.NewRecorder()
 
 	h.render(rec, "no-such-template.html", nil)

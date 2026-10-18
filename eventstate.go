@@ -96,7 +96,7 @@ func (p Phase) StepLabel() string {
 func (p Phase) Tonight() string {
 	switch p {
 	case PhaseSocial:
-		return "Tonight: the matches are revealed — meet the personas on your mission card"
+		return "Tonight: the matches are revealed — meet your match, hunt your mission card, sign up for show & tell"
 	case PhaseShowTell:
 		return "Tonight: show & tell — sign up to present, or ask the one on stage"
 	case PhaseClosed:
@@ -235,7 +235,7 @@ func (s *EventStore) set(phase Phase) error {
 }
 
 // Reset starts the event over: no Participants, no meetings, no mission
-// cards, no contact channels, no recap tokens, no show & tell sign-ups, no
+// cards, no contact channels, no recap tokens, no show & tell sign-ups, no slide decks, no
 // audience questions, no activity, and back to onboarding — one transaction,
 // so a failure leaves everything as it was. Meetings expire silently: no
 // message, no nag.
@@ -257,6 +257,12 @@ func (s *EventStore) Reset() error {
 			return err
 		}
 		if _, err := tx.Exec(`DELETE FROM showtell_signups`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM slide_decks`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM board_posts`); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`DELETE FROM participants`); err != nil {

@@ -210,3 +210,36 @@ func TestInterview_CompletingFailsWhenExtraAnswersCannotBeSaved(t *testing.T) {
 		t.Error("want the failure reported")
 	}
 }
+
+func TestInterviewText_PutsEachAnswerNextToItsQuestion(t *testing.T) {
+	p := &Participant{
+		Questions: []Question{{ID: "fixed_0", Text: "Tabs or spaces?"}, {ID: "custom_0", Text: "Vim or Emacs, you heathen?"}},
+		Answers:   map[string]string{"custom_0": "Vim", "fixed_0": "Tabs", "legacy_9": "kept"},
+	}
+
+	want := "- Tabs or spaces? → Tabs\n- Vim or Emacs, you heathen? → Vim\n- legacy_9 → kept"
+	if got := interviewText(p); got != want {
+		t.Errorf("interviewText:\nwant %q\ngot  %q", want, got)
+	}
+}
+
+func TestInterviewText_WithoutAnswers(t *testing.T) {
+	if got := interviewText(&Participant{}); got != "(none)" {
+		t.Errorf("want (none), got %q", got)
+	}
+}
+
+func TestComparableAnswer(t *testing.T) {
+	for id, want := range map[string]bool{
+		"fixed_0":  true,  // single choice
+		"extra_0":  true,  // multi choice
+		"fixed_1":  false, // free text
+		"extra_3":  false, // free text
+		"custom_0": false, // different question per Participant
+		"q1":       true,  // unknown ids still compare
+	} {
+		if got := comparableAnswer(id); got != want {
+			t.Errorf("comparableAnswer(%q): want %v, got %v", id, want, got)
+		}
+	}
+}

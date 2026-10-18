@@ -370,3 +370,49 @@ func TestEncodeMatchResult_NilListsEncodeAsEmptyArrays(t *testing.T) {
 		t.Errorf("want empty arrays, got %q %q %q", red, green, ice)
 	}
 }
+
+// TestParticipantStore_AgentQueueAheadCountsThoseWaitingAhead covers the
+// agent queue position: the Participants registered before you who are still
+// waiting on an agent (fetching their profile, crafting their persona). A
+// Participant answering their interview is not waiting on an agent, so they
+// do not count.
+func TestParticipantStore_AgentQueueAheadCountsThoseWaitingAhead(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("first", "first", "First", true)
+	db.CreateParticipant("second", "second", "Second", true)
+	db.CreateParticipant("interviewing", "interviewing", "Interviewing", true)
+	db.CreateParticipant("ready", "ready", "Ready", true)
+	forceStep(db, "first", StepFetchingGitHub)
+	forceStep(db, "second", StepCreatingPersona)
+	forceStep(db, "interviewing", StepInterviewing)
+	forceStep(db, "ready", StepReady)
+
+	if got := store.AgentQueueAhead("second"); got != 1 {
+		t.Errorf("second: want 1 ahead (first), got %d", got)
+	}
+	if got := store.AgentQueueAhead("first"); got != 0 {
+		t.Errorf("first: want nobody ahead, got %d", got)
+	}
+	if got := store.AgentQueueAhead("ready"); got != 2 {
+		t.Errorf("ready: want 2 ahead (first and second, not the interviewing one), got %d", got)
+	}
+	if got := store.AgentQueueAhead("nobody"); got != 0 {
+		t.Errorf("unknown Participant: want 0, got %d", got)
+	}
+}
+
+func TestParticipantStore_AgentQueueWaitingCountsTheAgentSteps(t *testing.T) {
+	db := newTestDB(t)
+	store := NewParticipantStore(db)
+	db.CreateParticipant("a", "a", "A", true)
+	db.CreateParticipant("b", "b", "B", true)
+	db.CreateParticipant("c", "c", "C", true)
+	forceStep(db, "a", StepFetchingGitHub)
+	forceStep(db, "b", StepCreatingPersona)
+	forceStep(db, "c", StepReady)
+
+	if got := store.AgentQueueWaiting(); got != 2 {
+		t.Errorf("want 2 waiting on agents, got %d", got)
+	}
+}

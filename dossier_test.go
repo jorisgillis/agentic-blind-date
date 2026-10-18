@@ -196,13 +196,15 @@ func TestMatchStream_PushesTheDossierUnlock(t *testing.T) {
 	ms := NewMeetings(deps.db, deps.events)
 
 	s := open(t, srv, "/user/match-stream/aaa")
-	sentNothingNew(t, s, 1, "", "before the pair meets")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "before the pair meets")
 
 	if _, _, err := ms.Confirm(reload(t, deps.db, "aaa"), reload(t, deps.db, "bbb"), OriginMatch); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh") // the first side: the meet section changes
-	before := s.String()
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1) // the first side: the meet section changes
+	before = s.String()
 	if _, _, err := ms.Confirm(reload(t, deps.db, "bbb"), reload(t, deps.db, "aaa"), OriginMatch); err != nil {
 		t.Fatal(err)
 	}

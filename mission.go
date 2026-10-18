@@ -238,6 +238,38 @@ func (m *Missions) Stamped(id string) (map[string]bool, error) {
 	return stamped, nil
 }
 
+// MissionView is the mission card's read model: the card, its stamps and the
+// Participant's connection count, derived together in one pass over their
+// meetings — the count is the length of the stamp set, one connection per
+// completed meeting.
+type MissionView struct {
+	Card        *MissionCard
+	Stamped     map[string]bool
+	Connections int
+}
+
+// View returns the Participant's mission card with its stamps and their
+// connection count in a single pass over their meetings, so the personal
+// page renders the phase header and the mission card from one result — no
+// separate connection COUNT. Nil when they have no card. When the meetings
+// cannot be read the view degrades to unstamped tiles with a zero count —
+// the card still renders — and the failure is logged here.
+func (m *Missions) View(id string) (*MissionView, error) {
+	card, err := m.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if card == nil {
+		return nil, nil
+	}
+	stamped, err := m.Stamped(id)
+	if err != nil {
+		logger("mission").Warn("mission view stamps", "participant", id, "err", err)
+		stamped = map[string]bool{}
+	}
+	return &MissionView{Card: card, Stamped: stamped, Connections: len(stamped)}, nil
+}
+
 // RemoveParticipant deletes a Participant's Mission card when they leave the
 // event.
 func (m *Missions) RemoveParticipant(id string) error {
@@ -378,7 +410,7 @@ func differenceScore(a, b *Participant) int {
 		bAnswers = map[string]string{}
 	}
 	for k, av := range aAnswers {
-		if bv, ok := bAnswers[k]; ok && av != bv {
+		if bv, ok := bAnswers[k]; ok && comparableAnswer(k) && av != bv {
 			score++
 		}
 	}
@@ -467,13 +499,13 @@ func missionPrompt(me *Participant, tiles []MissionTile, others []*Participant) 
 		byID[o.ID] = o
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "MISSION FOR %s %s\nInterests: %s\nInterview answers: %v\n",
-		me.PersonaSymbol, me.PersonaName, fmtInterests(me.Interests), me.Answers)
+	fmt.Fprintf(&b, "MISSION FOR %s %s\nInterests: %s\nInterview answers:\n%s\n",
+		me.PersonaSymbol, me.PersonaName, fmtInterests(me.Interests), interviewText(me))
 	b.WriteString("\nTILES (one reason each, in this order):\n")
 	for i, t := range tiles {
 		fmt.Fprintf(&b, "%d. [%s] %s %s\n", i+1, t.Kind, t.Symbol, t.Name)
 		if p, ok := byID[t.PersonID]; ok {
-			fmt.Fprintf(&b, "   Interests: %s\n   Interview answers: %v\n", fmtInterests(p.Interests), p.Answers)
+			fmt.Fprintf(&b, "   Interests: %s\n   Interview answers:\n%s\n", fmtInterests(p.Interests), indent(interviewText(p), "   "))
 		}
 	}
 	return b.String()

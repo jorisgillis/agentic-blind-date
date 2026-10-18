@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -52,35 +51,21 @@ func computeBadges(p GitHubProfile) []Badge {
 	return out
 }
 
-type graphNode struct {
-	ID          string `json:"id"`
-	PersonaName string `json:"persona_name"`
-	Color       string `json:"color"`
-	Symbol      string `json:"symbol"`
-	Step        string `json:"step"`
-	Ready       bool   `json:"ready"`
-	Matched     bool   `json:"matched"`
-}
-
-type graphEdge struct {
-	Source  string `json:"source"`
-	Target  string `json:"target"`
-	Score   int    `json:"score"`
-	Matched bool   `json:"matched"`
-	Meeting bool   `json:"meeting"`
-}
-
 // Handler handles HTTP requests for the web application.
 type Handler struct {
 	db          *DB
 	store       *ParticipantStore
 	events      *EventStore
+	evening     *Evening
 	meetings    *Meetings
 	channels    *ContactChannels
 	recaps      *Recaps
 	missions    *Missions
 	showtell    *ShowTell
+	slides      *SlideDecks
+	board       *Board
 	closing     *Closing
+	screen      *Screen
 	onboarding  *Onboarding
 	interview   *Interview
 	matcher     *Matcher
@@ -100,7 +85,7 @@ type StreamObserver interface {
 // NewHandler creates a new Handler with the given dependencies.
 // It initializes the templates and takes the modules the pages use.
 // streams may be nil: production observes nothing.
-func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, missions *Missions, showtell *ShowTell, streams StreamObserver) *Handler {
+func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *Matcher, relations *Relationships, matchmaking *Matchmaking, missions *Missions, showtell *ShowTell, slides *SlideDecks, streams StreamObserver) *Handler {
 	funcs := template.FuncMap{
 		"add":    func(a, b int) int { return a + b },
 		"badges": func(p GitHubProfile) []Badge { return computeBadges(p) },
@@ -109,21 +94,32 @@ func NewHandler(db *DB, onboarding *Onboarding, interview *Interview, matcher *M
 		"divInt":    func(a, b int) int { return a / b },
 		"colorName": paletteName,
 		"textColor": paletteText,
+		"fileSize":  formatFileSize,
+		"linkify":   linkify,
 	}
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseGlob(filepath.Join("templates", "*.html")))
 	events := NewEventStore(db)
 	meetings := NewMeetings(db, events)
 	channels := NewContactChannels(db)
+	closing := NewClosing(db, meetings, channels, showtell)
 	return &Handler{
 		db: db, store: NewParticipantStore(db), events: events, meetings: meetings,
-		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell,
-		closing:    NewClosing(db, meetings, channels, showtell),
+		evening:  NewEvening(db, missions, meetings, slides, matcher),
+		channels: channels, recaps: NewRecaps(db), missions: missions, showtell: showtell, slides: slides, board: NewBoard(db, events),
+		closing:    closing,
+		screen:     NewScreen(db, matcher, meetings, showtell, closing),
 		onboarding: onboarding, interview: interview, matcher: matcher, relations: relations, matchmaking: matchmaking,
 		tmpl: tmpl, streams: streams,
 	}
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
+	h.renderStatus(w, http.StatusOK, name, data)
+}
+
+// renderStatus renders a page with the given status: a rejected form re-renders
+// its page with the reason.
+func (h *Handler) renderStatus(w http.ResponseWriter, status int, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Pages are revalidated on every load: the app can be updated while an
 	// event is running, and a cached page would keep running its old scripts.
@@ -136,6 +132,7 @@ func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 		http.Error(w, "render error", 500)
 		return
 	}
+	w.WriteHeader(status)
 	_, _ = w.Write(buf.Bytes())
 }
 
@@ -207,7 +204,7 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, dest, http.StatusSeeOther)
 		return
 	}
-	h.render(w, "onboard.html", onboardPage{Participant: p, Question: h.openQuestion(p)})
+	h.render(w, "onboard.html", onboardPage{Participant: p, Question: h.openQuestion(p), Pipeline: h.pipelineStepDataFor(p)})
 }
 
 // onboardPage is the Onboard page's data: the Participant plus the Interview
@@ -217,6 +214,20 @@ func (h *Handler) Onboard(w http.ResponseWriter, r *http.Request) {
 type onboardPage struct {
 	*Participant
 	Question *QuestionData
+	Pipeline pipelineStepData
+}
+
+// pipelineStepData is the pipeline-step fragment's data: the Participant and
+// their position in the agent queue — how many Participants registered before
+// them are still waiting on an agent — so the waiting carries feedback instead
+// of a silent spinner.
+type pipelineStepData struct {
+	*Participant
+	QueueAhead int
+}
+
+func (h *Handler) pipelineStepDataFor(p *Participant) pipelineStepData {
+	return pipelineStepData{Participant: p, QueueAhead: h.store.AgentQueueAhead(p.ID)}
 }
 
 // openQuestion is the Interview question the pipeline area shows right away:
@@ -244,7 +255,7 @@ func (h *Handler) PipelineStatus(w http.ResponseWriter, r *http.Request) {
 		h.render(w, "fragment-question.html", qd)
 		return
 	}
-	h.render(w, "fragment-pipeline-step.html", p)
+	h.render(w, "fragment-pipeline-step.html", h.pipelineStepDataFor(p))
 }
 
 // POST /user/answer/{id}
@@ -309,16 +320,9 @@ func (h *Handler) Wait(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	data := h.waitStatusData(p)
+	data := h.waitPageData(p)
 	data["Profile"] = profile
 	data["QAPairs"] = qaPairs
-	data["MeetStatus"] = h.meetStatusData(p)
-	data["MissionCard"] = h.missionCardData(p)
-	data["ShowTell"] = h.showtellData(p)
-	data["Settings"] = h.settingsData(p)
-	data["RecapLink"] = h.recapLinkData(p)
-	data["RecapContent"] = h.recapContentData(p)
-	data["PhaseHeader"] = h.phaseHeaderData(p)
 	h.render(w, "wait.html", data)
 }
 
@@ -365,7 +369,7 @@ func (h *Handler) PhaseHeader(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, "fragment-phase-header.html", h.phaseHeaderData(p))
+	h.render(w, "fragment-phase-header.html", h.phaseHeaderData(p, h.missionView(p)))
 }
 
 // phaseHeaderStep is one step of the phase header's progress strip: the phase
@@ -389,7 +393,9 @@ type phaseHeaderBadge struct {
 // phaseHeaderData is the personal pages' phase header. It renders from the
 // phase machine's current state — a late joiner simply sees the earlier steps
 // as done — and weaves the Participant's own status into the current phase.
-func (h *Handler) phaseHeaderData(p *Participant) map[string]any {
+// The mission view is the caller's single pass over the Participant's mission
+// data, shared with the mission card section on full-page renders.
+func (h *Handler) phaseHeaderData(p *Participant, mission *MissionView) map[string]any {
 	phase := h.events.State()
 	steps := make([]phaseHeaderStep, 0, len(phases))
 	for _, q := range phases {
@@ -405,7 +411,7 @@ func (h *Handler) phaseHeaderData(p *Participant) map[string]any {
 		"Phase":      phase,
 		"Steps":      steps,
 		"Summary":    phase.Tonight(),
-		"Status":     h.phaseHeaderStatus(p, phase),
+		"Status":     h.phaseHeaderStatus(p, phase, mission),
 		"QueueBadge": h.phaseHeaderQueueBadge(p, phase),
 	}
 }
@@ -442,23 +448,19 @@ func (h *Handler) phaseHeaderQueueBadge(p *Participant, phase Phase) *phaseHeade
 // per phase: the Interview's progress during onboarding, the Mission card's
 // stamped tiles during the social, a show & tell pointer during show & tell,
 // and the recap pointer once the event is closed.
-func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase) string {
+func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase, mission *MissionView) string {
 	switch phase {
 	case PhaseSocial:
-		card, err := h.missions.Get(p.ID)
-		if err != nil {
-			logger("handler").Warn("phase header mission card", "participant", p.ID, "err", err)
-		}
-		if card == nil {
+		if mission == nil {
 			return "Mission: your card is being prepared"
 		}
 		stamped := 0
-		for _, tile := range h.stampedTiles(p, card) {
+		for _, tile := range stampedTiles(mission) {
 			if tile.Stamped {
 				stamped++
 			}
 		}
-		return fmt.Sprintf("Mission: %d of %d tiles stamped", stamped, len(card.Tiles))
+		return fmt.Sprintf("Mission: %d of %d tiles stamped", stamped, len(mission.Card.Tiles))
 	case PhaseShowTell:
 		return "Show & tell: audience questions open"
 	case PhaseClosed:
@@ -477,12 +479,15 @@ func (h *Handler) phaseHeaderStatus(p *Participant, phase Phase) string {
 // sees the teaser — their future Match's emoji and colour and a hint at what
 // the pair disagreed on, never the partner's identity, score or dossier. An
 // unmatched Participant sees the ready count while the event is still
-// onboarding, and a clear no-match state once the Social has begun.
+// onboarding, and a clear no-match state once the Social has begun. While the
+// Participant themselves waits on an agent (persona, matching), the queue
+// position rides along, so the wait carries feedback.
 func (h *Handler) waitStatusData(p *Participant) map[string]any {
 	data := map[string]any{
 		"Participant": p,
 		"Count":       h.db.ReadyCount(),
 		"Revealed":    h.events.State().AtLeast(PhaseSocial),
+		"QueueAhead":  h.store.AgentQueueAhead(p.ID),
 	}
 	partner, _, err := h.relations.PartnerOf(p.ID)
 	if err != nil {
@@ -521,19 +526,11 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The evergreen cards ride at the page's top level for the "More" drawer
-	// (ADR 0019, step 3): the dossier, the settings, the share-profile QR and
-	// the recap link — outside the phase-content region, so they survive
-	// phase swaps and keep their own refresh wiring.
-	dossier, _ := h.dossierData(p)
-	h.render(w, "match.html", map[string]any{
-		"Me":           p,
-		"PhaseHeader":  h.phaseHeaderData(p),
-		"PhaseContent": h.phaseContentData(p),
-		"Dossier":      dossier,
-		"Settings":     h.settingsData(p),
-		"RecapLink":    h.recapLinkData(p),
-	})
+	// The page's data map derives from the card registry: the body's cards
+	// and the evergreen cards riding at the page's top level for the "More"
+	// drawer (ADR 0019, step 3) — outside the phase-content region, so they
+	// survive phase swaps and keep their own refresh wiring.
+	h.render(w, "match.html", h.matchPageData(p))
 }
 
 // ── the match page's phase-content region ──────────────────────────────────
@@ -554,27 +551,37 @@ func (h *Handler) PhaseContent(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("HX-Redirect", dest)
 		return
 	}
-	h.render(w, "fragment-phase-content.html", h.phaseContentData(p))
+	h.render(w, "fragment-phase-content.html", h.phaseContentData(p, h.missionView(p)))
 }
 
 // phaseContentData is the match page's phase-content region: the per-card
-// fragments the current phase calls for, composed around the match reveal —
-// the mission card and the meet section during the social, the show & tell
-// tooling from show & tell on. The evergreen cards — the dossier, the
-// settings, the share-profile QR and the recap link — live in the page's
-// "More" drawer instead (ADR 0019, step 3, #138), outside this region.
-func (h *Handler) phaseContentData(p *Participant) map[string]any {
-	dossier, match := h.dossierData(p)
-	return map[string]any{
-		"Me":           p,
-		"Phase":        h.events.State(),
-		"Match":        match,
-		"Score":        dossier["Score"],
-		"MeetStatus":   h.meetStatusData(p),
-		"MissionCard":  h.missionCardData(p),
-		"ShowTell":     h.showtellData(p),
-		"RecapContent": h.recapContentData(p),
+// data the current phase calls for, derived from the card registry — every
+// card placed in the region contributes its data, and the match reveal, the
+// one card the region renders from its own data, merges into the region's
+// map. The composition itself — which cards the current phase calls for, in
+// order — lives in the region's template. The evergreen cards — the dossier,
+// the settings, the share-profile QR and the recap link — live in the page's
+// "More" drawer instead (ADR 0019, step 3, #138), outside this region. The
+// mission view is the caller's single pass over the Participant's mission
+// data, shared with the phase header on full-page renders.
+func (h *Handler) phaseContentData(p *Participant, mission *MissionView) map[string]any {
+	data := map[string]any{"Me": p, "Phase": h.events.State()}
+	for _, c := range pageCards {
+		if c.OnMatch != regionPhase {
+			continue
+		}
+		landCardData(data, c, c.Data(h, p, mission))
 	}
+	return data
+}
+
+// revealData is the match reveal's data: the region's hero — the "It's a
+// match!" card with the score and the partner's persona card, or the
+// no-match state. The reveal has no key of its own: the region renders it
+// from its own map, so its data merges in at the top level.
+func (h *Handler) revealData(p *Participant) map[string]any {
+	dossier, match := h.dossierData(p)
+	return map[string]any{"Me": p, "Match": match, "Score": dossier["Score"]}
 }
 
 // dossierData is the Match page's dossier: the fun payload of the Match — the
@@ -592,7 +599,7 @@ func (h *Handler) dossierData(p *Participant) (map[string]any, *Participant) {
 	}
 	unlocked := false
 	if match != nil {
-		unlocked = h.dossierUnlocked(p)
+		unlocked = h.meetings.DossierUnlocked(p.ID, p.MatchedWith)
 	}
 	return map[string]any{
 		"Me":          p,
@@ -644,28 +651,43 @@ type missionTileView struct {
 	Stamped bool `json:"stamped"`
 }
 
-// missionCardData is the personal page's mission card section: the card's
-// tiles with their stamp state (derived from completed meetings) and the
-// live progress — connections and rank vs the top 5. Without a card it is
+// missionCardData is the personal page's mission card section from a fresh
+// single pass over the Participant's mission data.
+func (h *Handler) missionCardData(p *Participant) map[string]any {
+	return h.missionCardSection(p, h.missionView(p))
+}
+
+// missionView is the personal page's single pass over the Participant's
+// mission data: the card, its stamps and the connection count together. A
+// read failure degrades to nil, so the sections show the placeholder —
+// unreadable missions never break the page.
+func (h *Handler) missionView(p *Participant) *MissionView {
+	view, err := h.missions.View(p.ID)
+	if err != nil {
+		logger("handler").Warn("mission view", "participant", p.ID, "err", err)
+		return nil
+	}
+	return view
+}
+
+// missionCardSection is the personal page's mission card section from an
+// already-computed mission view: the card's tiles with their stamp state and
+// the live progress — connections and rank vs the top 5. Without a card it is
 // the preparing placeholder while the event allows cards, and empty
 // otherwise.
-func (h *Handler) missionCardData(p *Participant) map[string]any {
+func (h *Handler) missionCardSection(p *Participant, mission *MissionView) map[string]any {
 	data := map[string]any{
 		"Me":        p,
 		"Preparing": h.events.State().MissionCardsLive(),
 		"Closed":    h.events.State().IsClosed(),
 	}
-	card, err := h.missions.Get(p.ID)
-	if err != nil {
-		logger("handler").Warn("mission card", "participant", p.ID, "err", err)
-	}
-	if card == nil {
+	if mission == nil {
 		return data
 	}
-	tiles := h.stampedTiles(p, card)
+	tiles := stampedTiles(mission)
 	data["Tiles"] = tiles
 	data["Grid"] = tileGrid(tiles)
-	data["Connections"] = h.meetings.Connections(p.ID)
+	data["Connections"] = mission.Connections
 	board, err := h.meetings.Leaderboard()
 	if err != nil {
 		logger("handler").Warn("connection leaderboard", "participant", p.ID, "err", err)
@@ -679,17 +701,13 @@ func (h *Handler) missionCardData(p *Participant) map[string]any {
 	return data
 }
 
-// stampedTiles joins the card's tiles with the Participant's completed
-// meetings: a tile is stamped when a completed meeting exists with that
-// person. Stamps derive from the meetings — there is no stamped_at column.
-func (h *Handler) stampedTiles(p *Participant, card *MissionCard) []missionTileView {
-	stamped, err := h.missions.Stamped(p.ID)
-	if err != nil {
-		logger("handler").Warn("mission card stamps", "participant", p.ID, "err", err)
-	}
-	tiles := make([]missionTileView, 0, len(card.Tiles))
-	for _, t := range card.Tiles {
-		tiles = append(tiles, missionTileView{MissionTile: t, Stamped: stamped[t.PersonID]})
+// stampedTiles joins the mission view's tiles with its stamps: a tile is
+// stamped when the Participant has a completed meeting with that person.
+// Stamps derive from the meetings — there is no stamped_at column.
+func stampedTiles(mission *MissionView) []missionTileView {
+	tiles := make([]missionTileView, 0, len(mission.Card.Tiles))
+	for _, t := range mission.Card.Tiles {
+		tiles = append(tiles, missionTileView{MissionTile: t, Stamped: mission.Stamped[t.PersonID]})
 	}
 	return tiles
 }
@@ -715,6 +733,17 @@ func rankOf(board []ConnectionStanding, id string) int {
 		}
 	}
 	return 0
+}
+
+// championOf names the Merge Trophy winner from the leaderboard the caller
+// already fetched — the board's top, reusing its order exactly (the same
+// deterministic tie-break the board was ordered by), never re-sorting and
+// never re-querying. Nil when the board is empty.
+func championOf(board []ConnectionStanding) *ConnectionStanding {
+	if len(board) == 0 {
+		return nil
+	}
+	return &board[0]
 }
 
 // ── meetings: the confirm handshake ────────────────────────────────────────
@@ -832,18 +861,16 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 			if err != nil {
 				continue // the other side left the event; the row is debug-only
 			}
-			view := meetingView{Other: other, Status: m.StatusFor(p.ID)}
-			revealed, err := h.channels.Revealed(other.ID, p.ID)
+			ex, err := h.channels.Exchanged(&m, p.ID)
 			if err != nil {
-				logger("handler").Warn("channels revealed", "participant", p.ID, "by", other.ID, "err", err)
+				logger("handler").Warn("channels exchanged", "participant", p.ID, "with", other.ID, "err", err)
 			}
-			shared, err := h.channels.Revealed(p.ID, other.ID)
-			if err != nil {
-				logger("handler").Warn("channels shared", "participant", p.ID, "with", other.ID, "err", err)
-			}
-			view.Revealed = revealed
-			view.Shared = shared
-			meetings = append(meetings, view)
+			meetings = append(meetings, meetingView{
+				Other:    other,
+				Status:   m.StatusFor(p.ID),
+				Revealed: ex.Revealed,
+				Shared:   ex.Shared,
+			})
 		}
 	}
 	return map[string]any{
@@ -855,10 +882,16 @@ func (h *Handler) meetStatusData(p *Participant) map[string]any {
 }
 
 // GET /user/match-stream/{id}
-// Tells the match page to refresh its meet section and its dossier when the
-// Participant's meetings or the phase change — the pair's Meeting completing
-// unlocks the dossier. A phase transition additionally emits a distinct
-// 'phase' event, so the phase header updates live.
+// Tells the match page to refresh its cards when what they show changes —
+// the stream's diff key is the card registry's per-card signature sources
+// composed together (#155), so every pushed card on the page contributes
+// what its own push depends on: the phase, the meetings (the meet section,
+// the dossier's unlock), the Mission card appearing, the show & tell
+// sign-up state, the Slide Decks, the Board, the recap link. A phase
+// transition additionally emits a distinct 'phase' event, so the phase
+// header updates live and the region swaps. Like the pipeline stream, it
+// syncs once on connect, so a page that rendered before the stream opened
+// catches up.
 func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -869,8 +902,9 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	last := h.meetSignature(first)
+	last := h.pageSignature(first, onMatchPage)
 	lastPhase := h.events.State()
+	synced := false
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
@@ -880,35 +914,22 @@ func (h *Handler) MatchStream(w http.ResponseWriter, r *http.Request) {
 			lastPhase = now
 			sseEvent(w, "phase")
 		}
-		if now := h.meetSignature(p); now != last {
+		// One sync refresh on connect, like the pipeline stream: a page that
+		// rendered before the stream opened may have missed the only change
+		// it will ever see (a meeting completing between render and connect),
+		// and the opening signature already carries it — push would never
+		// fire on its own.
+		if !synced {
+			synced = true
+			sseEvent(w, "refresh")
+			return false
+		}
+		if now := h.pageSignature(p, onMatchPage); now != last {
 			last = now
 			sseEvent(w, "refresh")
 		}
 		return false
 	})
-}
-
-// meetSignature is what the meet streams watch: the phase, the Participant's
-// meetings (their count and how many are completed), whether their Mission
-// card exists — a freshly generated card appears via push — and their show &
-// tell sign-up state.
-type meetSignature struct {
-	phase     Phase
-	meetings  int
-	completed int
-	card      bool
-	showtell  string
-}
-
-func (h *Handler) meetSignature(p *Participant) meetSignature {
-	ms, _ := h.meetings.ForParticipant(p.ID)
-	completed := 0
-	for _, m := range ms {
-		if m.Completed() {
-			completed++
-		}
-	}
-	return meetSignature{h.events.State(), len(ms), completed, h.missions.Has(p.ID), h.showtell.Signature(p.ID)}
 }
 
 // ── contact exchange: settings + the post-meeting prompt ───────────────────
@@ -1076,11 +1097,11 @@ func (h *Handler) recapContentData(p *Participant) map[string]any {
 		if err != nil {
 			continue // the other side left the event
 		}
-		revealed, err := h.channels.Revealed(other.ID, p.ID)
+		ex, err := h.channels.Exchanged(&m, p.ID)
 		if err != nil {
 			logger("handler").Warn("recap channels revealed", "participant", p.ID, "by", other.ID, "err", err)
 		}
-		connections = append(connections, connectionView{Other: other, Revealed: revealed})
+		connections = append(connections, connectionView{Other: other, Revealed: ex.Revealed})
 	}
 
 	mine, err := h.channels.Channels(p.ID)
@@ -1103,10 +1124,7 @@ func (h *Handler) recapContentData(p *Participant) map[string]any {
 	if err != nil {
 		logger("handler").Warn("recap leaderboard", "participant", p.ID, "err", err)
 	}
-	champion, err := h.meetings.Champion()
-	if err != nil {
-		logger("handler").Warn("recap champion", "participant", p.ID, "err", err)
-	}
+	champion := championOf(board)
 
 	return map[string]any{
 		"Me":                p,
@@ -1455,214 +1473,9 @@ func (h *Handler) Screen(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "screen.html", map[string]any{"Palette": paletteHex()})
 }
 
-func (h *Handler) buildGraphPayload() map[string]any {
-	phase := h.events.State()
-	participants, _ := h.store.All()
-	activity, _ := h.db.GetRecentActivity(3)
-
-	nodes := make([]graphNode, 0, len(participants))
-	for _, p := range participants {
-		// The Big Screen shows persona names only, in every phase — identities
-		// never leave the server in the graph payload.
-		nodes = append(nodes, graphNode{
-			ID:          p.ID,
-			PersonaName: p.PersonaName,
-			Color:       p.PersonaColor,
-			Symbol:      p.PersonaSymbol,
-			Step:        string(p.PipelineStep),
-			Ready:       p.PipelineStep.IsReady(),
-			Matched:     p.IsMatched(),
-		})
-	}
-
-	edges := make([]graphEdge, 0)
-	seen := map[string]bool{}
-
-	for _, p := range participants {
-		if p.MatchedWith == "" {
-			continue
-		}
-		key := p.ID + ":" + p.MatchedWith
-		rev := p.MatchedWith + ":" + p.ID
-		if seen[key] || seen[rev] {
-			continue
-		}
-		seen[key] = true
-		edges = append(edges, graphEdge{
-			Source:  p.ID,
-			Target:  p.MatchedWith,
-			Score:   p.Assessment.Score,
-			Matched: true,
-		})
-	}
-
-	// Meeting edges: every completed meeting joins the graph alongside the
-	// match edges. A pair that are matched and met keeps one edge, flagged as
-	// both — the meeting is the stronger fact on the screen. The map holds
-	// edge indexes, not pointers: appending below may reallocate the slice.
-	byPair := map[string]int{}
-	for i := range edges {
-		byPair[edges[i].Source+":"+edges[i].Target] = i
-		byPair[edges[i].Target+":"+edges[i].Source] = i
-	}
-	meetings, _ := h.meetings.All()
-	for _, m := range meetings {
-		if !m.Completed() {
-			continue
-		}
-		key := m.A + ":" + m.B
-		if i, ok := byPair[key]; ok {
-			edges[i].Meeting = true
-			continue
-		}
-		seen[key] = true
-		edges = append(edges, graphEdge{Source: m.A, Target: m.B, Meeting: true})
-	}
-
-	type scored struct {
-		id    string
-		score int
-	}
-	topEdges := map[string][]scored{}
-	for i, a := range participants {
-		for j, b := range participants {
-			if i >= j {
-				continue
-			}
-			key := a.ID + ":" + b.ID
-			rev := b.ID + ":" + a.ID
-			if seen[key] || seen[rev] {
-				continue
-			}
-			s := h.matcher.PairScore(a, b)
-			topEdges[a.ID] = append(topEdges[a.ID], scored{b.ID, s})
-			topEdges[b.ID] = append(topEdges[b.ID], scored{a.ID, s})
-		}
-	}
-	for _, p := range participants {
-		candidates := topEdges[p.ID]
-		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
-		if len(candidates) > 3 {
-			candidates = candidates[:3]
-		}
-		for _, c := range candidates {
-			key := p.ID + ":" + c.id
-			rev := c.id + ":" + p.ID
-			if seen[key] || seen[rev] {
-				continue
-			}
-			seen[key] = true
-			edges = append(edges, graphEdge{
-				Source:  p.ID,
-				Target:  c.id,
-				Score:   c.score,
-				Matched: false,
-			})
-		}
-	}
-
-	payload := map[string]any{
-		"phase":       phase,
-		"phase_label": phase.Label(),
-		"revealed":    phase.AtLeast(PhaseSocial),
-		"nodes":       nodes,
-		"edges":       edges,
-		"activity":    activity,
-	}
-
-	// The social scoreboard: the top 5 by connections, from the social on.
-	// During onboarding the Big Screen is the graph and the ticker only.
-	if phase.AtLeast(PhaseSocial) {
-		board, err := h.meetings.Leaderboard()
-		if err != nil {
-			logger("handler").Warn("connection leaderboard", "err", err)
-		} else {
-			top := board
-			if len(top) > 5 {
-				top = top[:5]
-			}
-			payload["leaderboard"] = top
-			// The champion is named at the close: the Merge Trophy winner,
-			// the top of the final leaderboard.
-			if phase == PhaseClosed && len(top) > 0 {
-				payload["champion"] = &top[0]
-			}
-		}
-	}
-
-	// The closing view: from closed on, the Big Screen also carries the
-	// evening's stats and the recap QR — alongside the final leaderboard,
-	// the champion and the graph with all meeting edges.
-	if phase == PhaseClosed {
-		payload["stats"] = h.closing.Stats()
-		payload["recap_url"] = "/recap"
-	}
-
-	// Presenter mode: from show & tell on, the Big Screen shows the on-stage
-	// presenter's card with the hype intro — personas only, until the host's
-	// explicit identity reveal flips the card to the GitHub handle/name.
-	if phase == PhaseShowTell {
-		if presenter := h.presenterPayload(); presenter != nil {
-			payload["presenter"] = presenter
-		}
-	}
-	return payload
-}
-
-// presenterPayload is the Big Screen's presenter mode: the on-stage sign-up
-// with its presenter's Persona, the talk and the hype intro. Personas only —
-// the identity (the GitHub handle/name) is carried only once the host's
-// explicit reveal action set IdentityRevealed; it is the only place a handle
-// reaches the screen besides the owner's own recap.
-func (h *Handler) presenterPayload() map[string]any {
-	signup, err := h.showtell.OnStage()
-	if err != nil {
-		logger("handler").Warn("on-stage presenter", "err", err)
-		return nil
-	}
-	if signup == nil {
-		return nil
-	}
-	payload := map[string]any{
-		"signup_id":         signup.ID,
-		"title":             signup.Title,
-		"description":       signup.Description,
-		"repo_url":          signup.RepoURL,
-		"persona_name":      signup.PersonaName,
-		"persona_symbol":    signup.PersonaSymbol,
-		"persona_color":     signup.PersonaColor,
-		"persona_tagline":   signup.PersonaTagline,
-		"hype":              signup.Hype,
-		"identity_revealed": signup.IdentityRevealed,
-	}
-	if signup.IdentityRevealed {
-		p, err := h.store.Get(signup.ParticipantID)
-		if err != nil {
-			logger("handler").Warn("revealed presenter", "participant", signup.ParticipantID, "err", err)
-			return payload
-		}
-		payload["handle"] = p.DisplayHandle()
-		payload["name"] = p.Name
-	}
-	// The current audience question rides with the presenter card — an
-	// extension of presenter mode. The asker's persona and the text only:
-	// personas, never identities.
-	if question, err := h.showtell.CurrentQuestion(); err != nil {
-		logger("handler").Warn("current show & tell question", "err", err)
-	} else if question != nil {
-		payload["question"] = map[string]any{
-			"text":           question.Text,
-			"persona_name":   question.PersonaName,
-			"persona_symbol": question.PersonaSymbol,
-			"persona_color":  question.PersonaColor,
-		}
-	}
-	return payload
-}
-
 // GET /bigscreen/graph-data  — kept as fallback; big screen now uses /bigscreen/stream
 func (h *Handler) GraphData(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, h.buildGraphPayload())
+	writeJSON(w, h.screen.Payload())
 }
 
 // ── /data ──────────────────────────────────────────────────────────────────
@@ -1720,24 +1533,12 @@ func (h *Handler) scrubbedAll(participants []*Participant) []*Participant {
 // assessment — reason, flags, icebreakers — is scrubbed until the pair's
 // dossier unlocks.
 func (h *Handler) scrubbed(p *Participant) *Participant {
-	if p.Assessment == nil || h.dossierUnlocked(p) {
+	if p.Assessment == nil || h.meetings.DossierUnlocked(p.ID, p.MatchedWith) {
 		return p
 	}
 	cp := *p
 	cp.Assessment = nil
 	return &cp
-}
-
-// dossierUnlocked reports whether p's Match dossier may be shown — on the
-// Match page and in the JSON debug endpoints: once the pair's Meeting is
-// completed, or once the event is closed, after which the evening is over
-// and the recap takes over.
-func (h *Handler) dossierUnlocked(p *Participant) bool {
-	if h.events.State() == PhaseClosed {
-		return true
-	}
-	m, _ := h.meetings.Between(p.ID, p.MatchedWith)
-	return m != nil && m.Completed()
 }
 
 // GET /data/activity
@@ -1802,20 +1603,20 @@ func (h *Handler) DataMissionCard(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	card, err := h.missions.Get(id)
+	view, err := h.missions.View(id)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if card == nil {
+	if view == nil {
 		http.NotFound(w, r)
 		return
 	}
 	writeJSON(w, map[string]any{
 		"participant_id": p.ID,
 		"persona_name":   p.PersonaName,
-		"tiles":          h.stampedTiles(p, card),
-		"created_at":     card.CreatedAt,
+		"tiles":          stampedTiles(view),
+		"created_at":     view.Card.CreatedAt,
 	})
 }
 
@@ -1838,10 +1639,12 @@ func (h *Handler) Admin(w http.ResponseWriter, r *http.Request) {
 		"Count":             h.db.ParticipantCount(),
 		"Ready":             h.db.ReadyCount(),
 		"Matched":           h.db.MatchedCount(),
+		"Waiting":           h.store.AgentQueueWaiting(),
 		"Next":              phase.Next(),
 		"Notice":            r.URL.Query().Get("notice"),
 		"ShowTell":          h.showtellQueueData(),
 		"ShowTellQuestions": h.showtellQuestionsData(),
+		"Board":             h.boardModerationData(),
 	})
 }
 
@@ -1857,13 +1660,12 @@ func (h *Handler) TriggerReveal(w http.ResponseWriter, r *http.Request) {
 	h.advanceTo(w, r, PhaseSocial)
 }
 
-// advanceTo advances the event to the given phase. A rejected transition — an
-// unknown phase or one before the current one — is a client error; a database
-// failure is not. Advancing to the current phase is a no-op: nothing is
-// written or logged.
+// advanceTo advances the event to the given phase: the Evening module owns
+// the transition and its consequences. A rejected transition — an unknown
+// phase or one before the current one — is a client error; a database
+// failure is not.
 func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
-	before := h.events.State()
-	if err := h.events.Advance(to); err != nil {
+	if err := h.evening.Advance(to); err != nil {
 		if errors.Is(err, ErrIllegalPhaseTransition) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1871,50 +1673,15 @@ func (h *Handler) advanceTo(w http.ResponseWriter, r *http.Request, to Phase) {
 		http.Error(w, "phase change failed: "+err.Error(), 500)
 		return
 	}
-	if after := h.events.State(); after != before {
-		logger("handler").Info("phase advanced", "from", before, "to", after)
-		h.db.LogActivity(after.Activity())
-		// Mission cards go live at the social: generated in a background
-		// worker pool, so the transition returns immediately.
-		if after.MissionCardsLive() {
-			h.missions.GenerateAll()
-		}
-		// The champion is named at the close.
-		if after == PhaseClosed {
-			h.announceChampion()
-		}
-	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
-// announceChampion names the Merge Trophy winner on the ticker when the event
-// closes: the Participant with the most completed meetings, ties broken by
-// persona name. With no Participants there is no champion to name.
-func (h *Handler) announceChampion() {
-	champion, err := h.meetings.Champion()
-	if err != nil {
-		logger("handler").Warn("champion at the close", "err", err)
-		return
-	}
-	if champion == nil {
-		return
-	}
-	noun := "connections"
-	if champion.Connections == 1 {
-		noun = "connection"
-	}
-	h.db.LogActivity(fmt.Sprintf("👑 %s %s takes the Merge Trophy with %d %s!", champion.Symbol, champion.Name, champion.Connections, noun))
-}
-
-// POST /admin/reset
+// POST /admin/reset: the Evening module owns the reset and its consequences.
 func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
-	if err := h.events.Reset(); err != nil {
+	if err := h.evening.Reset(); err != nil {
 		http.Error(w, "reset failed: "+err.Error(), 500)
 		return
 	}
-	// Clear LLM cache when resetting event
-	h.matcher.ClearCache()
-	logger("handler").Info("event reset")
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -1963,6 +1730,10 @@ func (h *Handler) DeleteParticipant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.showtell.RemoveParticipant(id); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := h.board.RemoveParticipant(id); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
@@ -2057,10 +1828,16 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /user/wait-stream/{id}
-// Tells the wait page to refresh when what it shows changes (the ready count,
-// being matched, the persona being crafted, the meet section) and redirects
-// once the Participant belongs elsewhere. A phase transition additionally
-// emits a distinct 'phase' event, so the phase header updates live.
+// Tells the wait page to refresh its cards when what they show changes —
+// the stream's diff key is the card registry's per-card signature sources
+// composed together (#155), so every pushed card on the page contributes
+// what its own push depends on: the ready count and the Match (the status
+// card), the persona being crafted, the phase, the meetings, the Mission
+// card, the show & tell sign-up state, the Slide Decks, the Board, the
+// recap link — and redirects once the Participant belongs elsewhere. A
+// phase transition additionally emits a distinct 'phase' event, so the
+// phase header updates live. Like the pipeline stream, it syncs once on
+// connect, so a page that rendered before the stream opened catches up.
 func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -2071,14 +1848,9 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	type shown struct {
-		ready   int
-		matched bool
-		meet    meetSignature
-		persona string
-	}
-	last := shown{h.db.ReadyCount(), first.IsMatched(), h.meetSignature(first), first.PersonaName}
+	last := h.pageSignature(first, onWaitPage)
 	lastPhase := h.events.State()
+	synced := false
 	h.watch(w, r, func() bool {
 		p, err := h.store.Get(id)
 		if err != nil {
@@ -2092,7 +1864,17 @@ func (h *Handler) WaitStream(w http.ResponseWriter, r *http.Request) {
 			sseRedirect(w, dest)
 			return true
 		}
-		if now := (shown{h.db.ReadyCount(), p.IsMatched(), h.meetSignature(p), p.PersonaName}); now != last {
+		// One sync refresh on connect, like the pipeline stream: a page that
+		// rendered before the stream opened may have missed the only change
+		// it will ever see (the persona landing between render and connect),
+		// and the opening snapshot already carries it — push would never
+		// fire on its own.
+		if !synced {
+			synced = true
+			sseEvent(w, "refresh")
+			return false
+		}
+		if now := h.pageSignature(p, onWaitPage); now != last {
 			last = now
 			sseEvent(w, "refresh")
 		}
@@ -2107,7 +1889,7 @@ func (h *Handler) ScreenStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.watch(w, r, func() bool {
-		data, _ := json.Marshal(h.buildGraphPayload())
+		data, _ := json.Marshal(h.screen.Payload())
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		w.(http.Flusher).Flush()
 		return false

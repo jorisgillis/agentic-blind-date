@@ -801,9 +801,10 @@ func TestShowTellStatus_Fragment(t *testing.T) {
 
 // TestPersonalPages_ShowTheSignUpFormDuringSocialAndShowTell covers the
 // personal pages carrying the sign-up form while it is open: the wait page
-// from the social on, and the Match page's phase-content region from show &
-// tell on (#137: the region adds the show & tell section in the showtell
-// phase).
+// and the Match page's phase-content region from the social on — sign-up is
+// open during the social and the show & tell, and the matched Participants
+// who live on the Match page during the social must reach it there too (the
+// first live event's "the register show & tell was gone").
 func TestPersonalPages_ShowTheSignUpFormDuringSocialAndShowTell(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "The Gopher", "ready")
@@ -821,8 +822,8 @@ func TestPersonalPages_ShowTheSignUpFormDuringSocialAndShowTell(t *testing.T) {
 	if body := readBody(t, get(t, srv, "/user/wait/c")); !strings.Contains(body, "/user/showtell/signup/c") {
 		t.Errorf("during the social the wait page should show the sign-up form")
 	}
-	if body := readBody(t, get(t, srv, "/user/match/a")); strings.Contains(body, "/user/showtell/signup/a") {
-		t.Errorf("during the social the Match page's region should not show the sign-up form yet")
+	if body := readBody(t, get(t, srv, "/user/match/a")); !strings.Contains(body, `hx-post="/user/showtell/signup/a"`) {
+		t.Errorf("during the social the Match page should show the sign-up form")
 	}
 
 	if err := deps.events.Advance(PhaseShowTell); err != nil {
@@ -1283,12 +1284,14 @@ func TestWaitStream_RefreshesTheShowTellSection(t *testing.T) {
 	}
 
 	s := open(t, srv, "/user/wait-stream/a")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	signUp(t, deps, "a", "A")
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
-	before := s.String()
+	before = s.String()
 	stageSignup(t, deps, "a")
 	eventually(t, "staging to refresh the section", func() bool {
 		return len(s.String()) > len(before)

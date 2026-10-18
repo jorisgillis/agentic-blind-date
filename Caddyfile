@@ -3,6 +3,13 @@
 }
 
 meetup.jorisgillis.name {
+    # The host console and the JSON debug endpoints are only for the Host.
+    # HOST_PASSWORD_HASH comes from Caddy's environment (see the README).
+    @host path /admin* /data*
+    basic_auth @host {
+        host {$HOST_PASSWORD_HASH}
+    }
+
     reverse_proxy localhost:8080
 }
 

@@ -51,6 +51,17 @@ func TestPairScore_answers(t *testing.T) {
 	}
 }
 
+func TestPairScore_ignoresFreeTextAndCustomAnswers(t *testing.T) {
+	matcher := &Matcher{github: newFakeGitHub()}
+	same := map[string]string{"fixed_1": "Go", "extra_3": "a race condition", "custom_0": "Vim", "fixed_0": "Tabs"}
+	a := testParticipant("a", "The a", nil, participantOpts{answers: same})
+	b := testParticipant("b", "The b", nil, participantOpts{answers: same})
+
+	if score := matcher.PairScore(a, b); score != 1 {
+		t.Errorf("expected 1 (only the single-choice answer counts), got %d", score)
+	}
+}
+
 func TestPairScore_combined(t *testing.T) {
 	matcher := &Matcher{github: newFakeGitHub()}
 	a := testParticipant("a", "The a", []string{"Go"}, participantOpts{answers: map[string]string{"0": "Tabs"}})

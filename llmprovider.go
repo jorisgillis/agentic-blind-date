@@ -19,7 +19,7 @@ type providerDefaults struct {
 var llmProviders = map[string]providerDefaults{
 	"mistral": {
 		baseURL:     "https://api.mistral.ai/v1",
-		model:       "mistral-medium-latest",
+		model:       "mistral-large-4",
 		timeout:     30 * time.Second,
 		keyRequired: true,
 	},

@@ -28,7 +28,7 @@ func TestSelectLLM_MistralIsTheDefaultProvider(t *testing.T) {
 	}
 
 	c := asOpenAI(t, llm)
-	if c.baseURL != "https://api.mistral.ai/v1" || c.model != "mistral-medium-latest" || c.apiKey != "key" {
+	if c.baseURL != "https://api.mistral.ai/v1" || c.model != "mistral-large-4" || c.apiKey != "key" {
 		t.Errorf("mistral defaults: %+v", c)
 	}
 	if !c.jsonMode {

@@ -130,16 +130,61 @@ func TestPipelineStream_SyncsOnConnectWhenTheStepAlreadySettled(t *testing.T) {
 	waitFor(t, s, "event: refresh")
 }
 
+// TestWaitStream_SyncsOnConnectWhenThePageRenderedEarly covers the race the
+// E2E journeys caught (#144): the wait page renders the persona placeholder,
+// the persona lands, and only then does the stream connect — its opening
+// snapshot already carries the persona, so no change ever fires and the
+// placeholder would stay forever. Like the pipeline stream, the wait stream
+// syncs once on connect.
+func TestWaitStream_SyncsOnConnectWhenThePageRenderedEarly(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	if err := deps.db.CreateParticipant("a", "a", "A", true); err != nil {
+		t.Fatal(err)
+	}
+	forceStep(deps.db, "a", StepCreatingPersona)
+	setPersona(t, deps.db, "a", "The Bard", "Ships things")
+
+	s := open(t, srv, "/user/wait-stream/a")
+
+	// Nothing ever changes: the refresh comes from connecting, so a page
+	// that rendered before the persona landed still catches up.
+	waitFor(t, s, "event: refresh")
+}
+
+// TestMatchStream_SyncsOnConnectWhenThePageRenderedEarly covers the same race
+// on the match page: a meeting can complete between the page's render and
+// the stream's connect, and the opening signature already carries it — the
+// meet section would stay stale forever. The match stream syncs on connect
+// too.
+func TestMatchStream_SyncsOnConnectWhenThePageRenderedEarly(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	seed(t, deps.db, "a", "A", "ready")
+	seed(t, deps.db, "b", "B", "ready")
+	pair(t, deps.db, "a", "b")
+	if err := deps.events.Advance(PhaseSocial); err != nil {
+		t.Fatal(err)
+	}
+
+	s := open(t, srv, "/user/match-stream/a")
+
+	// Nothing ever changes: the refresh comes from connecting.
+	waitFor(t, s, "event: refresh")
+}
+
 func TestWaitStream_RefreshesOnChangesAndRedirectsOnTheReveal(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "a", "A", "ready")
 	seed(t, deps.db, "b", "B", "ready")
 
 	s := open(t, srv, "/user/wait-stream/a")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	pair(t, deps.db, "a", "b")
-	waitFor(t, s, "event: refresh")
+	eventually(t, "the pairing to refresh", func() bool {
+		return strings.Count(s.String(), "event: refresh") >= 2
+	})
 
 	post(t, srv, "/admin/reveal", nil)
 	waitFor(t, s, "event: redirect\ndata: /user/match/a")
@@ -156,10 +201,14 @@ func TestWaitStream_RefreshesWhenThePersonaIsCrafted(t *testing.T) {
 	forceStep(deps.db, "a", StepCreatingPersona)
 
 	s := open(t, srv, "/user/wait-stream/a")
-	sentNothingNew(t, s, 1, "", "the persona is still being crafted")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "the persona is still being crafted")
 
 	setPersona(t, deps.db, "a", "The Bard", "Ships things")
-	waitFor(t, s, "event: refresh")
+	eventually(t, "the persona to refresh the card", func() bool {
+		return strings.Count(s.String(), "event: refresh") >= 2
+	})
 }
 
 // TestMatchStream_EmitsAPhaseEventWhenTheHostAdvancesThePhase covers #136's
@@ -173,17 +222,19 @@ func TestMatchStream_EmitsAPhaseEventWhenTheHostAdvancesThePhase(t *testing.T) {
 	pair(t, deps.db, "a", "b")
 
 	s := open(t, srv, "/user/match-stream/a")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	if err := deps.events.Advance(PhaseSocial); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, s, "event: phase")
-	if !strings.Contains(s.String(), "event: refresh") {
-		t.Errorf("a phase change still changes the signature, so 'refresh' should fire too, got %q", s.String())
+	if strings.Count(s.String(), "event: refresh") < 2 {
+		t.Errorf("a phase change still changes the signature, so 'refresh' should fire again, got %q", s.String())
 	}
 
-	before := s.String()
+	before = s.String()
 	deps.db.LogActivity("someone else did something")
 	sentNothingNew(t, s, 3, before, "a change that does not concern this Participant")
 
@@ -205,17 +256,19 @@ func TestWaitStream_EmitsAPhaseEventWhenTheHostAdvancesThePhase(t *testing.T) {
 	seed(t, deps.db, "w", "W", "ready")
 
 	s := open(t, srv, "/user/wait-stream/w")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	if err := deps.events.Advance(PhaseSocial); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, s, "event: phase")
-	if !strings.Contains(s.String(), "event: refresh") {
-		t.Errorf("a phase change still changes the signature, so 'refresh' should fire too, got %q", s.String())
+	if strings.Count(s.String(), "event: refresh") < 2 {
+		t.Errorf("a phase change still changes the signature, so 'refresh' should fire again, got %q", s.String())
 	}
 
-	before := s.String()
+	before = s.String()
 	deps.db.LogActivity("someone else did something")
 	sentNothingNew(t, s, 3, before, "a change that does not concern this Participant")
 
@@ -254,16 +307,20 @@ func TestPersonalStreams_RefreshThePhaseHeaderOnQueueChanges(t *testing.T) {
 		signUp(t, deps, "w", "W talk")
 
 		s := open(t, srv, "/user/wait-stream/w")
-		sentNothingNew(t, s, 1, "", "nothing changed")
+		waitFor(t, s, "event: refresh") // the sync on connect
+		before := s.String()
+		sentNothingNew(t, s, 1, before, "nothing changed")
 
 		// The host reorders the queue: the Participant's place changes.
 		if err := deps.showtell.Move(signupID(t, deps, "w"), "up"); err != nil {
 			t.Fatal(err)
 		}
-		waitFor(t, s, "event: refresh")
+		eventually(t, "the reorder to refresh the header", func() bool {
+			return strings.Count(s.String(), "event: refresh") >= 2
+		})
 
 		// The host stages them: the badge flips to the on-stage state.
-		before := s.String()
+		before = s.String()
 		stageSignup(t, deps, "w")
 		eventually(t, "staging to refresh the header", func() bool {
 			return len(s.String()) > len(before)
@@ -282,16 +339,20 @@ func TestPersonalStreams_RefreshThePhaseHeaderOnQueueChanges(t *testing.T) {
 		signUp(t, deps, "a", "A talk")
 
 		s := open(t, srv, "/user/match-stream/a")
-		sentNothingNew(t, s, 1, "", "nothing changed")
+		waitFor(t, s, "event: refresh") // the sync on connect
+		before := s.String()
+		sentNothingNew(t, s, 1, before, "nothing changed")
 
 		// The host reorders the queue: the Participant's place changes.
 		if err := deps.showtell.Move(signupID(t, deps, "a"), "up"); err != nil {
 			t.Fatal(err)
 		}
-		waitFor(t, s, "event: refresh")
+		eventually(t, "the reorder to refresh the header", func() bool {
+			return strings.Count(s.String(), "event: refresh") >= 2
+		})
 
 		// The host stages them: the badge flips to the on-stage state.
-		before := s.String()
+		before = s.String()
 		stageSignup(t, deps, "a")
 		eventually(t, "staging to refresh the header", func() bool {
 			return len(s.String()) > len(before)

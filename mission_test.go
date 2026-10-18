@@ -326,6 +326,18 @@ func TestDifferenceScore(t *testing.T) {
 			1, // only q1 differs; q3 is unanswered on a's side
 		},
 		{
+			"free-text and custom answers are not compared",
+			testParticipant("a", "A", nil, participantOpts{answers: map[string]string{"fixed_1": "Go", "custom_0": "x", "fixed_0": "Tabs"}}),
+			testParticipant("b", "B", nil, participantOpts{answers: map[string]string{"fixed_1": "Rust", "custom_0": "y", "fixed_0": "Spaces"}}),
+			1, // only the single-choice fixed_0 differs
+		},
+		{
+			"free-text and custom answers are not compared",
+			testParticipant("a", "A", nil, participantOpts{answers: map[string]string{"fixed_1": "Go", "custom_0": "x", "fixed_0": "Tabs"}}),
+			testParticipant("b", "B", nil, participantOpts{answers: map[string]string{"fixed_1": "Rust", "custom_0": "y", "fixed_0": "Spaces"}}),
+			1, // only the single-choice fixed_0 differs
+		},
+		{
 			"no profiles at all",
 			&Participant{ID: "a"},
 			&Participant{ID: "b"},
@@ -683,6 +695,66 @@ func TestMissions_StampedDerivesFromCompletedMeetings(t *testing.T) {
 		t.Error("want a failure when the meetings cannot be read")
 	}
 	_ = events
+}
+
+// TestMissions_ViewReturnsStampsAndConnectionsInOnePass covers the module's
+// single-pass read model: the stamp set and the connection count are derived
+// together from one pass over the Participant's meetings — the count is the
+// length of the stamp set — assertable without rendering anything.
+func TestMissions_ViewReturnsStampsAndConnectionsInOnePass(t *testing.T) {
+	db, _, ms, a, b := meetingSetup(t)
+	seed(t, db, "c", "The Third", "ready")
+	seed(t, db, "d", "The Fourth", "ready")
+	missions := NewMissions(db, NewMatcher(db, newFakeGitHub(), newFakeLLM()), newFakeLLM())
+
+	// Without a card there is no view: the personal page shows the
+	// placeholder.
+	if view, err := missions.View("a"); view != nil || err != nil {
+		t.Fatalf("no card yet: want (nil, nil), got (%v, %v)", view, err)
+	}
+	if err := missions.save(&MissionCard{ParticipantID: "a"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two completed meetings stamp two people and count two connections; a
+	// pending meeting does neither.
+	c, d := reload(t, db, "c"), reload(t, db, "d")
+	for _, pair := range [][2]*Participant{{a, b}, {a, c}} {
+		if _, _, err := ms.Confirm(pair[0], pair[1], OriginMission); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := ms.Confirm(pair[1], pair[0], OriginMission); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := ms.Confirm(a, d, OriginMission); err != nil {
+		t.Fatal(err) // one-sided: pending, not completed
+	}
+
+	view, err := missions.View("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Card == nil {
+		t.Fatal("the view carries the card")
+	}
+	if len(view.Stamped) != 2 || !view.Stamped["b"] || !view.Stamped["c"] {
+		t.Errorf("the stamps are the completed meetings' people, want b and c, got %v", view.Stamped)
+	}
+	if view.Connections != len(view.Stamped) {
+		t.Errorf("the connection count is the length of the stamp set: want %d, got %d", len(view.Stamped), view.Connections)
+	}
+
+	// When the meetings cannot be read the view still carries the card,
+	// unstamped with a zero count — the card renders regardless.
+	breakOnFault(t, db, "meet_read")
+	view, err = missions.View("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Card == nil || len(view.Stamped) != 0 || view.Connections != 0 {
+		t.Errorf("unreadable meetings degrade to an unstamped view, got %+v", view)
+	}
 }
 
 func TestMissions_RemoveParticipant(t *testing.T) {
@@ -1276,7 +1348,7 @@ func TestMissionCardData_RanksAgainstTheTop5(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
+	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, NewSlideDecks(deps.db, t.TempDir()), nil)
 
 	data := h.missionCardData(reload(t, deps.db, "p1"))
 	if data["Connections"].(int) != 3 {
@@ -1314,7 +1386,7 @@ func TestMissionCardData_WithFewParticipantsTheTopIsTheWholeBoard(t *testing.T) 
 	if _, err := deps.missions.GenerateFor("p00"); err != nil {
 		t.Fatal(err)
 	}
-	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
+	h := NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, NewSlideDecks(deps.db, t.TempDir()), nil)
 
 	data := h.missionCardData(reload(t, deps.db, "p00"))
 
@@ -1335,7 +1407,7 @@ func TestMissionCardData_ReportsReadFailures(t *testing.T) {
 		if _, err := deps.missions.GenerateFor("me"); err != nil {
 			t.Fatal(err)
 		}
-		return deps, NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, nil)
+		return deps, NewHandler(deps.db, nil, nil, nil, nil, nil, deps.missions, deps.showtell, NewSlideDecks(deps.db, t.TempDir()), nil)
 	}
 
 	t.Run("the card cannot be read", func(t *testing.T) {
@@ -1463,12 +1535,14 @@ func TestWaitStream_TheCardAppearsViaPush(t *testing.T) {
 	seedReady(t, deps.db, 9)
 
 	s := open(t, srv, "/user/wait-stream/zz")
-	sentNothingNew(t, s, 1, "", "before the card exists")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "before the card exists")
 
 	if _, err := deps.missions.GenerateFor("zz"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
 	body := readBody(t, get(t, srv, "/user/mission/zz"))
 	if !strings.Contains(body, "Your mission") {
@@ -1489,7 +1563,9 @@ func TestMatchStream_TheStampsArriveViaPush(t *testing.T) {
 	pair(t, deps.db, "zz", "p00")
 
 	s := open(t, srv, "/user/match-stream/zz")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	// Completing a meeting with a tile person stamps the tile — the push
 	// re-renders the section.
@@ -1504,7 +1580,7 @@ func TestMatchStream_TheStampsArriveViaPush(t *testing.T) {
 	if _, _, err := ms.Confirm(them, me, OriginMission); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
 	body := readBody(t, get(t, srv, "/user/mission/zz"))
 	if !strings.Contains(body, "stamp-in") {

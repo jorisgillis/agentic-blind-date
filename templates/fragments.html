@@ -1,4 +1,7 @@
-{{/* Pipeline step indicator — shown while GitHub fetch / persona creation is in progress */}}
+{{/* Pipeline step indicator — shown while GitHub fetch / persona creation is
+     in progress. While the Participant waits on the agents, the queue
+     position rides along: how many Participants registered before them are
+     still waiting too, so a busy night reads as a queue, not a hang. */}}
 {{define "fragment-pipeline-step.html"}}
 <div
   id="pipeline-area"
@@ -35,16 +38,23 @@
     </div>
   </div>
 
+  {{if gt .QueueAhead 0}}
+  <p class="text-center text-gray-500 text-xs">🧑‍🤝‍🧑 {{.QueueAhead}} {{if eq .QueueAhead 1}}person{{else}}people{{end}} ahead of you in the agent queue — the agents work through the line in order</p>
+  {{else}}
   <p class="text-center text-gray-600 text-xs animate-pulse">Agent pipeline running...</p>
+  {{end}}
 </div>
 {{end}}
 
 
-{{/* A single interview question */}}
+{{/* A single interview question. The data-question marker lets the page's
+     header tell the interview apart from the agents' preparation work, and
+     the one-liner above the question says why it is asked at all. */}}
 {{define "fragment-question.html"}}
 {{if .}}
 <div
   id="pipeline-area"
+  data-question
   class="space-y-4"
 >
   <div class="text-center mb-4">
@@ -52,6 +62,7 @@
     <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
       <div class="h-full bg-indigo-500 rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
     </div>
+    <p class="text-gray-500 text-xs mt-2">Your answers decide who you meet tonight</p>
   </div>
 
   <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
@@ -327,6 +338,10 @@
     Looking for your perfect match...
   </div>
 
+  {{if gt .QueueAhead 0}}
+  <p class="text-gray-600 text-xs">🧑‍🤝‍🧑 {{.QueueAhead}} {{if eq .QueueAhead 1}}person{{else}}people{{end}} ahead of you in the agent queue</p>
+  {{end}}
+
   <p class="text-gray-600 text-xs">Watch the big screen!</p>
 </div>
 {{end}}
@@ -492,18 +507,19 @@
 <div id="settings" class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
   <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📇 Your contact details</p>
   <p class="text-gray-600 text-xs">Enter each channel once — everything stays off until you turn it on. After a completed meeting, you both see what you chose to share.</p>
-  <form hx-post="/user/settings/{{.Me.ID}}" hx-target="#settings" hx-swap="outerHTML" class="space-y-2">
+  <form hx-post="/user/settings/{{.Me.ID}}" hx-target="#settings" hx-swap="outerHTML" class="space-y-3">
+    <div class="divide-y divide-black/15">
     {{range .Channels}}
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 py-2.5 first:pt-0">
       <span class="w-20 text-xs font-bold text-gray-800 flex-shrink-0">{{.Label}}</span>
       <input
         type="text"
         name="{{.Channel}}"
         value="{{.Value}}"
         placeholder="{{.Label}}"
-        class="flex-1 bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+        class="flex-1 min-w-[10rem] bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
       />
-      <label class="flex items-center gap-1 text-xs font-semibold text-gray-700 flex-shrink-0">
+      <label class="flex items-center gap-1 text-xs font-semibold text-gray-700 flex-shrink-0 ml-auto">
         <input
           type="checkbox"
           name="{{.Channel}}_on"
@@ -514,6 +530,7 @@
       </label>
     </div>
     {{end}}
+    </div>
     <button
       type="submit"
       class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors"
@@ -810,6 +827,98 @@
 {{end}}
 
 
+{{/* The personal page's Slide Decks — the meet-up speakers' slides the Host
+     uploaded, in every phase, refreshed when the page's stream says a deck was
+     added or removed. Each deck opens inline in a new tab, with a download
+     link next to it. With no decks the section is empty. */}}
+{{define "fragment-slides.html"}}
+<div
+  id="slides"
+  hx-get="/user/slides/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+>
+  {{if .Decks}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-4 mb-4 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📑 Slides</p>
+    {{range .Decks}}
+    <div class="flex items-center gap-3">
+      <div class="min-w-0 flex-1">
+        <a href="/slides/{{.ID}}" target="_blank" rel="noopener" class="block font-bold text-gray-900 text-sm truncate underline decoration-black/30">{{.Title}}</a>
+        <p class="text-gray-700 text-xs truncate">{{.Speaker}} · {{fileSize .Size}}</p>
+      </div>
+      <a href="/slides/{{.ID}}/download" class="flex-shrink-0 text-xs font-bold text-gray-900 bg-black/10 hover:bg-black/20 rounded-lg px-3 py-1.5">⬇ PDF</a>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+
+{{/* The personal page's Board — the Posts the Host approved, newest first,
+     plus the Participant's own other Posts with their status, and the post
+     form while posting is open (a ready Participant, before the close).
+     Refreshed when the page's stream says a Post was approved, taken down or
+     deleted. The draft survives a refresh (hx-preserve) and is cleared by a
+     successful post; a refused post (400) is swapped in on purpose, with the
+     reason. */}}
+{{define "fragment-board.html"}}
+<div
+  id="board"
+  hx-get="/user/board/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  hx-on::before-swap="if (event.detail.xhr.status === 400) { event.detail.shouldSwap = true; event.detail.isError = false; }"
+>
+  {{if or .Open .Posts .Error}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-4 mb-4 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📣 Board</p>
+    {{if .Open}}
+    <form hx-post="/user/board/{{.Me.ID}}" hx-target="#board" hx-swap="outerHTML" class="space-y-2">
+      <textarea
+        id="board-text"
+        {{if not .Posted}}hx-preserve{{end}}
+        name="text"
+        rows="2"
+        maxlength="{{.MaxLength}}"
+        required
+        placeholder="Share a link or a thought with the room…"
+        class="w-full bg-white/60 border border-black/10 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none"
+      ></textarea>
+      <button
+        type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors"
+      >
+        Post ({{.Remaining}} left)
+      </button>
+      {{if .Posted}}<p class="text-green-800 text-xs font-semibold text-center">✅ Sent — it appears once the Host approves it</p>{{end}}
+    </form>
+    {{end}}
+    {{if .Error}}<p class="text-red-800 text-xs font-semibold text-center">{{.Error}}</p>{{end}}
+    {{range .Posts}}
+    <div class="flex gap-3">
+      <div class="w-9 h-9 rounded-xl {{.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.PersonaSymbol}}</div>
+      <div class="min-w-0 flex-1">
+        <p class="text-xs font-bold text-gray-900">{{.PersonaName}}</p>
+        <p class="text-sm text-gray-900 whitespace-pre-line break-words">{{linkify .Text}}</p>
+        {{if eq .Status "pending"}}<p class="text-xs text-gray-700">⏳ Waiting for the Host</p>{{end}}
+        {{if eq .Status "rejected"}}<p class="text-xs text-gray-700">🚫 Not approved</p>{{end}}
+      </div>
+      {{if eq .ParticipantID $.Me.ID}}
+      <form hx-post="/user/board/{{$.Me.ID}}/delete" hx-target="#board" hx-swap="outerHTML" hx-confirm="Delete this post?" class="flex-shrink-0">
+        <input type="hidden" name="post" value="{{.ID}}">
+        <button type="submit" class="text-xs text-gray-700 hover:text-red-700 bg-black/10 rounded-lg px-2 py-1" title="Delete this post">🗑</button>
+      </form>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+
 {{/* The recap's evening content — the personal stats, every connection with
      the channels those connections shared, the channels the Participant
      shared themselves, and their show & tell items. On the personal pages it
@@ -905,6 +1014,7 @@
 {{end}}
 
 
+
 {{/* The recap's headline — "Your match": the partner's persona card and the
      compatibility score, or the no-match card. Shared by the recap page and
      the match page's closed phase-content region — once the event is closed,
@@ -930,4 +1040,43 @@
   <p class="text-gray-700 text-sm">You weren't matched this time — the room was still yours.</p>
 </div>
 {{end}}
+{{end}}
+
+
+{{/* The host console's Board — the pending Posts to approve or reject, then
+     the approved ones, each with a take-down. Personas only. The console
+     reloads itself every few seconds, so a new Post shows up on its own. */}}
+{{define "fragment-board-queue.html"}}
+<div id="board-queue" class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+  <p class="text-gray-400 text-xs uppercase tracking-widest">📣 Board{{if .Pending}} · {{.Pending}} waiting{{end}}</p>
+  {{if .Posts}}
+  <ol class="space-y-2">
+    {{range .Posts}}
+    <li class="flex items-center gap-3 bg-gray-800/60 border border-gray-700 rounded-xl px-3 py-2">
+      <div class="w-9 h-9 rounded-lg {{.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0">{{.PersonaSymbol}}</div>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm text-white whitespace-pre-line break-words">{{linkify .Text}}</p>
+        <p class="text-xs text-gray-400">{{.PersonaName}} · {{if eq .Status "pending"}}⏳ waiting{{else}}✅ approved{{end}}</p>
+      </div>
+      <div class="flex items-center gap-1 flex-shrink-0">
+        {{if eq .Status "pending"}}
+        <form action="/admin/board" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="approved">
+          <button type="submit" class="px-2 py-1 text-xs bg-green-700 hover:bg-green-600 text-white rounded-lg font-bold">Approve</button>
+        </form>
+        {{end}}
+        <form action="/admin/board" method="POST" class="inline">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <input type="hidden" name="action" value="rejected">
+          <button type="submit" class="px-2 py-1 text-xs bg-gray-700 hover:bg-red-700 text-white rounded-lg">{{if eq .Status "pending"}}Reject{{else}}Take down{{end}}</button>
+        </form>
+      </div>
+    </li>
+    {{end}}
+  </ol>
+  {{else}}
+  <p class="text-gray-500 text-sm">Nothing on the board yet.</p>
+  {{end}}
+</div>
 {{end}}

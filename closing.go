@@ -16,11 +16,12 @@ type Closing struct {
 	meetings *Meetings
 	channels *ContactChannels
 	showtell *ShowTell
+	board    *Board
 }
 
 // NewClosing creates the Closing module.
 func NewClosing(db *DB, meetings *Meetings, channels *ContactChannels, showtell *ShowTell) *Closing {
-	return &Closing{db: db, store: NewParticipantStore(db), meetings: meetings, channels: channels, showtell: showtell}
+	return &Closing{db: db, store: NewParticipantStore(db), meetings: meetings, channels: channels, showtell: showtell, board: NewBoard(db, NewEventStore(db))}
 }
 
 // EventStats is the evening's headline numbers — counts only, derived from
@@ -204,6 +205,31 @@ func (c *Closing) Talks() []ExportTalk {
 	return out
 }
 
+// ExportPost is one approved Post on the Board as the closing surfaces carry it:
+// the text and the poster's Persona.
+type ExportPost struct {
+	Text   string        `json:"text"`
+	Poster ExportPersona `json:"poster"`
+}
+
+// Posts is the Board's approved Posts, newest first, poster Personas only.
+// Posts that are pending, rejected, deleted or taken down are not here.
+func (c *Closing) Posts() []ExportPost {
+	posts, err := c.board.Approved(-1)
+	if err != nil {
+		logger("closing").Warn("closing board", "err", err)
+		return nil
+	}
+	out := make([]ExportPost, 0, len(posts))
+	for _, p := range posts {
+		out = append(out, ExportPost{
+			Text:   p.Text,
+			Poster: ExportPersona{Name: p.PersonaName, Symbol: p.PersonaSymbol, Color: p.PersonaColor},
+		})
+	}
+	return out
+}
+
 // ExportMatch is one of the best LLM-generated matches, anonymized to the
 // pair's Personas: the score, the reason and the icebreakers.
 type ExportMatch struct {
@@ -280,6 +306,7 @@ type ExportPack struct {
 	TopPersonas []ExportPersona  `json:"top_personas"`
 	BestMatches []ExportMatch    `json:"best_matches"`
 	ShowTell    []ExportTalk     `json:"show_tell"`
+	Board       []ExportPost     `json:"board"`
 }
 
 // topPersonasLimit caps the export pack's top-personas list.
@@ -299,6 +326,7 @@ func (c *Closing) Pack() ExportPack {
 		Leaderboard: ranked,
 		BestMatches: c.BestMatches(),
 		ShowTell:    c.Talks(),
+		Board:       c.Posts(),
 	}
 	// The top Personas: the top of the leaderboard, with their taglines. The
 	// raw board carries the Participant ids for the join; the pack itself
@@ -335,6 +363,7 @@ type EventRecap struct {
 	TopConnectors []ExportStanding
 	Gallery       []ExportPersona
 	ShowTell      []ExportTalk
+	Board         []ExportPost
 }
 
 // topConnectorsLimit caps the public recap's top-connectors list.
@@ -352,6 +381,7 @@ func (c *Closing) Recap() EventRecap {
 		TopConnectors: top,
 		Gallery:       c.Gallery(),
 		ShowTell:      c.Talks(),
+		Board:         c.Posts(),
 	}
 }
 
@@ -441,6 +471,16 @@ func renderExportMarkdown(pack ExportPack) string {
 			if talk.RepoURL != "" {
 				fmt.Fprintf(&b, "  <%s>\n", talk.RepoURL)
 			}
+		}
+	}
+
+	b.WriteString("\n## 📣 Board\n\n")
+	if len(pack.Board) == 0 {
+		b.WriteString("Nothing was posted.\n")
+	} else {
+		for _, post := range pack.Board {
+			// One line per Post, so a multi-line Post cannot break the list.
+			fmt.Fprintf(&b, "- %s **%s**: %s\n", post.Poster.Symbol, post.Poster.Name, strings.Join(strings.Fields(post.Text), " "))
 		}
 	}
 

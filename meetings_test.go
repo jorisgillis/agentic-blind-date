@@ -283,6 +283,59 @@ func TestMeetings_Between(t *testing.T) {
 	}
 }
 
+// TestMeetings_DossierUnlocked pins the dossier-unlock rule (ADR-0012): the
+// pair's dossier unlocks once their Meeting is completed, or once the event
+// is closed, after which the recap takes over. Every other state stays
+// locked — including an unreadable database, which reads as locked, the
+// safe direction.
+func TestMeetings_DossierUnlocked(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// mate: whether the Participant is matched, so there is a
+		// partner id to consult.
+		mate  bool
+		setup func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant)
+		want  bool
+	}{
+		{"a pending meeting stays locked", true, func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant) {
+			if _, _, err := ms.Confirm(a, b, OriginOther); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"a completed meeting unlocks", true, func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant) {
+			if _, _, err := ms.Confirm(a, b, OriginOther); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := ms.Confirm(b, a, OriginOther); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"the closed event unlocks without a meeting", true, func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant) {
+			if err := events.Advance(PhaseClosed); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"an unmatched participant stays locked", false, nil, false},
+		{"an unreadable database reads as locked", true, func(t *testing.T, db *DB, events *EventStore, ms *Meetings, a, b *Participant) {
+			breakDB(db)
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, events, ms, a, b := meetingSetup(t)
+			if tc.setup != nil {
+				tc.setup(t, db, events, ms, a, b)
+			}
+			partner := b.ID
+			if !tc.mate {
+				partner = ""
+			}
+			if got := ms.DossierUnlocked(a.ID, partner); got != tc.want {
+				t.Errorf("DossierUnlocked(%q, %q): want %v, got %v", a.ID, partner, tc.want, got)
+			}
+		})
+	}
+}
+
 func TestMeetings_ForParticipantAndConnections(t *testing.T) {
 	db, _, ms, a, b := meetingSetup(t)
 	seed(t, db, "c", "The YAML Wrangler", "ready")
@@ -1025,16 +1078,18 @@ func TestMatchStream_RefreshesWhenTheMeetingsChange(t *testing.T) {
 	ms := NewMeetings(deps.db, deps.events)
 
 	s := open(t, srv, "/user/match-stream/a")
-	sentNothingNew(t, s, 1, "", "nothing changed")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "nothing changed")
 
 	// A meeting appears: the initiator's phone refreshes.
 	if _, _, err := ms.Confirm(reload(t, deps.db, "a"), reload(t, deps.db, "b"), OriginOther); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 
 	// The completion: both phones celebrate.
-	before := s.String()
+	before = s.String()
 	if _, _, err := ms.Confirm(reload(t, deps.db, "b"), reload(t, deps.db, "a"), OriginOther); err != nil {
 		t.Fatal(err)
 	}
@@ -1059,10 +1114,12 @@ func TestWaitStream_RefreshesTheMeetSection(t *testing.T) {
 	seed(t, deps.db, "a", "The Gopher", "ready")
 
 	s := open(t, srv, "/user/wait-stream/a")
-	sentNothingNew(t, s, 1, "", "during onboarding")
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "during onboarding")
 
 	post(t, srv, "/admin/reveal", nil)
-	waitFor(t, s, "event: refresh")
+	waitForCount(t, s, "event: refresh", strings.Count(before, "event: refresh")+1)
 }
 
 func TestMatchStream_UnknownParticipantIs404AndEndsWhenRemoved(t *testing.T) {
@@ -1076,9 +1133,12 @@ func TestMatchStream_UnknownParticipantIs404AndEndsWhenRemoved(t *testing.T) {
 	}
 
 	s = open(t, srv, "/user/match-stream/a")
-	// Wait until the stream is established: only then can the removal be
-	// observed by an in-watch check (and not by the handler's initial lookup).
-	sentNothingNew(t, s, 1, "", "while the stream settles")
+	// Wait until the stream is established — its connect sync proves the
+	// first check ran — only then can the removal be observed by an
+	// in-watch check (and not by the handler's initial lookup).
+	waitFor(t, s, "event: refresh") // the sync on connect
+	before := s.String()
+	sentNothingNew(t, s, 1, before, "while the stream settles")
 	if err := NewRelationships(deps.db).Remove("a"); err != nil {
 		t.Fatal(err)
 	}
