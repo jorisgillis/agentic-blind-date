@@ -25,6 +25,7 @@ func drawerOf(t *testing.T, body string) string {
 // evergreen cards — the dossier (when matched), the settings, the share-profile
 // QR and the recap link — while the region keeps none of them, so the drawer
 // survives the region's phase swaps. Each fragment lives in exactly one place.
+// Once closed the region itself has become the recap.
 func TestMatchPage_MoreDrawer(t *testing.T) {
 	for _, phase := range []Phase{PhaseSocial, PhaseShowTell, PhaseClosed} {
 		t.Run(string(phase), func(t *testing.T) {
@@ -40,8 +41,10 @@ func TestMatchPage_MoreDrawer(t *testing.T) {
 			region := readBody(t, get(t, srv, "/user/phase-content/me"))
 			drawer := drawerOf(t, body)
 
-			// The drawer renders after the region, in every phase.
-			assertOrder(t, body, `id="phase-content"`, "<details", "<summary", "More")
+			// The drawer renders after the region, in every phase. The
+			// summary's label is matched with its tag boundaries: the closed
+			// phase header's status line mentions "More" in prose.
+			assertOrder(t, body, `id="phase-content"`, "<details", "<summary", ">More<")
 
 			// The drawer holds the evergreen cards, in order: the dossier,
 			// the settings, the share-profile QR and the recap link.
@@ -88,10 +91,15 @@ func TestMatchPage_MoreDrawer(t *testing.T) {
 			// The phase cards come and go with the phase; the drawer's cards
 			// stay. The show & tell sign-up rides the region from the social
 			// on — sign-up is open during the social and the show & tell.
+			// Once closed the region has become the recap — the persona card
+			// and the evening's content lead it — and the mission card and
+			// the meet section are over.
 			for id, present := range map[string]bool{
-				"mission-card": true,
-				"meet-status":  phase != PhaseClosed,
-				"showtell":     phase != PhaseClosed,
+				"mission-card":  phase != PhaseClosed,
+				"meet-status":   phase != PhaseClosed,
+				"showtell":      phase != PhaseClosed,
+				"persona-card":  phase == PhaseClosed,
+				"recap-content": phase == PhaseClosed,
 			} {
 				if n := strings.Count(body, `id="`+id+`"`); (n == 1) != present {
 					t.Errorf("phase %s: the %q anchor should be present=%v, got %d", phase, id, present, n)
@@ -133,10 +141,11 @@ func TestMatchPage_MoreDrawerWithoutAMatch(t *testing.T) {
 
 // TestWaitPage_MoreDrawer covers #138 on the wait page: the body keeps its
 // cards — the persona card, the slides, the wait status, the mission card,
-// the meet section and the show & tell section — and the bottom "More" drawer
-// holds the evergreen content: the Q&A recap, the GitHub summary, the settings
-// and the recap link. The Q&A recap rides the drawer so the live event's
-// cards keep the page's attention. Each fragment lives in exactly one place.
+// the meet section, the show & tell section, the board and the (empty until
+// closed) recap-content anchor — and the bottom "More" drawer holds the
+// evergreen content: the Q&A recap, the GitHub summary, the settings and the
+// recap link. The Q&A recap rides the drawer so the live event's cards keep
+// the page's attention. Each fragment lives in exactly one place.
 func TestWaitPage_MoreDrawer(t *testing.T) {
 	srv, deps := newTestServer(t, nil, nil)
 	seed(t, deps.db, "r", "The Gopher", "ready")
@@ -155,6 +164,8 @@ func TestWaitPage_MoreDrawer(t *testing.T) {
 		`id="mission-card"`,
 		`id="meet-status"`,
 		`id="showtell"`,
+		`id="board"`,
+		`id="recap-content"`,
 		"<details",
 	)
 	if strings.Index(body, "Your answers") < strings.Index(body, "<details") {
@@ -172,7 +183,7 @@ func TestWaitPage_MoreDrawer(t *testing.T) {
 
 	// Exactly one anchor per fragment id, and the GitHub summary lives in
 	// exactly one place: the drawer.
-	for _, id := range []string{"phase-header", "persona-card", "slides", "wait-status", "mission-card", "meet-status", "showtell", "settings", "recap"} {
+	for _, id := range []string{"phase-header", "persona-card", "slides", "wait-status", "mission-card", "meet-status", "showtell", "board", "recap-content", "settings", "recap"} {
 		if n := strings.Count(body, `id="`+id+`"`); n != 1 {
 			t.Errorf("want exactly one %q anchor on the wait page, got %d", id, n)
 		}
@@ -182,11 +193,13 @@ func TestWaitPage_MoreDrawer(t *testing.T) {
 	}
 
 	// The drawer's recap link keeps its refresh wiring, and the wait stream's
-	// unguarded triggers keep finding their anchors — the drawer's included.
+	// unguarded triggers keep finding their anchors — the drawer's and the
+	// recap content's included.
 	for _, want := range []string{
 		`hx-get="/user/recap-link/r"`,
 		`hx-trigger="refresh"`,
 		`htmx.trigger('#recap', 'refresh')`,
+		`htmx.trigger('#recap-content', 'refresh')`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the wait page should contain %q", want)

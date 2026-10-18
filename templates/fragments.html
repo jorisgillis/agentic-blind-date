@@ -453,7 +453,10 @@
   hx-trigger="refresh"
   hx-swap="outerHTML"
 >
-{{if .Tiles}}
+{{if .Closed}}
+{{/* Closed: the page has become the recap — the mission card is over, the
+     recap's stats tell the evening. */}}
+{{else if .Tiles}}
 <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-4">
   <div class="flex items-center justify-between gap-2">
     <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎯 Your mission — meet 8 personas</p>
@@ -803,8 +806,9 @@
 
 
 {{/* The personal page's recap link — refreshed when the page's stream says so:
-     during closed, the Participant's recap page as a QR. The recap token is
-     the unguessable UUID; it persists across restarts. */}}
+     during closed, a button to the Participant's recap page — they navigate
+     themselves, no QR to scan. The recap token is the unguessable UUID; it
+     persists across restarts. */}}
 {{define "fragment-recap-link.html"}}
 <div
   id="recap"
@@ -813,10 +817,10 @@
   hx-swap="outerHTML"
 >
   {{if .Token}}
-  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center space-y-2">
-    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📲 Your recap</p>
-    <img id="recap-qr" src="/qr?data=/user/recap/{{.Token}}&size=150" alt="Your personal recap QR code" class="mx-auto rounded-lg shadow-sm" width="150" height="150" />
-    <p class="text-gray-600 text-xs">Scan to open your personal recap — your evening, kept.</p>
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📖 Your recap</p>
+    <a href="/user/recap/{{.Token}}" class="block w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-3 text-sm transition-colors">Open your recap</a>
+    <p class="text-gray-600 text-xs">Your evening, kept — the link stays yours.</p>
   </div>
   {{end}}
 </div>
@@ -850,6 +854,7 @@
   {{end}}
 </div>
 {{end}}
+
 
 {{/* The personal page's Board — the Posts the Host approved, newest first,
      plus the Participant's own other Posts with their status, and the post
@@ -912,6 +917,131 @@
   {{end}}
 </div>
 {{end}}
+
+
+{{/* The recap's evening content — the personal stats, every connection with
+     the channels those connections shared, the channels the Participant
+     shared themselves, and their show & tell items. On the personal pages it
+     renders once the event is closed — the page has become the recap, nothing
+     can happen anymore; the recap page always shows it. Refreshed when the
+     page's stream says so: the content arrives by push when the event
+     closes. */}}
+{{define "fragment-recap.html"}}
+<div
+  id="recap-content"
+  hx-get="/user/recap-content/{{.Me.ID}}"
+  hx-trigger="refresh"
+  hx-swap="outerHTML"
+  class="space-y-5"
+>
+  {{if .Closed}}
+
+  {{/* Personal stats */}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 flex items-center justify-center gap-2 flex-wrap">
+    <span class="text-gray-900 font-bold text-sm">❤️ {{.ConnectionCount}} connection{{if gt .ConnectionCount 1}}s{{end}}</span>
+    {{if .Rank}}<span class="text-gray-700 text-sm">· #{{.Rank}} on the leaderboard</span>{{end}}
+    {{if .Champion}}<span class="text-amber-800 font-bold text-sm">👑 Merge Trophy</span>{{end}}
+  </div>
+
+  {{/* Connections — everyone they completed a meeting with, with the
+       contact channels those connections shared with them */}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🤝 Your connections</p>
+    {{if .Connections}}
+    {{range .Connections}}
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl {{.Other.PersonaColor}} flex items-center justify-center text-lg flex-shrink-0 shadow-sm">{{.Other.PersonaSymbol}}</div>
+      <div>
+        <p class="font-bold text-sm text-gray-900">{{.Other.PersonaName}}</p>
+        {{if .Revealed}}
+        <div class="mt-0.5 space-y-0.5">
+          {{range .Revealed}}<p class="text-xs text-gray-800">{{.Label}}: <span class="font-medium">{{.Value}}</span></p>{{end}}
+        </div>
+        {{else}}
+        <p class="text-xs text-gray-600 italic">shared nothing</p>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+    {{else}}
+    <p class="text-gray-600 text-sm">No completed meetings — next time, confirm each other with your meet codes.</p>
+    {{end}}
+  </div>
+
+  {{/* Show & tell — the Participant's sign-up and their audience questions,
+       with how each ended up. Personas only, like everywhere outside stage. */}}
+  {{if or .ShowTellSignup .ShowTellQuestions}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-3">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">🎤 Your show &amp; tell</p>
+    {{if .ShowTellSignup}}
+    <div class="space-y-1">
+      <p class="font-bold text-sm text-gray-900">“{{.ShowTellSignup.Title}}”</p>
+      {{if .ShowTellSignup.Description}}
+      <p class="text-xs text-gray-700" data-md>{{.ShowTellSignup.Description}}</p>
+      {{end}}
+      {{if .ShowTellSignup.RepoURL}}
+      <p class="text-xs"><a href="{{.ShowTellSignup.RepoURL}}" class="text-indigo-700 underline" target="_blank" rel="noopener">{{.ShowTellSignup.RepoURL}}</a></p>
+      {{end}}
+      <p class="text-xs text-gray-700">
+        {{if eq .ShowTellSignup.Status "queued"}}⏳ queued
+        {{else if eq .ShowTellSignup.Status "on_stage"}}🎤 on stage
+        {{else}}✅ presented{{end}}
+      </p>
+    </div>
+    {{end}}
+    {{if .ShowTellQuestions}}
+    <div class="space-y-1 {{if .ShowTellSignup}}border-t border-black/10 pt-2{{end}}">
+      {{range .ShowTellQuestions}}
+      <p class="text-xs text-gray-800">“{{.Text}}” — {{if eq .Status "queued"}}queued{{else if eq .Status "asked"}}being asked{{else if eq .Status "answered"}}answered{{else}}dismissed{{end}}</p>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{/* Their own contact details — what they shared during the evening */}}
+  <div class="bg-black/15 border border-black/10 rounded-2xl p-5 space-y-2">
+    <p class="text-gray-700 font-bold text-xs uppercase tracking-wide">📇 Your contact details</p>
+    {{if .Shared}}
+    {{range .Shared}}<p class="text-sm text-gray-900">{{.Label}}: <span class="font-medium">{{.Value}}</span></p>{{end}}
+    {{else}}
+    <p class="text-gray-600 text-sm">You didn't share any contact details.</p>
+    {{end}}
+  </div>
+
+  {{end}}
+</div>
+{{end}}
+
+
+
+{{/* The recap's headline — "Your match": the partner's persona card and the
+     compatibility score, or the no-match card. Shared by the recap page and
+     the match page's closed phase-content region — once the event is closed,
+     the page has become the recap. The dossier is not part of it: on the
+     recap page it renders right below; on the personal pages it lives in the
+     "More" drawer. */}}
+{{define "fragment-recap-match.html"}}
+{{if .Match}}
+<div class="bg-black/15 border border-black/10 rounded-2xl p-6">
+  <p class="text-gray-700 font-bold text-xs uppercase tracking-wide mb-3">💘 Your match</p>
+  <div class="flex items-center gap-4">
+    <div class="w-14 h-14 rounded-xl {{.Match.PersonaColor}} flex items-center justify-center text-2xl flex-shrink-0 shadow-md">
+      {{.Match.PersonaSymbol}}
+    </div>
+    <div>
+      <p class="font-bold text-gray-900">{{.Match.PersonaName}}</p>
+      <p class="text-gray-700 text-sm">{{.Score}}% compatibility</p>
+    </div>
+  </div>
+</div>
+{{else}}
+<div class="bg-black/15 border border-black/10 rounded-2xl p-5 text-center">
+  <p class="text-gray-700 text-sm">You weren't matched this time — the room was still yours.</p>
+</div>
+{{end}}
+{{end}}
+
 
 {{/* The host console's Board — the pending Posts to approve or reject, then
      the approved ones, each with a take-down. Personas only. The console

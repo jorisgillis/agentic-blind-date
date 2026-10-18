@@ -16,18 +16,19 @@ var wantCards = map[string]struct {
 	wait, match cardRegion
 	key         string
 }{
-	"phase-header": {regionBody, regionBody, "PhaseHeader"},
-	"persona-card": {regionBody, "", "Participant"},
-	"slides":       {regionBody, regionBody, "Slides"},
-	"wait-status":  {regionBody, "", ""},
-	"mission-card": {regionBody, regionPhase, "MissionCard"},
-	"meet-status":  {regionBody, regionPhase, "MeetStatus"},
-	"showtell":     {regionBody, regionPhase, "ShowTell"},
-	"board":        {regionBody, regionBody, "Board"},
-	"dossier":      {"", regionDrawer, "Dossier"},
-	"settings":     {regionDrawer, regionDrawer, "Settings"},
-	"recap-link":   {regionDrawer, regionDrawer, "RecapLink"},
-	"match-reveal": {"", regionPhase, ""},
+	"phase-header":  {regionBody, regionBody, "PhaseHeader"},
+	"persona-card":  {regionBody, "", "Participant"},
+	"slides":        {regionBody, regionBody, "Slides"},
+	"wait-status":   {regionBody, "", ""},
+	"mission-card":  {regionBody, regionPhase, "MissionCard"},
+	"meet-status":   {regionBody, regionPhase, "MeetStatus"},
+	"showtell":      {regionBody, regionPhase, "ShowTell"},
+	"board":         {regionBody, regionBody, "Board"},
+	"recap-content": {regionBody, regionPhase, "RecapContent"},
+	"dossier":       {"", regionDrawer, "Dossier"},
+	"settings":      {regionDrawer, regionDrawer, "Settings"},
+	"recap-link":    {regionDrawer, regionDrawer, "RecapLink"},
+	"match-reveal":  {"", regionPhase, ""},
 }
 
 // pushedCards is which cards the pages' streams push: those name the
@@ -38,7 +39,8 @@ var wantCards = map[string]struct {
 var pushedCards = map[string]bool{
 	"phase-header": true, "persona-card": true, "wait-status": true,
 	"slides": true, "mission-card": true, "meet-status": true,
-	"showtell": true, "board": true, "dossier": true, "recap-link": true,
+	"showtell": true, "board": true, "recap-content": true,
+	"dossier": true, "recap-link": true,
 }
 
 // TestCardRegistry_Composition asserts the registry's composition: one
@@ -101,7 +103,7 @@ func TestCardRegistry_PlacementDrivesThePageData(t *testing.T) {
 	for _, key := range []string{
 		"Participant", "Count", "Revealed", "QueueAhead", // the status card's data
 		"PhaseHeader", "Slides", "MissionCard", "MeetStatus", "ShowTell",
-		"Board", "Settings", "RecapLink",
+		"Board", "RecapContent", "Settings", "RecapLink",
 	} {
 		if _, ok := wait[key]; !ok {
 			t.Errorf("the wait page's data map should carry %q", key)
@@ -137,7 +139,7 @@ func TestCardRegistry_PlacementDrivesThePageData(t *testing.T) {
 	region := deps.handler.phaseContentData(me, deps.handler.missionView(me))
 	for _, key := range []string{
 		"Me", "Phase", "Match", "Score", // the reveal's data
-		"MissionCard", "MeetStatus", "ShowTell",
+		"MissionCard", "MeetStatus", "ShowTell", "RecapContent",
 	} {
 		if _, ok := region[key]; !ok {
 			t.Errorf("the phase-content region's data map should carry %q", key)

@@ -129,6 +129,7 @@ func buildMux(h *Handler) http.Handler {
 	mux.HandleFunc("GET /user/settings/{id}", h.Settings)
 	mux.HandleFunc("POST /user/settings/{id}", h.SaveSettings)
 	mux.HandleFunc("GET /user/recap-link/{id}", h.RecapLink)
+	mux.HandleFunc("GET /user/recap-content/{id}", h.RecapContent)
 	mux.HandleFunc("GET /user/recap/{token}", h.Recap)
 	mux.HandleFunc("POST /user/showtell/signup/{id}", h.ShowTellSignup)
 	mux.HandleFunc("GET /user/showtell/{id}", h.ShowTellStatus)

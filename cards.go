@@ -120,6 +120,14 @@ var pageCards = []pageCard{
 		},
 	},
 	{
+		Name: "recap-content", OnWait: regionBody, OnMatch: regionPhase,
+		Key: "RecapContent", Fragment: "fragment-recap.html",
+		Data: func(h *Handler, p *Participant, _ *MissionView) any { return h.recapContentData(p) },
+		Signature: func(h *Handler, p *Participant) string {
+			return fmt.Sprintf("recap-content:closed=%t;", h.events.State() == PhaseClosed)
+		},
+	},
+	{
 		Name: "dossier", OnMatch: regionDrawer,
 		Key: "Dossier", Fragment: "fragment-dossier.html",
 		Data: func(h *Handler, p *Participant, _ *MissionView) any {

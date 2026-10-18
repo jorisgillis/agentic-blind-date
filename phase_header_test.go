@@ -145,7 +145,7 @@ func TestPhaseHeader_RendersTheStripSummaryAndStatusPerPhase(t *testing.T) {
 
 		assertPhaseHeader(t, body, PhaseClosed,
 			"Tonight: the event is closed — your evening is kept in your recap",
-			"Your recap is kept — scan the recap QR at the bottom of the page")
+			"Your recap is kept — open it from More below")
 	})
 }
 
