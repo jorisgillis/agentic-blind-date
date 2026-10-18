@@ -2037,7 +2037,9 @@ func awaitChange(w http.ResponseWriter, r *http.Request, changes <-chan struct{}
 // Tells the onboarding page to refresh when the stream opens — the page may
 // have rendered before the Participant's step settled — and when the step
 // changes (the first question appears), and redirects once they belong
-// elsewhere.
+// elsewhere. The opening refresh is gated by the ?from= step the page
+// rendered with: a page that already shows the current step gets no swap,
+// so an in-flight answer (half-checked multi-select boxes) is never reset.
 func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	first, err := h.store.Get(id)
@@ -2048,7 +2050,11 @@ func (h *Handler) PipelineStream(w http.ResponseWriter, r *http.Request) {
 	if !sseHeaders(w) {
 		return
 	}
-	st := &pipelineStreamState{id: id, lastStep: first.PipelineStep}
+	st := &pipelineStreamState{
+		id:       id,
+		lastStep: first.PipelineStep,
+		synced:   Step(r.URL.Query().Get("from")) == first.PipelineStep,
+	}
 	h.watch(w, r, func() bool { return h.pipelineStreamCheck(w, st) })
 }
 

@@ -130,6 +130,42 @@ func TestPipelineStream_SyncsOnConnectWhenTheStepAlreadySettled(t *testing.T) {
 	waitFor(t, s, "event: refresh")
 }
 
+// TestPipelineStream_SkipsTheOpeningSyncWhenThePageIsCurrent pins the fix for
+// the e2e flake (#188): the Onboard page passes the step it rendered with, so
+// a page that already shows the Interview gets no opening swap — that swap
+// replaced the pipeline area over an in-flight answer and reset the
+// multi-select form mid-interaction.
+func TestPipelineStream_SkipsTheOpeningSyncWhenThePageIsCurrent(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	must(t, deps.db.CreateParticipant("p", "p", "P", true))
+	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
+	forceStep(deps.db, "p", StepInterviewing)
+
+	s := open(t, srv, "/user/pipeline-stream/p?from=interviewing")
+
+	// The stream runs its checks without ever emitting: the page is current.
+	// (The handler records check passes under the bare path, without query.)
+	base := "/user/pipeline-stream/p"
+	eventually(t, "the stream to catch up", func() bool { return s.srv.streamChecks(base) >= 1 })
+	if after := s.String(); after != "" {
+		t.Errorf("unexpected opening sync for a current page: %q", after)
+	}
+}
+
+// TestPipelineStream_SyncsWhenThePageRenderedBeforeTheStepSettled pins the
+// catch-up half of the same contract: a page rendered at an older step still
+// gets its opening refresh, so the stale pipeline area catches up.
+func TestPipelineStream_SyncsWhenThePageRenderedBeforeTheStepSettled(t *testing.T) {
+	srv, deps := newTestServer(t, nil, nil)
+	must(t, deps.db.CreateParticipant("p", "p", "P", true))
+	forceQuestions(deps.db, "p", []Question{{ID: "q1", Text: "Tabs?"}})
+	forceStep(deps.db, "p", StepInterviewing)
+
+	s := open(t, srv, "/user/pipeline-stream/p?from=fetching_github")
+
+	waitFor(t, s, "event: refresh")
+}
+
 // TestWaitStream_SyncsOnConnectWhenThePageRenderedEarly covers the race the
 // E2E journeys caught (#144): the wait page renders the persona placeholder,
 // the persona lands, and only then does the stream connect — its opening

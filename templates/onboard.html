@@ -63,7 +63,7 @@
       el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
     }, 1000);
 
-    const _es = new EventSource('/user/pipeline-stream/{{.ID}}');
+    const _es = new EventSource('/user/pipeline-stream/{{.ID}}?from={{.PipelineStep}}');
     _es.addEventListener('redirect', e => { window.location.href = e.data; _es.close(); });
     _es.addEventListener('refresh', () => htmx.trigger('#pipeline-area', 'refresh'));
     _es.onerror = () => _es.close();
