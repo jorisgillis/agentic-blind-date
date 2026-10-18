@@ -46,6 +46,10 @@ export async function answerLanguageMultiSelect(page: Page, pick: string[]): Pro
     `${pick.length}/${pick.length}`,
   );
   await page.click("#submit-multiselect");
+  // Wait for the HTMX swap to replace the form before returning — otherwise
+  // answerCurrentQuestion may see the stale form and wait for a submit button
+  // that no longer exists.
+  await expect(page.locator("#multiselect-form")).toHaveCount(0);
 }
 
 // answerCurrentQuestion drives whichever question shape is showing: the
