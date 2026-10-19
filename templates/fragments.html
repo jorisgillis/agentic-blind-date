@@ -10,6 +10,9 @@
   hx-swap="outerHTML"
   class="space-y-4"
 >
+  <div class="flex justify-center py-2">
+    <div class="w-8 h-8 border-4 border-gray-700 border-t-indigo-500 rounded-full animate-spin"></div>
+  </div>
   <div class="space-y-3">
     {{$step := .PipelineStep}}
 
@@ -100,10 +103,10 @@
     {{if gt .Question.MaxSelections 1}}
     <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3" id="multiselect-form">
       <input type="hidden" name="answer" id="selected-options" value="" />
-      <div class="space-y-2" id="option-container">
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="option-container">
         {{$question := .Question}}
         {{range $question.Options}}
-        <label class="flex items-center gap-3 p-4 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700 cursor-pointer transition-colors">
+        <label class="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700 cursor-pointer transition-colors">
           <input
             type="checkbox"
             class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"

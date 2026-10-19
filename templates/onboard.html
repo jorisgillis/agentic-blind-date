@@ -8,6 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>button,input,select,textarea,a{touch-action:manipulation}</style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen flex items-center justify-center px-4">
   <div class="w-full max-w-md">
@@ -18,6 +19,9 @@
          script below keeps it in sync across fragment swaps. */}}
     <div class="text-center mb-8">
       <div class="text-5xl mb-3" id="onboard-emoji">{{if .Question}}🎤{{else}}🤖{{end}}</div>
+      <div class="flex justify-center mb-3 {{if .Question}}hidden{{end}}" id="onboard-spinner">
+        <div class="w-6 h-6 border-2 border-gray-700 border-t-indigo-500 rounded-full animate-spin"></div>
+      </div>
       <h1 class="text-2xl font-black" id="onboard-title">{{if .Question}}Quick interview{{else}}The agents are on it{{end}}</h1>
       <p class="text-gray-400 text-sm mt-1">{{.DisplayHandle}}</p>
       <p class="text-gray-500 text-xs mt-2" id="onboard-sub">{{if .Question}}A few quick questions — your answers decide who you meet tonight{{else}}Fetching your profile and preparing your questions…{{end}}</p>
@@ -49,6 +53,7 @@
         ? 'A few quick questions — your answers decide who you meet tonight'
         : 'Fetching your profile and preparing your questions…';
       document.getElementById('onboard-elapsed').classList.toggle('hidden', interview);
+      document.getElementById('onboard-spinner').classList.toggle('hidden', interview);
     }
     document.addEventListener('htmx:afterSwap', (e) => {
       if (e.detail.target && e.detail.target.id === 'pipeline-area') syncHeader();

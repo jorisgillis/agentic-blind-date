@@ -8,6 +8,7 @@
   <title>Admin — Agentic Blind Date</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>button,input,select,textarea,a{touch-action:manipulation}</style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen px-6 py-10">
   <div class="max-w-sm mx-auto space-y-6">
@@ -104,13 +105,13 @@
     <p class="text-center text-gray-600 text-xs">🔒 Matching is frozen — pairs are final</p>
     {{end}}
 
-    <div class="text-center space-y-1">
-      <a href="/bigscreen" target="_blank" class="block text-indigo-400 hover:text-indigo-300 text-sm">Open big screen →</a>
-      <a href="/user" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open participant landing →</a>
-      <a href="/admin/slides" class="block text-indigo-400 hover:text-indigo-300 text-sm">Manage slides →</a>
-      <a href="/data" target="_blank" class="block text-gray-600 hover:text-gray-400 text-sm">Open debug data →</a>
-      <a href="/admin/export" class="block text-gray-600 hover:text-gray-400 text-sm">Download export pack (JSON) →</a>
-      <a href="/admin/export?format=md" class="block text-gray-600 hover:text-gray-400 text-sm">Download export pack (Markdown) →</a>
+    <div class="text-center space-y-2">
+      <a href="/bigscreen" target="_blank" class="flex items-center justify-center min-h-[44px] text-indigo-400 hover:text-indigo-300 text-sm">Open big screen →</a>
+      <a href="/user" target="_blank" class="flex items-center justify-center min-h-[44px] text-gray-600 hover:text-gray-400 text-sm">Open participant landing →</a>
+      <a href="/admin/slides" class="flex items-center justify-center min-h-[44px] text-indigo-400 hover:text-indigo-300 text-sm">Manage slides →</a>
+      <a href="/data" target="_blank" class="flex items-center justify-center min-h-[44px] text-gray-600 hover:text-gray-400 text-sm">Open debug data →</a>
+      <a href="/admin/export" class="flex items-center justify-center min-h-[44px] text-gray-600 hover:text-gray-400 text-sm">Download export pack (JSON) →</a>
+      <a href="/admin/export?format=md" class="flex items-center justify-center min-h-[44px] text-gray-600 hover:text-gray-400 text-sm">Download export pack (Markdown) →</a>
     </div>
 
   </div>

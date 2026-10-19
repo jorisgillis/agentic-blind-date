@@ -181,6 +181,7 @@
       .lw-join-pill, .lw-typing, .lw-social-spark { display: none !important; }
     }
   </style>
+  <style>button,input,select,textarea,a{touch-action:manipulation}</style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen flex items-center justify-center px-4 py-8">
   <div class="w-full max-w-md text-center">
@@ -233,14 +234,14 @@
            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-5 py-4 text-lg text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-center"
          />
        </div>
-        <div class="flex items-center justify-center gap-2">
-          <input type="checkbox" id="noGitHubCheckbox" name="no_github" class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500" />
-          <label for="noGitHubCheckbox" class="text-sm text-gray-400 cursor-pointer">I don't have a GitHub account</label>
+        <div class="flex items-center justify-center gap-2 min-h-[44px]">
+          <input type="checkbox" id="noGitHubCheckbox" name="no_github" class="h-6 w-6 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+          <label for="noGitHubCheckbox" class="text-sm text-gray-400 cursor-pointer select-none py-2">I don't have a GitHub account</label>
         </div>
         
         <button
          type="submit"
-         class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl py-4 text-lg transition-colors"
+         class="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-xl py-4 text-lg transition-colors"
        >
          Find my match →
        </button>
