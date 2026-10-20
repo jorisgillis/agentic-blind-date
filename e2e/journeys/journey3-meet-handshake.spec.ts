@@ -1,5 +1,5 @@
 import { expect, test } from "../harness";
-import { answerCurrentQuestion, register } from "./helpers";
+import { answerCurrentQuestion, awaitPersona, register } from "./helpers";
 
 // Journey 3 (issue #144, stretch): two participants register, the host
 // advances the evening to the social, and both confirm the meeting with each
@@ -20,6 +20,9 @@ test("two participants complete the meet handshake with meet codes", async ({ ap
       await page.waitForTimeout(300);
     }
     await expect(page).toHaveURL(/\/user\/wait\//);
+    // Wait for the persona pipeline to finish before advancing — with a
+    // delayed LLM stub the persona lands after the wait page appears.
+    await awaitPersona(page);
   }
 
   // The host advances the evening to the social: meeting confirmation opens,

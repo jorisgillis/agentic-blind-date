@@ -60,7 +60,7 @@
   data-question
   class="space-y-4"
 >
-  <div class="text-center mb-4">
+  <div class="text-center mb-2 sm:mb-4">
     <p class="text-gray-500 text-xs mb-1">Question {{add .Index 1}} of {{.Total}}</p>
     <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
       <div class="h-full bg-indigo-500 rounded-full transition-all" style="width: {{percent .Index .Total}}%"></div>
@@ -68,8 +68,8 @@
     <p class="text-gray-500 text-xs mt-2">Your answers decide who you meet tonight</p>
   </div>
 
-  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-    <p class="font-semibold text-lg mb-5" data-md>{{.Question.Text}}</p>
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 sm:p-6">
+    <p class="font-semibold text-lg mb-3 sm:mb-5" data-md>{{.Question.Text}}</p>
 
     <script>
       function updateMultiSelect(checkbox, maxSelections) {
@@ -103,10 +103,10 @@
     {{if gt .Question.MaxSelections 1}}
     <form hx-post="/user/answer/{{.ParticipantID}}" hx-target="#pipeline-area" hx-swap="outerHTML" class="space-y-3" id="multiselect-form">
       <input type="hidden" name="answer" id="selected-options" value="" />
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="option-container">
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5 sm:gap-2" id="option-container">
         {{$question := .Question}}
         {{range $question.Options}}
-        <label class="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700 cursor-pointer transition-colors">
+        <label class="flex items-center gap-2 sm:gap-3 p-2 sm:p-4 rounded-xl bg-gray-800 border border-gray-700 hover:bg-gray-700 cursor-pointer transition-colors">
           <input
             type="checkbox"
             class="h-4 w-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"

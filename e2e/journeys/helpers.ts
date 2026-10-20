@@ -55,6 +55,9 @@ export async function answerLanguageMultiSelect(page: Page, pick: string[]): Pro
 // answerCurrentQuestion drives whichever question shape is showing: the
 // single-select buttons, the free-text input, or the multi-select form.
 export async function answerCurrentQuestion(page: Page): Promise<void> {
+  // Wait for the question fragment (the agent pipeline may still be preparing).
+  await expect(page.locator("#pipeline-area[data-question]")).toBeVisible({ timeout: 10_000 });
+
   const area = page.locator("#pipeline-area");
 
   if (await page.locator("#multiselect-form").count()) {

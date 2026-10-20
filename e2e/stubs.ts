@@ -88,6 +88,11 @@ function cannedReply(system: string): string {
   return "{}";
 }
 
+// A small delay per LLM call so the agent pipeline is observable in E2E:
+// without it the stubs answer instantly and the pipeline finishes before
+// the browser can render the onboarding spinner.
+const LLM_DELAY_MS = 500;
+
 export function createLLMStub(): Promise<http.Server> {
   const server = http.createServer((req, res) => {
     if (req.method !== "POST" || !(req.url ?? "").endsWith("/chat/completions")) {
@@ -106,12 +111,14 @@ export function createLLMStub(): Promise<http.Server> {
       } catch {
         system = "";
       }
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          choices: [{ message: { content: cannedReply(system) } }],
-        }),
-      );
+      setTimeout(() => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            choices: [{ message: { content: cannedReply(system) } }],
+          }),
+        );
+      }, LLM_DELAY_MS);
     });
   });
   return listen(server);

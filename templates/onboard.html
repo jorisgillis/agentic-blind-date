@@ -46,7 +46,7 @@
     document.addEventListener('htmx:afterSwap', renderMd);
 
     function syncHeader() {
-      const interview = document.querySelector('#pipeline-area [data-question]') !== null;
+      const interview = document.querySelector('#pipeline-area[data-question]') !== null;
       document.getElementById('onboard-emoji').textContent = interview ? '🎤' : '🤖';
       document.getElementById('onboard-title').textContent = interview ? 'Quick interview' : 'The agents are on it';
       document.getElementById('onboard-sub').textContent = interview
